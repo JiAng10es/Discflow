@@ -98,7 +98,7 @@
 ### 方式二：源码运行
 
 ```bash
-git clone https://github.com/<your-name>/Discflow.git
+git clone https://github.com/JiAng10es/Discflow.git
 cd Discflow/win-cd-player
 
 pip install -r requirements.txt
