@@ -1,0 +1,39 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- 虚拟环境 ----------
+.venv/
+venv/
+env/
+.env
+
+# ---------- PyInstaller 构建产物 ----------
+build/
+dist/
+*.spec
+!Discflow.spec
+*.exe
+*.manifest
+
+# ---------- 日志与临时文件 ----------
+*.log
+*.tmp
+*.bak
+
+# ---------- 编辑器 / IDE ----------
+.vscode/
+.idea/
+*.swp
+
+# ---------- 操作系统 ----------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
