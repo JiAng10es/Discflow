@@ -91,9 +91,11 @@
 | 运行时 | [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Win11 自带；Win10 若缺失需安装） |
 | 光驱 | 内置或外置 USB CD-ROM（仅播放 CD 时需要；只播资料库则不需要） |
 
-### 方式一：直接用打包好的 EXE
+### 方式一：直接下载打包好的 EXE
 
-下载 `Discflow.exe`，双击即可。免安装、不写注册表、不驻留后台，删掉文件即卸载。
+到 [**Releases**](https://github.com/JiAng10es/Discflow/releases/latest) 下载 `Discflow.exe`，双击即可。
+
+免安装、不写注册表、不驻留后台，删掉文件即卸载。
 
 ### 方式二：源码运行
 
