@@ -4511,6 +4511,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     topbarOpacity: 65,
     topbarBlur: 28,
     themeMode: "dark",
+    autoPlay: true,
     showTranslation: true
   }};
 
@@ -4553,8 +4554,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
           applyTheme(prefs.themeMode);
         }}
         if (typeof prefs.autoPlay === "boolean") {{
-          appState.autoPlayDisc = prefs.autoPlay;
+          if (typeof appState !== "undefined") appState.autoPlayDisc = prefs.autoPlay;
           const label = document.getElementById("autoPlayLabel");
+          if (label) label.textContent = prefs.autoPlay ? "已开启" : "已关闭";
+          const apSwitch = document.getElementById("autoPlaySwitch");
+          if (apSwitch) apSwitch.checked = prefs.autoPlay;
           if (label) label.textContent = prefs.autoPlay ? "已开启" : "已关闭";
         }}
       }}
@@ -4632,7 +4636,14 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     updateTopbarPreview(tbOp, tbBlur);
 
     const apSwitch = document.getElementById("autoPlaySwitch");
-    if (apSwitch) apSwitch.checked = (appState.autoPlayDisc === true || appState.autoPlay === true);
+    if (apSwitch) {{
+      const isAuto = (prefs && typeof prefs.autoPlay === "boolean")
+        ? prefs.autoPlay
+        : ((typeof appState !== "undefined" && typeof appState.autoPlayDisc === "boolean")
+            ? appState.autoPlayDisc
+            : true);
+      apSwitch.checked = isAuto;
+    }}
   }}
 
   function updateTopbarPreview(op, blur) {{
@@ -5275,11 +5286,18 @@ function toggleDiscflowMenu(event) {{
   }}
 
   function toggleAutoPlay() {{
-    appState.autoPlayDisc = !appState.autoPlayDisc;
-    const label = document.getElementById("autoPlayLabel");
-    if (label) label.textContent = appState.autoPlayDisc ? "已开启" : "已关闭";
-    if (window.pywebview && window.pywebview.api && window.pywebview.api.save_preferences) {{
-      window.pywebview.api.save_preferences({{ autoPlay: !!appState.autoPlayDisc }}).catch(() => {{}});
+    if (typeof appState !== "undefined") {{
+      appState.autoPlayDisc = !appState.autoPlayDisc;
+      const isAuto = appState.autoPlayDisc;
+      const label = document.getElementById("autoPlayLabel");
+      if (label) label.textContent = isAuto ? "已开启" : "已关闭";
+      const apSwitch = document.getElementById("autoPlaySwitch");
+      if (apSwitch) apSwitch.checked = isAuto;
+      currentCustomPrefs.autoPlay = isAuto;
+      saveCustomPrefs();
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.save_preferences) {{
+        window.pywebview.api.save_preferences({{ autoPlay: !!isAuto }}).catch(() => {{}});
+      }}
     }}
   }}
 

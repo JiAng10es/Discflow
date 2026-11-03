@@ -5,6 +5,7 @@ Unit tests for v2.0.3 Settings Redesign and Top Bar Buttons Customization:
 3. Top bar 3-button opacity and blur controls
 4. Slogan & design philosophy update ("好好享受音乐")
 5. Safety isolation and regression prevention
+6. TDZ safety on initial script evaluation (no premature appState access)
 """
 
 import unittest
@@ -87,6 +88,17 @@ class TestSettingsRedesign(unittest.TestCase):
         # Modal opening helpers route to unified tabs
         self.assertIn('switchSettingsTab("appearance")', self.content)
         self.assertIn('switchSettingsTab("about")', self.content)
+
+    def test_tdz_safety_and_preferences_sync(self):
+        # 1. DEFAULT_CUSTOM_PREFS includes autoPlay
+        self.assertIn('autoPlay: true', self.content)
+
+        # 2. syncCustomSettingsInputs guards appState against TDZ ReferenceError
+        self.assertIn('typeof appState !== "undefined"', self.content)
+
+        # 3. Direct un-guarded appState.autoPlayDisc in syncCustomSettingsInputs is eliminated
+        bad_pattern = 'if (apSwitch) apSwitch.checked = (appState.autoPlayDisc === true || appState.autoPlay === true);'
+        self.assertNotIn(bad_pattern, self.content)
 
 if __name__ == '__main__':
     unittest.main()
