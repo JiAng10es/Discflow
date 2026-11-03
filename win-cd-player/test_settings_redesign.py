@@ -71,11 +71,27 @@ class TestSettingsRedesign(unittest.TestCase):
         for emoji in crude_emojis:
             self.assertNotIn(emoji, settings_html, f"Emoji {emoji} should be replaced with vector SVG in settingsModal")
 
-    def test_design_philosophy_slogan(self):
-        # Slogan: "好好享受音乐"
-        self.assertIn("好好享受音乐", self.content)
-        self.assertIn("极简克制，专注纯粹 · 好好享受音乐", self.content)
-        self.assertIn("把繁杂留给技术，让你静下心来，好好享受音乐。", self.content)
+    def test_brand_slogan_removed(self):
+        # User requested to delete the brand slogan / philosophy
+        self.assertNotIn("把繁杂留给技术，让你静下心来，好好享受音乐。", self.content)
+        self.assertNotIn("极简克制，专注纯粹 · 好好享受音乐", self.content)
+
+    def test_fixed_dialog_dimensions_and_stable_gutter(self):
+        # 1. Dialog has fixed stable height and width to prevent bouncing across tabs
+        self.assertIn("width: 680px !important;", self.content)
+        self.assertIn("height: 590px !important;", self.content)
+
+        # 2. Body has scrollbar-gutter: stable to prevent rightward twitch/jump on tab switch
+        self.assertIn("scrollbar-gutter: stable;", self.content)
+        self.assertIn("overflow-x: hidden;", self.content)
+
+        # 3. switchSettingsTab resets scrollTop
+        self.assertIn("body.scrollTop = 0;", self.content)
+
+    def test_unified_card_groups_across_all_tabs(self):
+        # All tabs use unified .settings-card-group architecture
+        self.assertIn('.settings-card-group', self.content)
+        self.assertIn('.settings-row-item', self.content)
 
     def test_compatibility_and_safety(self):
         # Storage folder label preserved for portable mode

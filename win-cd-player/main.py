@@ -3436,20 +3436,23 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
   /* ================= 一体化四分类系统设置偏好中心样式 ================= */
   .settings-modal-dialog {{
-    max-width: 680px !important;
-    width: 92% !important;
-    max-height: 85vh !important;
+    width: 680px !important;
+    max-width: min(680px, 92vw) !important;
+    height: 590px !important;
+    max-height: 86vh !important;
     display: flex !important;
     flex-direction: column !important;
-    padding: 20px 24px 22px 24px !important;
+    padding: 20px 24px 20px 24px !important;
     border-radius: 22px !important;
     overflow: hidden;
+    box-sizing: border-box !important;
   }}
   .settings-modal-header {{
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 14px;
+    flex-shrink: 0;
   }}
   .settings-header-brand {{
     display: flex;
@@ -3464,6 +3467,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
     margin-bottom: 16px;
+    flex-shrink: 0;
   }}
   .settings-tab-btn {{
     flex: 1;
@@ -3499,31 +3503,42 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   .settings-modal-body {{
     flex: 1;
     overflow-y: auto;
-    padding-right: 4px;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+    box-sizing: border-box;
+    padding-right: 6px;
   }}
   .settings-tab-pane {{
     display: none;
   }}
   .settings-tab-pane.active {{
     display: block;
-    animation: fadeInSettingsTab 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: fadeInSettingsTab 0.14s ease;
   }}
   @keyframes fadeInSettingsTab {{
-    from {{ opacity: 0; transform: translateY(4px); }}
-    to {{ opacity: 1; transform: translateY(0); }}
+    from {{ opacity: 0; }}
+    to {{ opacity: 1; }}
   }}
   .settings-card-group {{
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 14px;
     overflow: hidden;
+    margin-bottom: 12px;
+  }}
+  [data-theme="light"] .settings-card-group {{
+    background: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.07);
   }}
   .settings-row-item {{
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 18px;
+    padding: 13px 18px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }}
+  [data-theme="light"] .settings-row-item {{
+    border-bottom-color: rgba(0, 0, 0, 0.05);
   }}
   .settings-row-item:last-child {{
     border-bottom: none;
@@ -4055,35 +4070,35 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
           </button>
         </div>
 
-        <!-- 模态框主体内容区 (四选项卡单层切换) -->
+        <!-- 模态框主体内容区 (四选项卡统一稳定视口) -->
         <div class="settings-modal-body">
-          <!-- 选项卡 1: 外观与界面 (自定义功能) -->
+          <!-- 选项卡 1: 外观与界面 -->
           <div id="customSettingsModal" class="settings-tab-pane active" data-tab-pane="appearance">
-            <!-- 顶部栏按键背景透明度与毛玻璃模糊度调节 (全新定制功能) -->
-            <div class="custom-setting-group" style="background: linear-gradient(180deg, rgba(56, 189, 248, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%); border: 1px solid rgba(56, 189, 248, 0.22); border-radius: 14px; padding: 14px 18px; margin-bottom: 14px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <!-- 顶部栏图标按键 -->
+            <div class="settings-card-group" style="padding: 12px 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3.5"/><circle cx="12" cy="12" r="3.5"/><circle cx="18" cy="12" r="3.5"/><line x1="2" y1="5" x2="22" y2="5" stroke-dasharray="2 2" stroke-width="1.2" opacity="0.6"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><circle cx="6" cy="12" r="3.5"/><circle cx="12" cy="12" r="3.5"/><circle cx="18" cy="12" r="3.5"/><line x1="2" y1="5" x2="22" y2="5" stroke-dasharray="2 2" stroke-width="1.2" opacity="0.6"/></svg>
                   <div>
-                    <div style="font-size: 13.5px; font-weight: 600; color: #fff;">顶部栏图标按键 (Top Bar Buttons)</div>
-                    <div style="font-size: 11.5px; color: #71717a;">自定义读盘、弹出、外观切换 3 个功能圆钮的视觉质感</div>
+                    <div class="settings-item-title">顶部栏图标按键 (Top Bar Buttons)</div>
+                    <div class="settings-item-sub">自定义读盘、出仓、外观切换 3 个功能圆钮的视觉质感</div>
                   </div>
                 </div>
                 <!-- 实时预览微缩卡 -->
                 <div id="settingsTopbarPreview" style="display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: rgba(0,0,0,0.35); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-                  <span style="font-size: 11px; color: #a1a1aa;">效果预览:</span>
-                  <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3a9 9 0 0 1 8.5 6"/><polyline points="16 9 20.5 9 20.5 4.5"/><path d="M12 21a9 9 0 0 1-8.5-6"/><polyline points="8 15 3.5 15 3.5 19.5"/></svg>
+                  <span style="font-size: 11px; color: var(--text-tertiary);">效果预览:</span>
+                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3a9 9 0 0 1 8.5 6"/><polyline points="16 9 20.5 9 20.5 4.5"/><path d="M12 21a9 9 0 0 1-8.5-6"/><polyline points="8 15 3.5 15 3.5 19.5"/></svg>
                   </div>
-                  <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.4a1.2 1.2 0 0 0-1.02.58l-6.4 10.2A1.2 1.2 0 0 0 5.6 17h12.8a1.2 1.2 0 0 0 1.02-1.82L13.02 5a1.2 1.2 0 0 0-1.02-.6z"/><rect x="4.5" y="19" width="15" height="2.2" rx="1.1"/></svg>
+                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.4a1.2 1.2 0 0 0-1.02.58l-6.4 10.2A1.2 1.2 0 0 0 5.6 17h12.8a1.2 1.2 0 0 0 1.02-1.82L13.02 5a1.2 1.2 0 0 0-1.02-.6z"/><rect x="4.5" y="19" width="15" height="2.2" rx="1.1"/></svg>
                   </div>
-                  <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" fill-opacity="0.2"/></svg>
+                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" fill-opacity="0.2"/></svg>
                   </div>
                 </div>
               </div>
-              <div class="custom-control-row">
+              <div class="custom-control-row" style="margin-bottom: 8px;">
                 <div class="custom-label-wrap">
                   <label for="topbarOpacityInput">背景透明度</label>
                   <span id="topbarOpacityVal" class="custom-val-badge">65%</span>
@@ -4100,19 +4115,22 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
             </div>
 
             <!-- 底部微播控 Dock 栏自定义 -->
-            <div class="custom-setting-group">
-              <div class="custom-group-title" style="display: flex; align-items: center; gap: 8px;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="14" width="19" height="7" rx="3.5"/><line x1="7" y1="17.5" x2="7.01" y2="17.5" stroke-width="3"/><line x1="12" y1="17.5" x2="12.01" y2="17.5" stroke-width="3"/><line x1="17" y1="17.5" x2="17.01" y2="17.5" stroke-width="3"/></svg>
-                <span>底部导航栏 (Dock Player)</span>
+            <div class="settings-card-group" style="padding: 12px 16px;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><rect x="2.5" y="14" width="19" height="7" rx="3.5"/><line x1="7" y1="17.5" x2="7.01" y2="17.5" stroke-width="3"/><line x1="12" y1="17.5" x2="12.01" y2="17.5" stroke-width="3"/><line x1="17" y1="17.5" x2="17.01" y2="17.5" stroke-width="3"/></svg>
+                <div>
+                  <div class="settings-item-title">底部导航栏 (Dock Player)</div>
+                  <div class="settings-item-sub">调整底部播放器胶囊长短尺寸、背景透明度与毛玻璃</div>
+                </div>
               </div>
-              <div class="custom-control-row">
+              <div class="custom-control-row" style="margin-bottom: 8px;">
                 <div class="custom-label-wrap">
                   <label for="dockWidthInput">长短（宽度）</label>
                   <span id="dockWidthVal" class="custom-val-badge">720px</span>
                 </div>
                 <input type="range" id="dockWidthInput" min="480" max="1080" step="20" value="720" oninput="onDockWidthChange(this.value)" />
               </div>
-              <div class="custom-control-row">
+              <div class="custom-control-row" style="margin-bottom: 8px;">
                 <div class="custom-label-wrap">
                   <label for="dockOpacityInput">透明度</label>
                   <span id="dockOpacityVal" class="custom-val-badge">75%</span>
@@ -4129,12 +4147,15 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
             </div>
 
             <!-- 桌面歌词排版自定义 -->
-            <div class="custom-setting-group">
-              <div class="custom-group-title" style="display: flex; align-items: center; gap: 8px;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
-                <span>桌面歌词排版 (自定义功能)</span>
+            <div class="settings-card-group" style="padding: 12px 16px;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                <div>
+                  <div class="settings-item-title">桌面歌词排版 (Typography)</div>
+                  <div class="settings-item-sub">调整歌词文本行间距与字间距渲染尺度</div>
+                </div>
               </div>
-              <div class="custom-control-row">
+              <div class="custom-control-row" style="margin-bottom: 8px;">
                 <div class="custom-label-wrap">
                   <label for="lyricLineHeightInput">行间距</label>
                   <span id="lyricLineHeightVal" class="custom-val-badge">1.4</span>
@@ -4151,7 +4172,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
             </div>
 
             <!-- 操作行 -->
-            <div class="settings-pane-actions" style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
+            <div class="settings-pane-actions" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-bottom: 4px;">
               <button class="pill-btn" onclick="resetCustomSettings()" style="font-size: 12px; padding: 6px 14px; opacity: 0.85;">恢复默认</button>
               <button class="pill-btn active" onclick="closeModal('settingsModal')" style="font-size: 13px; padding: 7px 20px;">完成</button>
             </div>
@@ -4205,7 +4226,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
               </div>
             </div>
 
-            <div style="margin-top: 14px; padding: 12px 14px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: #a1a1aa; line-height: 1.5;">
+            <div style="margin-top: 12px; padding: 12px 14px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-tertiary); line-height: 1.5;">
               💡 纯粹聆听提示：若遇到部分老旧或磨损光盘读取缓慢，可在顶部操作栏点击「读盘」按钮触发多重扇区安全重试。
             </div>
           </div>
@@ -4244,7 +4265,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
             </div>
 
             <!-- 独立危险操作隔离区 (Danger Zone) -->
-            <div class="settings-danger-card" style="margin-top: 16px; padding: 14px 18px; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.25); border-radius: 14px;">
+            <div class="settings-card-group settings-danger-card" style="margin-top: 12px; padding: 14px 18px; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.22); border-radius: 14px;">
               <div class="settings-row-item" style="padding: 0; border: none;">
                 <div class="settings-item-col">
                   <div class="settings-item-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
@@ -4263,44 +4284,57 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
           <!-- 选项卡 4: 关于 Discflow -->
           <div class="settings-tab-pane" data-tab-pane="about">
-            <div style="text-align: center; padding: 18px 0 14px 0;">
-              <div class="discflow-brand" style="display: inline-flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                <div class="discflow-app-icon-badge" style="width: 34px; height: 34px; border-radius: 8px; background: #000; border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center;">
+            <div style="text-align: center; padding: 14px 0 16px 0;">
+              <div class="discflow-brand" style="display: inline-flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                <span class="discflow-app-icon-badge" style="width: 34px; height: 34px; border-radius: 8px; background: #000; border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center;">
                   {DISCFLOW_ICON_SVG_24}
-                </div>
+                </span>
                 <span class="discflow-wordmark" style="font-size: 20px; font-weight: 700; color: #fff;">{APP_NAME}</span>
               </div>
-              <div style="font-size: 12px; color: #30d158; font-weight: 600; font-family: 'SF Mono', monospace;">v2.0.3 · Windows x64 Native</div>
-              <div style="font-size: 13px; color: #a1a1aa; margin-top: 8px; letter-spacing: 0.3px;">把繁杂留给技术，让你静下心来，好好享受音乐。</div>
+              <div style="font-size: 12px; color: #30d158; font-weight: 600; font-family: 'SF Mono', monospace;">v2.0.4 · Windows x64 Native</div>
             </div>
 
-            <div class="modal-list" style="margin-top: 6px;">
-              <div class="modal-item" style="cursor: default;">
-                <span>关于 Discflow</span>
-                <span class="modal-item-sub">原生无损 CD 音乐播放器 · 16-Bit / 44.1kHz</span>
+            <div class="settings-card-group">
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>关于 Discflow</span>
+                  </div>
+                  <div class="settings-item-sub">原生无损 CD 音乐播放器 · 16-Bit / 44.1kHz 标准</div>
+                </div>
+                <span style="font-size: 12px; color: var(--text-tertiary);">Hi-Fi Native</span>
               </div>
-              <div class="modal-item" style="cursor: default;">
-                <span>音频引擎</span>
-                <span class="modal-item-sub">CD-DA 44.1kHz / 16-Bit PCM 零损直读</span>
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span>音频引擎</span>
+                  </div>
+                  <div class="settings-item-sub">CD-DA Win32 IOCTL 零损直读 & 双缓冲环形渲染</div>
+                </div>
+                <span style="font-size: 12px; color: #30d158; font-weight: 600;">Direct PCM</span>
               </div>
-              <div class="modal-item" style="cursor: default;">
-                <span>元数据与歌词</span>
-                <span class="modal-item-sub">MusicBrainz / FreeDB / 双语滚动 LRC</span>
-              </div>
-              <div class="modal-item" style="cursor: default;">
-                <span>设计理念</span>
-                <span class="modal-item-sub">极简克制，专注纯粹 · 好好享受音乐</span>
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"/><path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"/></svg>
+                    <span>元数据与歌词</span>
+                  </div>
+                  <div class="settings-item-sub">MusicBrainz / FreeDB 匹配 · 双语卡拉 OK 逐字滚动</div>
+                </div>
+                <span style="font-size: 12px; color: var(--text-tertiary);">Sync Engine</span>
               </div>
             </div>
 
             <!-- 快捷键速查表 -->
-            <div style="margin-top: 14px; padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
-              <div style="font-size: 12px; font-weight: 600; color: #a1a1aa; margin-bottom: 8px;">常用快捷键速查</div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 12px; color: #d4d4d8;">
-                <div style="display: flex; justify-content: space-between;"><span>播放 / 暂停</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">Space</kbd></div>
-                <div style="display: flex; justify-content: space-between;"><span>上一曲 / 下一曲</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">← / →</kbd></div>
-                <div style="display: flex; justify-content: space-between;"><span>调节音量</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">↑ / ↓</kbd></div>
-                <div style="display: flex; justify-content: space-between;"><span>双语歌词切换</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">T</kbd></div>
+            <div class="settings-card-group" style="padding: 12px 16px;">
+              <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">常用快捷键速查</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 12px; color: var(--text-secondary);">
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>播放 / 暂停</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">Space</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>上一曲 / 下一曲</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">← / →</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>调节音量</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">↑ / ↓</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>双语歌词切换</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">T</kbd></div>
               </div>
             </div>
           </div>
@@ -4777,6 +4811,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     document.querySelectorAll(".settings-tab-pane").forEach(pane => {{
       pane.classList.toggle("active", pane.dataset.tabPane === tabName);
     }});
+    const body = document.querySelector(".settings-modal-body");
+    if (body) {{
+      body.scrollTop = 0;
+    }}
   }}
 
   function onDockBlurChange(val) {{
