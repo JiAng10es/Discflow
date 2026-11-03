@@ -26,13 +26,13 @@ class TestIconRedesign(unittest.TestCase):
         self.assertIn('class="top-floating-left"', self.content)
         self.assertIn('class="top-floating-right"', self.content)
 
-        # 2. 读盘按钮：CD 环形轨道与顺时针箭头
+        # 2. 读盘按钮：Apple SF 风格双流线旋光 CD 图标
         rescan_start = self.content.find('id="topRescanBtn"')
         self.assertNotEqual(rescan_start, -1)
         rescan_end = self.content.find('</button>', rescan_start)
         rescan_html = self.content[rescan_start:rescan_end]
-        self.assertIn('circle cx="12" cy="12" r="2.5"', rescan_html)
-        self.assertIn('M21.5 12A9.5 9.5 0 1 1 12 2.5v2.8', rescan_html)
+        self.assertIn('circle cx="12" cy="12" r="3"', rescan_html)
+        self.assertIn('M12 3a9 9 0 0 1 8.5 6', rescan_html)
 
         # 3. 出盘按钮：圆角倒角三角形 + 平滑托盘横条
         eject_start = self.content.find('id="topEjectBtn"')

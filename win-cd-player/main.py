@@ -1001,6 +1001,47 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     );
   }}
 
+  /* 全局与弹窗统一 Apple 极简悬浮微细滚动条规范 */
+  ::-webkit-scrollbar {{
+    width: 6px;
+    height: 6px;
+  }}
+  ::-webkit-scrollbar-track {{
+    background: transparent;
+  }}
+  ::-webkit-scrollbar-thumb {{
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+  }}
+  ::-webkit-scrollbar-thumb:hover {{
+    background: rgba(255, 255, 255, 0.38);
+  }}
+  [data-theme="light"] ::-webkit-scrollbar-thumb {{
+    background: rgba(0, 0, 0, 0.2);
+  }}
+  [data-theme="light"] ::-webkit-scrollbar-thumb:hover {{
+    background: rgba(0, 0, 0, 0.38);
+  }}
+
+  /* 歌词匹配候选列表、专辑匹配列表、系统设置面板、独立歌词视口 */
+  .lyric-candidate-list,
+  .album-cand-list,
+  .settings-modal-body,
+  .lyrics-viewport,
+  .queue-viewport,
+  #standaloneLyricsViewport {{
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }}
+  [data-theme="light"] .lyric-candidate-list,
+  [data-theme="light"] .album-cand-list,
+  [data-theme="light"] .settings-modal-body,
+  [data-theme="light"] .lyrics-viewport,
+  [data-theme="light"] .queue-viewport,
+  [data-theme="light"] #standaloneLyricsViewport {{
+    scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+  }}
+
   .lyrics-viewport::-webkit-scrollbar,
   .queue-viewport::-webkit-scrollbar {{
     width: 0px;
@@ -2715,24 +2756,25 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   /* 竖向独立悬浮音量卡片 */
+  /* 现代 Apple Control Center 风格质感悬浮音量卡片 */
   .dock-volume-popover.vertical {{
     position: absolute;
     bottom: calc(100% + 14px);
     right: 50%;
     transform: translateX(50%) translateY(8px);
-    width: 44px;
-    height: 160px;
-    padding: 10px 6px;
+    width: 52px;
+    height: 180px;
+    padding: 12px 8px 10px 8px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    background: var(--popover-bg);
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
-    border: 1px solid var(--popover-border);
-    box-shadow: var(--popover-shadow);
+    background: rgba(26, 26, 32, 0.92);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.16);
     border-radius: 22px;
     opacity: 0;
     pointer-events: none;
@@ -2747,39 +2789,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     transform: translateX(50%) translateY(0);
   }}
 
-  .dock-vol-hit.vertical {{
-    width: 28px;
-    height: 96px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    touch-action: none;
-  }}
-
-  .dock-vol-track.vertical {{
-    width: 8px;
-    height: 100%;
-    background: var(--scrubber-bg);
-    border-radius: 999px;
-    overflow: hidden;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    transition: width 0.15s ease;
-  }}
-
-  .dock-vol-hit.vertical:hover .dock-vol-track.vertical {{
-    width: 10px;
-  }}
-
-  .dock-vol-fill.vertical {{
-    width: 100%;
-    height: 80%;
-    background: var(--color-accent, #FA2D48);
-    border-radius: 999px;
-    transition: height 0.05s linear;
+  [data-theme="light"] .dock-volume-popover.vertical {{
+    background: rgba(255, 255, 255, 0.94);
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    color: #1D1D1F;
   }}
 
   .dock-vol-val-text {{
@@ -2789,12 +2803,90 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     color: var(--text-primary);
     text-align: center;
     line-height: 1;
+    letter-spacing: 0.3px;
+    opacity: 0.88;
+  }}
+
+  .dock-vol-hit.vertical {{
+    width: 32px;
+    height: 104px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+  }}
+
+  .dock-vol-track.vertical {{
+    width: 28px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    box-sizing: border-box;
+    transition: background-color 0.15s ease;
+  }}
+
+  [data-theme="light"] .dock-vol-track.vertical {{
+    background: rgba(0, 0, 0, 0.08);
+    border-color: rgba(0, 0, 0, 0.05);
+  }}
+
+  .dock-vol-hit.vertical:hover .dock-vol-track.vertical,
+  .dock-vol-hit.vertical.is-dragging .dock-vol-track.vertical {{
+    background: rgba(255, 255, 255, 0.16);
+  }}
+
+  [data-theme="light"] .dock-vol-hit.vertical:hover .dock-vol-track.vertical,
+  [data-theme="light"] .dock-vol-hit.vertical.is-dragging .dock-vol-track.vertical {{
+    background: rgba(0, 0, 0, 0.11);
+  }}
+
+  .dock-vol-fill.vertical {{
+    width: 100%;
+    height: 80%;
+    background: #FFFFFF;
+    border-radius: 12px;
+    box-shadow: 0 -2px 10px rgba(255, 255, 255, 0.3);
+    transition: height 0.05s linear;
+  }}
+
+  [data-theme="light"] .dock-vol-fill.vertical {{
+    background: #1D1D1F;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15);
   }}
 
   .dock-vol-popover-icon {{
-    font-size: 14px;
-    opacity: 0.8;
-    line-height: 1;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.16s ease;
+  }}
+
+  [data-theme="light"] .dock-vol-popover-icon {{
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.08);
+  }}
+
+  .dock-vol-popover-icon:hover {{
+    background: rgba(255, 255, 255, 0.14);
+    transform: scale(1.06);
+  }}
+
+  [data-theme="light"] .dock-vol-popover-icon:hover {{
+    background: rgba(0, 0, 0, 0.1);
   }}
 
   .dock-artwork-thumb {{
@@ -3667,12 +3759,14 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
           </span>
         </button>
 
-        <!-- 图标 2: 读盘纯图标 -->
+        <!-- 图标 2: 读盘纯图标 (Apple SF 风格双流线旋光 CD 图标) -->
         <button id="topRescanBtn" class="top-icon-btn" onclick="rescanDrive()" title="读取 / 扫描光驱">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="2.5"></circle>
-            <path d="M21.5 12A9.5 9.5 0 1 1 12 2.5v2.8"></path>
-            <path d="M12 2.5L9.5 5.3m2.5-2.8l2.5 2.8"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 3a9 9 0 0 1 8.5 6"></path>
+            <polyline points="16 9 20.5 9 20.5 4.5"></polyline>
+            <path d="M12 21a9 9 0 0 1-8.5-6"></path>
+            <polyline points="8 15 3.5 15 3.5 19.5"></polyline>
           </svg>
         </button>
 
@@ -3979,7 +4073,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
                 <div id="settingsTopbarPreview" style="display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: rgba(0,0,0,0.35); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
                   <span style="font-size: 11px; color: #a1a1aa;">效果预览:</span>
                   <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2.5"/><path d="M21.5 12A9.5 9.5 0 1 1 12 2.5v2.8"/></svg>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3a9 9 0 0 1 8.5 6"/><polyline points="16 9 20.5 9 20.5 4.5"/><path d="M12 21a9 9 0 0 1-8.5-6"/><polyline points="8 15 3.5 15 3.5 19.5"/></svg>
                   </div>
                   <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.4a1.2 1.2 0 0 0-1.02.58l-6.4 10.2A1.2 1.2 0 0 0 5.6 17h12.8a1.2 1.2 0 0 0 1.02-1.82L13.02 5a1.2 1.2 0 0 0-1.02-.6z"/><rect x="4.5" y="19" width="15" height="2.2" rx="1.1"/></svg>
@@ -5306,9 +5400,17 @@ function toggleDiscflowMenu(event) {{
   let userScrollLockUntil = 0;
 
   const lyricsViewport = document.getElementById("lyricsViewport");
-  lyricsViewport.addEventListener("wheel", () => {{
-    userScrollLockUntil = Date.now() + 2600;
-  }}, {{ passive: true }});
+  if (lyricsViewport) {{
+    lyricsViewport.addEventListener("wheel", () => {{
+      userScrollLockUntil = Date.now() + 2600;
+    }}, {{ passive: true }});
+  }}
+  const standaloneLyricsVp = document.getElementById("standaloneLyricsViewport");
+  if (standaloneLyricsVp) {{
+    standaloneLyricsVp.addEventListener("wheel", () => {{
+      userScrollLockUntil = Date.now() + 2600;
+    }}, {{ passive: true }});
+  }}
 
   function formatTime(sec) {{
     const s = Math.max(0, Math.floor(sec || 0));
@@ -5456,75 +5558,84 @@ function toggleDiscflowMenu(event) {{
 
   function renderLyricsList(lyrics) {{
     lyrics = ensureWordTimings(lyrics);
-    lyricsViewport.innerHTML = "";
     appState.activeLyricIndex = -1;
 
-    if (!lyrics || lyrics.length === 0) {{
-      // 区分两种空：根本没放光盘（引导语），还是放了但这首歌没歌词（说明性文案）
-      const hasDisc = (appState.tracks || []).length > 0;
-      lyricsViewport.innerHTML = hasDisc
-        ? `
-        <div class="lyrics-empty">
-          <div class="lyrics-empty-title">纯享 CD 原始无损音轨</div>
-          <div class="lyrics-empty-sub">当前曲目为纯音乐或暂无时间轴歌词</div>
-        </div>
-      `
-        : `
-        <div class="lyrics-empty">
-          <div class="lyrics-empty-title">等待放入音频 CD</div>
-          <div class="lyrics-empty-sub">插入光盘后会自动读取曲目与歌词，也可以从「资料库」直接播放已归档的唱片</div>
-        </div>
-      `;
-      return;
-    }}
+    const viewports = [
+      document.getElementById("lyricsViewport"),
+      document.getElementById("standaloneLyricsViewport")
+    ].filter(Boolean);
 
-    lyrics.forEach((line, idx) => {{
-      const div = document.createElement("div");
-      div.className = "lyric-item";
-      div.dataset.index = idx;
-
-      const orig = document.createElement("div");
-      orig.className = "lyric-orig";
-      if (Array.isArray(line.words) && line.words.length) {{
-        line.words.forEach(w => {{
-          const span = document.createElement("span");
-          span.className = "lyric-word";
-          span.dataset.t = String(typeof w.t === "number" ? w.t : line.time);
-          span.dataset.d = String(typeof w.d === "number" && w.d > 0 ? w.d : 0.25);
-          span.textContent = w.w || "";
-          orig.appendChild(span);
-        }});
-      }} else {{
-        orig.textContent = line.text;
-      }}
-      div.appendChild(orig);
-
-      if (line.translation) {{
-        const trans = document.createElement("div");
-        trans.className = "lyric-trans";
-        trans.textContent = line.translation;
-        div.appendChild(trans);
+    viewports.forEach(vp => {{
+      vp.innerHTML = "";
+      if (!lyrics || lyrics.length === 0) {{
+        const hasDisc = (appState.tracks || []).length > 0;
+        vp.innerHTML = hasDisc
+          ? `
+          <div class="lyrics-empty">
+            <div class="lyrics-empty-title">纯享 CD 原始无损音轨</div>
+            <div class="lyrics-empty-sub">当前曲目为纯音乐或暂无时间轴歌词</div>
+          </div>
+        `
+          : `
+          <div class="lyrics-empty">
+            <div class="lyrics-empty-title">等待放入音频 CD</div>
+            <div class="lyrics-empty-sub">插入光盘后会自动读取曲目与歌词，也可以从「资料库」直接播放已归档的唱片</div>
+          </div>
+        `;
+        return;
       }}
 
-      div.addEventListener("click", () => {{
-        userScrollLockUntil = 0;
-        if (window.pywebview && window.pywebview.api) {{
-          window.pywebview.api.seek_to(line.time);
+      lyrics.forEach((line, idx) => {{
+        const div = document.createElement("div");
+        div.className = "lyric-item";
+        div.dataset.index = idx;
+
+        const orig = document.createElement("div");
+        orig.className = "lyric-orig";
+        if (Array.isArray(line.words) && line.words.length) {{
+          line.words.forEach(w => {{
+            const span = document.createElement("span");
+            span.className = "lyric-word";
+            span.dataset.t = String(typeof w.t === "number" ? w.t : line.time);
+            span.dataset.d = String(typeof w.d === "number" && w.d > 0 ? w.d : 0.25);
+            span.textContent = w.w || "";
+            orig.appendChild(span);
+          }});
+        }} else {{
+          orig.textContent = line.text;
         }}
-      }});
+        div.appendChild(orig);
 
-      lyricsViewport.appendChild(div);
+        if (line.translation) {{
+          const trans = document.createElement("div");
+          trans.className = "lyric-trans";
+          trans.textContent = line.translation;
+          div.appendChild(trans);
+        }}
+
+        div.addEventListener("click", () => {{
+          userScrollLockUntil = 0;
+          if (window.pywebview && window.pywebview.api) {{
+            window.pywebview.api.seek_to(line.time);
+          }}
+        }});
+
+        vp.appendChild(div);
+      }});
     }});
+
+    applyTranslationVisibility(appState.showTranslation !== false);
   }}
 
-  function updateActiveLyric(elapsedSec) {{
+  function updateActiveLyric(elapsedSec, forceUpdate = false) {{
     const lyrics = appState.lyrics;
     if (!lyrics || lyrics.length === 0) return;
 
     // 加 60ms 前向偏置：避免轮询时间在行边界抖动时导致高亮在两行之间来回跳
     const probe = (Number(elapsedSec) || 0) + 0.06;
 
-    let activeIdx = 0;
+    // 修复 Bug：前奏阶段（当前时间小于首句歌词起始时间）不应提前激活首句，设为 -1
+    let activeIdx = -1;
     for (let i = lyrics.length - 1; i >= 0; i--) {{
       if (probe >= lyrics[i].time) {{
         activeIdx = i;
@@ -5532,28 +5643,37 @@ function toggleDiscflowMenu(event) {{
       }}
     }}
 
-    if (activeIdx === appState.activeLyricIndex) return;
+    if (!forceUpdate && activeIdx === appState.activeLyricIndex) return;
     appState.activeLyricIndex = activeIdx;
 
-    const items = lyricsViewport.querySelectorAll(".lyric-item");
-    items.forEach((el, idx) => {{
-      el.classList.remove("active", "near");
-      if (idx === activeIdx) {{
-        el.classList.add("active");
-      }} else if (Math.abs(idx - activeIdx) === 1) {{
-        el.classList.add("near");
+    const viewports = [
+      document.getElementById("lyricsViewport"),
+      document.getElementById("standaloneLyricsViewport")
+    ].filter(Boolean);
+
+    viewports.forEach(vp => {{
+      const items = vp.querySelectorAll(".lyric-item");
+      items.forEach((el, idx) => {{
+        el.classList.remove("active", "near");
+        if (activeIdx >= 0) {{
+          if (idx === activeIdx) {{
+            el.classList.add("active");
+          }} else if (Math.abs(idx - activeIdx) === 1) {{
+            el.classList.add("near");
+          }}
+        }}
+      }});
+
+      if (activeIdx >= 0 && Date.now() > userScrollLockUntil && items[activeIdx]) {{
+        const targetEl = items[activeIdx];
+        const viewportHeight = vp.clientHeight;
+        const targetTop = targetEl.offsetTop - viewportHeight * 0.36 + targetEl.clientHeight * 0.5;
+        vp.scrollTo({{
+          top: Math.max(0, targetTop),
+          behavior: "smooth"
+        }});
       }}
     }});
-
-    if (Date.now() > userScrollLockUntil && items[activeIdx]) {{
-      const targetEl = items[activeIdx];
-      const viewportHeight = lyricsViewport.clientHeight;
-      const targetTop = targetEl.offsetTop - viewportHeight * 0.36 + targetEl.clientHeight * 0.5;
-      lyricsViewport.scrollTo({{
-        top: Math.max(0, targetTop),
-        behavior: "smooth"
-      }});
-    }}
   }}
 
   // --- 逐字歌词卡拉 OK 渲染循环（rAF 自走时钟 + 轻微纠偏，避免高亮来回跳动） ---
@@ -5600,20 +5720,20 @@ function toggleDiscflowMenu(event) {{
       }}
       karaokeLastTs = now;
 
-      if (!appState.isPlaying) return;
       const lyrics = appState.lyrics;
       if (!lyrics || !lyrics.length) return;
       const idx = appState.activeLyricIndex;
+      if (idx < 0) return;
       const line = lyrics[idx];
       if (!line || !Array.isArray(line.words) || !line.words.length) return;
-      const item = lyricsViewport.querySelector(`.lyric-item[data-index="${{idx}}"]`);
-      if (!item) return;
-      const sec = karaokeClock;
-      item.querySelectorAll(".lyric-word").forEach(wEl => {{
-        const t = parseFloat(wEl.dataset.t || "0");
-        const d = Math.max(0.08, parseFloat(wEl.dataset.d || "0.25"));
-        const p = Math.max(0, Math.min(1, (sec - t) / d));
-        wEl.style.setProperty("--wp", (p * 100).toFixed(1) + "%");
+      const sec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
+      document.querySelectorAll(`.lyric-item[data-index="${{idx}}"]`).forEach(item => {{
+        item.querySelectorAll(".lyric-word").forEach(wEl => {{
+          const t = parseFloat(wEl.dataset.t || "0");
+          const d = Math.max(0.08, parseFloat(wEl.dataset.d || "0.25"));
+          const p = Math.max(0, Math.min(1, (sec - t) / d));
+          wEl.style.setProperty("--wp", (p * 100).toFixed(1) + "%");
+        }});
       }});
     }};
     karaokeRafId = requestAnimationFrame(step);
@@ -6938,7 +7058,20 @@ function toggleDiscflowMenu(event) {{
     if (viewName === "library") {{
       renderLibraryCards();
     }} else if (viewName === "lyrics") {{
-      renderStandaloneLyrics();
+      const svp = document.getElementById("standaloneLyricsViewport");
+      if (svp && svp.children.length === 0 && appState.lyrics && appState.lyrics.length) {{
+        renderLyricsList(appState.lyrics);
+      }}
+      updateActiveLyric(appState.elapsedSec || 0, true);
+      if (svp && appState.activeLyricIndex >= 0) {{
+        const item = svp.querySelector(`.lyric-item[data-index="${{appState.activeLyricIndex}}"]`);
+        if (item) {{
+          svp.scrollTo({{
+            top: Math.max(0, item.offsetTop - svp.clientHeight * 0.36 + item.clientHeight * 0.5),
+            behavior: "instant"
+          }});
+        }}
+      }}
     }}
   }}
 
