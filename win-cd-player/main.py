@@ -3517,18 +3517,18 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
         <!-- 图标 2: 读盘纯图标 -->
         <button id="topRescanBtn" class="top-icon-btn" onclick="rescanDrive()" title="读取 / 扫描光驱">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="2.5"></circle>
+            <path d="M21.5 12A9.5 9.5 0 1 1 12 2.5v2.8"></path>
+            <path d="M12 2.5L9.5 5.3m2.5-2.8l2.5 2.8"></path>
           </svg>
         </button>
 
         <!-- 图标 3: 弹出纯图标 -->
         <button id="topEjectBtn" class="top-icon-btn" onclick="ejectDrive()" title="弹出光驱托盘">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="12 4 4 14 20 14 12 4"></polygon>
-            <line x1="4" y1="19" x2="20" y2="19"></line>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 4.4a1.2 1.2 0 0 0-1.02.58l-6.4 10.2A1.2 1.2 0 0 0 5.6 17h12.8a1.2 1.2 0 0 0 1.02-1.82L13.02 5a1.2 1.2 0 0 0-1.02-.6z"></path>
+            <rect x="4.5" y="19" width="15" height="2.2" rx="1.1"></rect>
           </svg>
         </button>
 
@@ -3543,8 +3543,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
       <!-- 右侧悬浮图标 4: 外观模式切换按钮 (深色/浅色一键切换) -->
       <div class="top-floating-right">
         <button id="topThemeBtn" class="top-icon-btn" onclick="cycleTheme()" title="切换外观模式 (浅色 / 深色)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" fill-opacity="0.15"></path>
           </svg>
         </button>
       </div>
@@ -3554,10 +3554,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <!-- 第一个：资料库 (抓轨过的专辑) -->
         <div class="discflow-menu-item" onclick="selectDiscflowMenu('library')">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
-            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
-            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
-            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+            <rect x="3.5" y="3.5" width="7" height="7" rx="2.5"></rect>
+            <rect x="13.5" y="3.5" width="7" height="7" rx="2.5"></rect>
+            <rect x="3.5" y="13.5" width="7" height="7" rx="2.5"></rect>
+            <rect x="13.5" y="13.5" width="7" height="7" rx="2.5"></rect>
           </svg>
           <span>资料库</span>
         </div>
@@ -3565,8 +3565,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <!-- 第二个：搜索 (搜索资料库中的专辑、歌名、包括歌手) -->
         <div class="discflow-menu-item" onclick="selectDiscflowMenu('search')">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            <circle cx="10.5" cy="10.5" r="7"></circle>
+            <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
           </svg>
           <span>搜索</span>
         </div>
@@ -3576,7 +3576,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <!-- 最下面：设置按钮 -->
         <div class="discflow-menu-item" onclick="selectDiscflowMenu('settings')">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"></circle>
+            <circle cx="12" cy="12" r="3.2"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
           <span>设置</span>
@@ -3640,21 +3640,23 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
               <!-- 资源库搜索框 (常驻且不遮挡任何按键) -->
               <div class="library-search-box-wrap" id="librarySearchBoxWrap" style="display: flex; align-items: center; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-hairline); border-radius: 999px; padding: 4px 12px; gap: 6px;">
                 <button id="librarySearchSubmitBtn" onclick="submitLibrarySearch()" title="点击搜索" style="background: transparent; border: none; outline: none; cursor: pointer; display: flex; align-items: center; color: var(--text-primary); padding: 0;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.8;">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.8;">
+                    <circle cx="10.5" cy="10.5" r="7"></circle>
+                    <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
                   </svg>
                 </button>
                 <input type="text" id="librarySearchInput" class="library-search-input" placeholder="搜索专辑、歌名或歌手..." oninput="filterLibraryCards(this.value)" onkeydown="if(event.key==='Enter') submitLibrarySearch()" style="background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 13px; width: 170px;" />
                 <button id="librarySearchClearBtn" class="library-search-clear-btn" onclick="clearLibrarySearch()" title="清空搜索" style="background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; padding: 2px;">✕</button>
               </div>
               <!-- 打开本地目录按钮 -->
-              <button id="openLibraryFolderBtn" class="pill-btn" onclick="openLibraryFolder()" title="在文件管理器中打开资源库存储目录">
-                <span>📂 本地目录</span>
+              <button id="openLibraryFolderBtn" class="pill-btn" onclick="openLibraryFolder()" title="在文件管理器中打开资源库存储目录" style="display: inline-flex; align-items: center; gap: 5px;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h3.5a2 2 0 0 1 1.4.6L12.5 6H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-11z"/></svg>
+                <span>本地目录</span>
               </button>
               <!-- 返回播放页面按钮 -->
-              <button class="pill-btn" onclick="switchMainView('cd')" title="返回常规播放界面">
-                <span>◀ 返回播放</span>
+              <button class="pill-btn" onclick="switchMainView('cd')" title="返回常规播放界面" style="display: inline-flex; align-items: center; gap: 4px;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg>
+                <span>返回播放</span>
               </button>
               <!-- 抓轨当前光盘按钮 -->
               <button class="pill-btn active" onclick="startRippingCurrentCd()" title="转录放入的光盘">
@@ -3698,20 +3700,23 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <div class="dock-center-controls">
           <button class="dock-ctrl-btn" onclick="prevTrack()" title="上一曲">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+              <rect x="4" y="5" width="2" height="14" rx="1"></rect>
+              <path d="M19 5.8a1 1 0 0 0-1.55-.84l-9.5 6.2a1 1 0 0 0 0 1.68l9.5 6.2A1 1 0 0 0 19 18.2V5.8z"></path>
             </svg>
           </button>
           <button id="dockPlayPauseBtn" class="dock-play-pause-btn" onclick="togglePlayPause()" title="播放 / 暂停">
             <svg id="dockPlayIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
-              <path d="M8 5.14v13.72c0 .79.87 1.27 1.54.84l11-6.86c.62-.39.62-1.29 0-1.68l-11-6.86C8.87 3.87 8 4.35 8 5.14z"/>
+              <path d="M7.8 4.6a1.2 1.2 0 0 0-1.8 1.05v12.7a1.2 1.2 0 0 0 1.8 1.05l11-6.35a1.2 1.2 0 0 0 0-2.1l-11-6.35z"></path>
             </svg>
             <svg id="dockPauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+              <rect x="6" y="5" width="3.5" height="14" rx="1.75"></rect>
+              <rect x="14.5" y="5" width="3.5" height="14" rx="1.75"></rect>
             </svg>
           </button>
           <button class="dock-ctrl-btn" onclick="nextTrack()" title="下一曲">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              <path d="M5 5.8a1 1 0 0 1 1.55-.84l9.5 6.2a1 1 0 0 1 0 1.68l-9.5 6.2A1 1 0 0 1 5 18.2V5.8z"></path>
+              <rect x="18" y="5" width="2" height="14" rx="1"></rect>
             </svg>
           </button>
         </div>
@@ -3731,19 +3736,16 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <!-- 双语翻译开关：随时切换歌词译文显示 -->
         <button id="dockTransBtn" class="dock-action-btn dock-trans-btn" onclick="toggleBilingualLyrics()" title="双语翻译：已开启（点击关闭）" aria-pressed="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 5h8M7 3v2"></path>
-            <path d="M9.5 5c0 3.6-2.6 6.8-6 8.4"></path>
-            <path d="M5 9.2c1.7 2.3 4 3.9 6.8 4.6"></path>
-            <path d="M12.5 21l3.9-9.5L20.3 21"></path>
-            <path d="M14 17.2h4.8"></path>
+            <path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"></path>
+            <path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"></path>
           </svg>
         </button>
         <div class="dock-volume-wrap" id="dockVolumeWrap">
           <button id="dockVolBtn" class="dock-action-btn" onclick="toggleDockVolumeSlider(event)" title="音量调节（滚轮可微调）">
             <svg id="dockVolBtnIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              <path d="M11 4.5L6.5 8H3.5a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 3.5 16h3L11 19.5a1 1 0 0 0 1.6-.8V5.3a1 1 0 0 0-1.6-.8z" fill="currentColor"></path>
+              <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+              <path d="M18.8 5.2a9 9 0 0 1 0 13.6"></path>
             </svg>
           </button>
           <!-- 悬浮竖向音量调节卡片 (气泡置于按钮上方，竖向排布，不改变底栏宽度比例) -->
@@ -4016,9 +4018,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     <div class="modal-dialog" style="max-width: 540px; border-radius: 18px; padding: 22px 24px;">
       <div class="modal-header" style="margin-bottom: 14px;">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.85;">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;">
+            <circle cx="10.5" cy="10.5" r="7"></circle>
+            <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
           </svg>
           <h2 class="modal-title" style="font-size: 17px; font-weight: 700;">搜索资源库</h2>
         </div>
@@ -4027,9 +4029,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
       <!-- 搜索输入条 -->
       <div style="display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-hairline); border-radius: 12px; padding: 8px 14px;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.5;">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;">
+          <circle cx="10.5" cy="10.5" r="7"></circle>
+          <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
         </svg>
         <input type="text" id="modalSearchInput" placeholder="搜索已抓轨专辑、歌名或歌手..."
                oninput="onModalSearchInput(this.value)"
@@ -4119,27 +4121,26 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <div class="fluid-card-header">
           <div class="fluid-mode-group">
             <button id="fluidModeRepeatAll" class="fluid-mode-btn active" onclick="setFluidPlayMode('repeat_all')" title="列表循环">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
               </svg>
             </button>
             <button id="fluidModeShuffle" class="fluid-mode-btn" onclick="setFluidPlayMode('shuffle')" title="随机播放">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 3h5v5"/><path d="M4 20l6.2-6.2M21 3l-7.8 7.8"/><path d="M21 21h-5v-5"/><path d="M15.2 15.2l5.8 5.8M4 4l9.6 9.6"/>
               </svg>
             </button>
             <button id="fluidModeRepeatOne" class="fluid-mode-btn" onclick="setFluidPlayMode('repeat_one')" title="单曲循环">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
-                <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><path d="M11.2 10.5l1.6-1.1v5.2m-1.2 0h2.4" stroke-width="1.8"/>
               </svg>
             </button>
           </div>
 
           <div class="fluid-volume-group">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.8">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              <path d="M11 4.5L6.5 8H3.5a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 3.5 16h3L11 19.5a1 1 0 0 0 1.6-.8V5.3a1 1 0 0 0-1.6-.8z" fill="currentColor"></path>
+              <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
             </svg>
             <div id="fluidVolHit" class="fluid-vol-hit" title="滑动调节音量">
               <div class="fluid-vol-track">
@@ -4160,8 +4161,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
       <div class="md-player-dock">
         <!-- 播放列表与控制面板触发锚点 (液态玻璃弹性形变) -->
         <button id="mdPlaylistMorphBtn" class="md-dock-icon-btn" onclick="toggleFluidPlaylistMorph(event)" title="播放列表与控制面板">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3.5" y1="6" x2="14" y2="6"></line>
+            <line x1="3.5" y1="12" x2="11.5" y2="12"></line>
+            <line x1="3.5" y1="18" x2="9.5" y2="18"></line>
+            <path d="M18 16a2 2 0 1 1-2-2c.6 0 1.2.2 1.6.6V7.5l4-1.2v6.2a2 2 0 1 1-2-2c.6 0 1.2.2 1.6.6" fill="currentColor"></path>
           </svg>
         </button>
 
@@ -4178,10 +4182,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <div class="md-dock-controls">
           <button id="mdDockPlayPauseBtn" class="md-dock-icon-btn play-pause-btn" onclick="togglePlayPause()" title="播放 / 暂停">
             <svg id="mdDockPlayIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:none;">
-              <path d="M8 5.14v13.72c0 .79.87 1.27 1.54.84l11-6.86c.62-.39.62-1.29 0-1.68l-11-6.86C8.87 3.87 8 4.35 8 5.14z"/>
+              <path d="M7.8 4.6a1.2 1.2 0 0 0-1.8 1.05v12.7a1.2 1.2 0 0 0 1.8 1.05l11-6.35a1.2 1.2 0 0 0 0-2.1l-11-6.35z"></path>
             </svg>
             <svg id="mdDockPauseIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+              <rect x="6" y="5" width="3.5" height="14" rx="1.75"></rect>
+              <rect x="14.5" y="5" width="3.5" height="14" rx="1.75"></rect>
             </svg>
           </button>
         </div>
@@ -4849,15 +4854,15 @@ function toggleDiscflowMenu(event) {{
   const PLAY_MODE_INFO = {{
     order: {{
       title: "当前：顺序播放 (列表循环)",
-      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>`
+      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`
     }},
     shuffle: {{
       title: "当前：随机播放",
-      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>`
+      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20l6.2-6.2M21 3l-7.8 7.8"/><path d="M21 21h-5v-5"/><path d="M15.2 15.2l5.8 5.8M4 4l9.6 9.6"/></svg>`
     }},
     one: {{
       title: "当前：单曲循环",
-      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/><text x="12" y="15" font-size="9" font-weight="800" text-anchor="middle" fill="currentColor">1</text></svg>`
+      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><path d="M11.2 10.5l1.6-1.1v5.2m-1.2 0h2.4" stroke-width="1.8"/></svg>`
     }}
   }};
 
@@ -5267,20 +5272,20 @@ function toggleDiscflowMenu(event) {{
         </div>
         <div class="play-mode-group" role="radiogroup" aria-label="播放模式">
           <button class="mode-pill-btn ${{curMode === 'order' ? 'active' : ''}}" data-mode="order" onclick="setPlayMode('order')" title="顺序播放 (列表循环)">
-            <svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
             <span>顺序</span>
           </button>
           <button class="mode-pill-btn ${{curMode === 'shuffle' ? 'active' : ''}}" data-mode="shuffle" onclick="setPlayMode('shuffle')" title="随机播放">
-            <svg viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20l6.2-6.2M21 3l-7.8 7.8"/><path d="M21 21h-5v-5"/><path d="M15.2 15.2l5.8 5.8M4 4l9.6 9.6"/></svg>
             <span>随机</span>
           </button>
           <button class="mode-pill-btn ${{curMode === 'one' ? 'active' : ''}}" data-mode="one" onclick="setPlayMode('one')" title="单曲循环">
-            <svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/><path d="M12 9v6m-1-5l1-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><path d="M11.2 10.5l1.6-1.1v5.2m-1.2 0h2.4" stroke-width="1.8"/></svg>
             <span>单曲</span>
           </button>
         </div>
         <button class="mode-pill-btn match-meta-btn" onclick="openMatchMetadataModal()" title="手动匹配专辑信息（封面 / 曲名 / 歌词）">
-          <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
           <span>匹配</span>
         </button>
       </div>
@@ -6332,14 +6337,14 @@ function toggleDiscflowMenu(event) {{
   var volumePersistTimer = null;
 
   function volumeIconMarkup(v) {{
-    const speaker = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>';
+    const speaker = '<path d="M11 4.5L6.5 8H3.5a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 3.5 16h3L11 19.5a1 1 0 0 0 1.6-.8V5.3a1 1 0 0 0-1.6-.8z" fill="currentColor"></path>';
     if (v <= 0) {{
-      return speaker + '<line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>';
+      return speaker + '<line x1="16.5" y1="9.5" x2="21.5" y2="14.5"></line><line x1="21.5" y1="9.5" x2="16.5" y2="14.5"></line>';
     }}
     if (v < 50) {{
-      return speaker + '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+      return speaker + '<path d="M15.5 8.5a5 5 0 0 1 0 7"></path>';
     }}
-    return speaker + '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>';
+    return speaker + '<path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.8 5.2a9 9 0 0 1 0 13.6"></path>';
   }}
 
   function renderVolumeUI(vol) {{
