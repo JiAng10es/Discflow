@@ -1,8 +1,8 @@
 # Discflow 产品需求文档 (Product Requirements Document, PRD)
 
-**版本号**：v2.0.0 (Final — Cleanup & Polish)  
+**版本号**：v2.0.1 (Symmetric Dock Baseline)  
 **创建时间**：2026-11-01  
-**最后更新**：2026-11-02  
+**最后更新**：2026-11-03  
 **状态**：已冻结基线 (Approved Baseline)  
 **适用对象**：产品经理、前端开发工程师、底层音频/硬件开发工程师、测试工程师  
 
@@ -1193,3 +1193,31 @@ v1.11.7 的专辑匹配只有 iTunes 单一来源，且「输入即自动套用�
 - `PRD.md` 是唯一的产品事实来源，`PLAN.md` 已废弃。
 - 任何样式类若在 HTML/JS 中找不到引用，视为垃圾代码，应删除而不是保留「以后可能用得上」。
 - 新增弹窗/覆盖层前先 `grep` 是否已有同名 ID，避免重复 ID 问题复发。
+
+
+---
+
+## 30. v2.0.1 迭代：底部常驻微播控 Dock 栏对称优化（现代三段式 Grid 强居中）
+
+### 30.1 优化背景与根因
+在 v2.0.0 清理版本中，为解决左侧曲目信息被挤压成省略号的问题，将左侧 .dock-album-cluster 扩大为 236px，右侧动作区设为自适应（约 78px）。但在 justify-content: space-between 弹性盒模型下，左重右轻导致中间核心播控区（上一曲/播放暂停/下一曲、进度条）**物理向右偏移了约 79 像素**，偏离底栏胶囊的正几何中心线。
+
+### 30.2 方案选型与用户决策
+团队生成了三组高保真视觉渲染图与带 50% 物理中轴线参考线的对比图供用户决策：
+- **样式一（用户确认）**：现代三段式 Grid 强居中，保持现有功能按钮不变，中控 100% 绝对置于正中轴线；
+- **样式二**：三段式强居中 + 右侧增设循环模式与曲目列表抽屉按键；
+- **样式三**：三段式强居中 + 右侧引入 Hi-Fi CD-DA 16-Bit 硬件属性微卡片。
+
+用户明确确认采用 **【样式一】**。
+
+### 30.3 关键技术实施
+- **底栏胶囊容器**：由 display: flex; justify-content: space-between; 升级为现代三列网格布局：
+  display: grid; grid-template-columns: minmax(160px, 236px) 1fr minmax(160px, 236px); gap: 16px; padding: 0 24px;。
+- **左翼（曲目信息）**：justify-self: start; width: 100%; max-width: 236px; flex: 0 1 236px; overflow: hidden;，贴左对齐并保持单行文本优雅省略。
+- **中控集群**：justify-self: center; width: 100%; max-width: 380px; min-width: 180px;，实现播放/暂停按键与进度条在任何窗口尺寸与曲目文本长度下**绝对居于胶囊中轴线**。
+- **右翼（动作按键）**：justify-self: end; width: 100%; max-width: 236px; flex: 0 0 auto; justify-content: flex-end; gap: 14px;，贴右对称对齐。
+
+### 30.4 回归验证
+- 新增 win-cd-player/test_dock_symmetry.py（3 项测试），覆盖三段式 Grid 属性、各区域 justify-self 定位对齐约束及原有按键元素完整性。
+- 兼容并通过已有 	est_user_latest_requests.py 与 	est_v20_cleanup.py 中的比例约束断言。
+- 全量自动化测试：**166 项全部通过**（原 163 + 新 3，运行时间 1.02s）。

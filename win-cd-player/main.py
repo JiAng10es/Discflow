@@ -2537,7 +2537,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     text-align: center;
   }}
 
-  /* Apple Music 原生底部常驻微播控 Dock 栏 */
+  /* Apple Music 原生底部常驻微播控 Dock 栏 (现代三段式对称 Grid 布局) */
   .bottom-dock-player {{
     position: absolute;
     bottom: 24px;
@@ -2548,11 +2548,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     width: var(--dock-custom-width, 720px);
     min-width: 500px;
     max-width: 92vw;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(160px, 236px) 1fr minmax(160px, 236px);
     align-items: center;
-    justify-content: space-between;
     gap: 16px;
-    padding: 0 22px;
+    padding: 0 24px;
     background: rgba(var(--dock-bg-rgb, 22, 22, 28), var(--dock-custom-opacity, 0.75));
     backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(190%);
     -webkit-backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(190%);
@@ -2566,13 +2566,15 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   .dock-album-cluster {{
+    justify-self: start;
     display: flex;
     align-items: center;
     gap: 12px;
     cursor: pointer;
     flex: 0 1 236px;
     min-width: 132px;
-    width: 236px;
+    max-width: 236px;
+    width: 100%;
     overflow: hidden;
     transition: transform 0.18s ease;
   }}
@@ -2582,8 +2584,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   .dock-center-cluster {{
-    flex: 1 1 auto;
-    max-width: 440px;
+    justify-self: center;
+    width: 100%;
+    max-width: 380px;
     min-width: 180px;
     display: flex;
     flex-direction: column;
@@ -2665,12 +2668,14 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   .dock-right-actions {{
+    justify-self: end;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 14px;
     flex: 0 0 auto;
-    width: auto;
+    width: 100%;
+    max-width: 236px;
   }}
 
   /* 底栏双语翻译开关：关闭态变暗并叠加斜杠，状态一眼可辨 */
