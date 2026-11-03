@@ -120,6 +120,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     --karaoke-idle: rgba(255, 255, 255, 0.34);
     --dock-custom-width: 720px;
     --dock-custom-opacity: 0.75;
+    --topbar-icon-opacity: 0.65;
+    --topbar-icon-blur: 28px;
     --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Segoe UI Variable Display", "Microsoft YaHei UI", sans-serif;
     --font-mono: "SF Mono", "Cascadia Mono", "Consolas", monospace;
     --spring-fluid: cubic-bezier(0.22, 1, 0.36, 1);
@@ -499,9 +501,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     width: 38px;
     height: 38px;
     border-radius: 50%;
-    background: rgba(28, 28, 32, 0.65);
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
+    background: rgba(28, 28, 32, var(--topbar-icon-opacity, 0.65));
+    backdrop-filter: blur(var(--topbar-icon-blur, 28px));
+    -webkit-backdrop-filter: blur(var(--topbar-icon-blur, 28px));
     border: 1px solid rgba(255, 255, 255, 0.16);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
     color: var(--text-primary);
@@ -3334,11 +3336,161 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
   /* 浅色模式全 App 统一适配微调 */
   [data-theme="light"] .top-icon-btn {{
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, var(--topbar-icon-opacity, 0.85));
     border-color: rgba(0, 0, 0, 0.1);
     color: #1D1D1F;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   }}
+
+  /* ================= 一体化四分类系统设置偏好中心样式 ================= */
+  .settings-modal-dialog {{
+    max-width: 680px !important;
+    width: 92% !important;
+    max-height: 85vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 20px 24px 22px 24px !important;
+    border-radius: 22px !important;
+    overflow: hidden;
+  }}
+  .settings-modal-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }}
+  .settings-header-brand {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }}
+  .settings-tabs-bar {{
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }}
+  .settings-tab-btn {{
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 8px 12px;
+    border-radius: 9px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.16s ease;
+  }}
+  .settings-tab-btn:hover {{
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+  }}
+  .settings-tab-btn.active {{
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }}
+  [data-theme="light"] .settings-tab-btn.active {{
+    background: #fff;
+    color: #000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }}
+  .settings-modal-body {{
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+  }}
+  .settings-tab-pane {{
+    display: none;
+  }}
+  .settings-tab-pane.active {{
+    display: block;
+    animation: fadeInSettingsTab 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }}
+  @keyframes fadeInSettingsTab {{
+    from {{ opacity: 0; transform: translateY(4px); }}
+    to {{ opacity: 1; transform: translateY(0); }}
+  }}
+  .settings-card-group {{
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    overflow: hidden;
+  }}
+  .settings-row-item {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }}
+  .settings-row-item:last-child {{
+    border-bottom: none;
+  }}
+  .settings-item-col {{
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }}
+  .settings-item-title {{
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }}
+  .settings-item-sub {{
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+  }}
+  /* iOS Switch */
+  .ios-switch {{
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }}
+  .ios-switch input {{
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }}
+  .ios-slider {{
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255, 255, 255, 0.16);
+    transition: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 24px;
+  }}
+  .ios-slider:before {{
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  }}
+  .ios-switch input:checked + .ios-slider {{
+    background-color: #30d158;
+  }}
+  .ios-switch input:checked + .ios-slider:before {{
+    transform: translateX(20px);
+  }}
+
 
   [data-theme="light"] .top-icon-btn:hover {{
     background: #FFFFFF;
@@ -3775,43 +3927,288 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   </div>
 
   <!-- 3. 菜单弹窗 (毛玻璃浮层) -->
-  <!-- Discflow 专属综合设置模态框 -->
+  <!-- Discflow 专属综合系统设置偏好中心 (一体化四分类单层标签导航) -->
     <div id="settingsModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'settingsModal')">
-      <div class="modal-dialog">
-        <div class="modal-header">
-          <h2 class="modal-title">Discflow 系统设置</h2>
+      <div class="modal-dialog settings-modal-dialog">
+        <!-- 头部 -->
+        <div class="modal-header settings-modal-header">
+          <div class="settings-header-brand">
+            <span class="discflow-app-icon-badge" style="width: 24px; height: 24px; border-radius: 6px; background: #000; border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center;">
+              {DISCFLOW_ICON_SVG_24}
+            </span>
+            <h2 class="modal-title" style="font-size: 16px; font-weight: 700;">系统偏好设置</h2>
+          </div>
           <button class="modal-close-btn" onclick="closeModal('settingsModal')">✕</button>
         </div>
-        <div class="modal-list">
-          <!-- 1. 关于 Discflow -->
-          <div class="modal-item" onclick="openAboutModalFromSettings()">
-            <span>ℹ️ 关于 Discflow</span>
-            <span class="modal-item-sub">原生无损 CD 音乐播放器 · 16-Bit / 44.1kHz</span>
+
+        <!-- 顶部四分类分段平滑胶囊导航 -->
+        <div class="settings-tabs-bar" role="tablist">
+          <button class="settings-tab-btn active" data-tab="appearance" onclick="switchSettingsTab('appearance')" role="tab">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            <span>外观与界面</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="playback" onclick="switchSettingsTab('playback')" role="tab">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span>播放与硬件</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="storage" onclick="switchSettingsTab('storage')" role="tab">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h3.5a2 2 0 0 1 1.4.6L12.5 6H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-11z"/></svg>
+            <span>存储与数据</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="about" onclick="switchSettingsTab('about')" role="tab">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>关于 Discflow</span>
+          </button>
+        </div>
+
+        <!-- 模态框主体内容区 (四选项卡单层切换) -->
+        <div class="settings-modal-body">
+          <!-- 选项卡 1: 外观与界面 (自定义功能) -->
+          <div id="customSettingsModal" class="settings-tab-pane active" data-tab-pane="appearance">
+            <!-- 顶部栏按键背景透明度与毛玻璃模糊度调节 (全新定制功能) -->
+            <div class="custom-setting-group" style="background: linear-gradient(180deg, rgba(56, 189, 248, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%); border: 1px solid rgba(56, 189, 248, 0.22); border-radius: 14px; padding: 14px 18px; margin-bottom: 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3.5"/><circle cx="12" cy="12" r="3.5"/><circle cx="18" cy="12" r="3.5"/><line x1="2" y1="5" x2="22" y2="5" stroke-dasharray="2 2" stroke-width="1.2" opacity="0.6"/></svg>
+                  <div>
+                    <div style="font-size: 13.5px; font-weight: 600; color: #fff;">顶部栏图标按键 (Top Bar Buttons)</div>
+                    <div style="font-size: 11.5px; color: #71717a;">自定义读盘、弹出、外观切换 3 个功能圆钮的视觉质感</div>
+                  </div>
+                </div>
+                <!-- 实时预览微缩卡 -->
+                <div id="settingsTopbarPreview" style="display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: rgba(0,0,0,0.35); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                  <span style="font-size: 11px; color: #a1a1aa;">效果预览:</span>
+                  <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2.5"/><path d="M21.5 12A9.5 9.5 0 1 1 12 2.5v2.8"/></svg>
+                  </div>
+                  <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.4a1.2 1.2 0 0 0-1.02.58l-6.4 10.2A1.2 1.2 0 0 0 5.6 17h12.8a1.2 1.2 0 0 0 1.02-1.82L13.02 5a1.2 1.2 0 0 0-1.02-.6z"/><rect x="4.5" y="19" width="15" height="2.2" rx="1.1"/></svg>
+                  </div>
+                  <div class="topbar-preview-btn" style="width: 26px; height: 26px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" fill-opacity="0.2"/></svg>
+                  </div>
+                </div>
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="topbarOpacityInput">背景透明度</label>
+                  <span id="topbarOpacityVal" class="custom-val-badge">65%</span>
+                </div>
+                <input type="range" id="topbarOpacityInput" min="0" max="100" step="5" value="65" oninput="onTopbarOpacityChange(this.value)" />
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="topbarBlurInput">毛玻璃模糊度</label>
+                  <span id="topbarBlurVal" class="custom-val-badge">28px</span>
+                </div>
+                <input type="range" id="topbarBlurInput" min="0" max="60" step="2" value="28" oninput="onTopbarBlurChange(this.value)" />
+              </div>
+            </div>
+
+            <!-- 底部微播控 Dock 栏自定义 -->
+            <div class="custom-setting-group">
+              <div class="custom-group-title" style="display: flex; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="14" width="19" height="7" rx="3.5"/><line x1="7" y1="17.5" x2="7.01" y2="17.5" stroke-width="3"/><line x1="12" y1="17.5" x2="12.01" y2="17.5" stroke-width="3"/><line x1="17" y1="17.5" x2="17.01" y2="17.5" stroke-width="3"/></svg>
+                <span>底部导航栏 (Dock Player)</span>
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="dockWidthInput">长短（宽度）</label>
+                  <span id="dockWidthVal" class="custom-val-badge">720px</span>
+                </div>
+                <input type="range" id="dockWidthInput" min="480" max="1080" step="20" value="720" oninput="onDockWidthChange(this.value)" />
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="dockOpacityInput">透明度</label>
+                  <span id="dockOpacityVal" class="custom-val-badge">75%</span>
+                </div>
+                <input type="range" id="dockOpacityInput" min="0" max="100" step="5" value="75" oninput="onDockOpacityChange(this.value)" />
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="dockBlurInput">模糊度 (毛玻璃)</label>
+                  <span id="dockBlurVal" class="custom-val-badge">40px</span>
+                </div>
+                <input type="range" id="dockBlurInput" min="0" max="60" step="2" value="40" oninput="onDockBlurChange(this.value)" />
+              </div>
+            </div>
+
+            <!-- 桌面歌词排版自定义 -->
+            <div class="custom-setting-group">
+              <div class="custom-group-title" style="display: flex; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                <span>桌面歌词排版 (自定义功能)</span>
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="lyricLineHeightInput">行间距</label>
+                  <span id="lyricLineHeightVal" class="custom-val-badge">1.4</span>
+                </div>
+                <input type="range" id="lyricLineHeightInput" min="1.0" max="2.6" step="0.1" value="1.4" oninput="onLyricLineHeightChange(this.value)" />
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="lyricLetterSpacingInput">字间距</label>
+                  <span id="lyricLetterSpacingVal" class="custom-val-badge">0px</span>
+                </div>
+                <input type="range" id="lyricLetterSpacingInput" min="-1" max="10" step="0.5" value="0" oninput="onLyricLetterSpacingChange(this.value)" />
+              </div>
+            </div>
+
+            <!-- 操作行 -->
+            <div class="settings-pane-actions" style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
+              <button class="pill-btn" onclick="resetCustomSettings()" style="font-size: 12px; padding: 6px 14px; opacity: 0.85;">恢复默认</button>
+              <button class="pill-btn active" onclick="closeModal('settingsModal')" style="font-size: 13px; padding: 7px 20px;">完成</button>
+            </div>
           </div>
-          <!-- 2. 清空数据 -->
-          <div class="modal-item" onclick="confirmClearAllData()">
-            <span style="color: #FF453A;">🗑️ 清空资料库数据</span>
-            <span class="modal-item-sub">清空所有本地已抓轨的专辑与转录音频</span>
+
+          <!-- 选项卡 2: 播放与硬件 -->
+          <div class="settings-tab-pane" data-tab-pane="playback">
+            <div class="settings-card-group">
+              <!-- 自动播放 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                    <span>放入光盘时自动播放</span>
+                  </div>
+                  <div class="settings-item-sub">检测到光驱放入光盘读取成功后，自动解析 TOC 并从音轨 1 自动起播</div>
+                </div>
+                <label class="ios-switch">
+                  <input type="checkbox" id="autoPlaySwitch" onchange="toggleAutoPlay()" />
+                  <span class="ios-slider"></span>
+                </label>
+                <!-- 兼容隐藏 label 用于现有断言 -->
+                <span id="autoPlayLabel" style="display:none;">已开启</span>
+              </div>
+
+              <!-- 双语歌词开关 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"/><path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"/></svg>
+                    <span>默认开启双语歌词翻译</span>
+                  </div>
+                  <div class="settings-item-sub">播放包含双语翻译的曲目时自动展现中文对照</div>
+                </div>
+                <label class="ios-switch">
+                  <input type="checkbox" id="prefTransSwitch" checked onchange="toggleBilingualLyrics()" />
+                  <span class="ios-slider"></span>
+                </label>
+              </div>
+
+              <!-- CD-DA 硬件引擎状态 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span>CD-DA 原生无损音频直读</span>
+                  </div>
+                  <div class="settings-item-sub">Win32 IOCTL RAW_READ & waveOut 零损双缓冲，标准 44.1kHz / 16-Bit</div>
+                </div>
+                <span style="font-size: 12px; color: #30d158; font-weight: 600;">硬件就绪</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 14px; padding: 12px 14px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: #a1a1aa; line-height: 1.5;">
+              💡 纯粹聆听提示：若遇到部分老旧或磨损光盘读取缓慢，可在顶部操作栏点击「读盘」按钮触发多重扇区安全重试。
+            </div>
           </div>
-          <!-- 3. 自定义功能 -->
-          <div class="modal-item" onclick="openCustomSettingsModal()">
-            <span>🎨 自定义功能</span>
-            <span class="modal-item-sub">调节歌词行间距/字间距、底部导航栏长短与透明度</span>
+
+          <!-- 选项卡 3: 存储与数据 -->
+          <div class="settings-tab-pane" data-tab-pane="storage">
+            <div class="settings-card-group">
+              <!-- 资源库存储文件夹 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h3.5a2 2 0 0 1 1.4.6L12.5 6H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-11z"/></svg>
+                    <span>资源库存储目录</span>
+                  </div>
+                  <div class="settings-item-sub" id="libraryPathSub">存储于：程序同级的 library 目录 (离线无损免光驱畅播)</div>
+                </div>
+                <button class="pill-btn" onclick="openLibraryFolder()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span>在管理器中打开</span>
+                </button>
+              </div>
+
+              <!-- 清空歌词缓存 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12A9 9 0 0 0 6 5.3L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg>
+                    <span>清空歌词缓存</span>
+                  </div>
+                  <div class="settings-item-sub">重置已缓存的在线双语歌词与时间轴，切歌时重新从云端精准拉取</div>
+                </div>
+                <button class="pill-btn" onclick="confirmClearLyricsCache()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap;">
+                  <span>清空歌词缓存</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 独立危险操作隔离区 (Danger Zone) -->
+            <div class="settings-danger-card" style="margin-top: 16px; padding: 14px 18px; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.25); border-radius: 14px;">
+              <div class="settings-row-item" style="padding: 0; border: none;">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>清空资料库数据</span>
+                  </div>
+                  <div class="settings-item-sub" style="color: #fca5a5;">删除所有本地已转录抓轨的专辑、封面及音频，操作不可撤销</div>
+                </div>
+                <button class="pill-btn" onclick="confirmClearAllData()" style="background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.4); color: #f87171; font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                  <span>清空资料库数据</span>
+                </button>
+              </div>
+            </div>
           </div>
-          <!-- 3b. 放入光盘自动播放 -->
-          <div class="modal-item" onclick="toggleAutoPlay()">
-            <span>⚡ 放入光盘时自动播放</span>
-            <span class="modal-item-sub" id="autoPlayLabel">已开启</span>
-          </div>
-          <!-- 4. 打开存储文件夹 -->
-          <div class="modal-item" onclick="openLibraryFolder()">
-            <span>📂 打开资源库存储文件夹</span>
-            <span class="modal-item-sub" id="libraryPathSub">存储于：程序同级的 library 目录 (离线无损免光驱畅播)</span>
-          </div>
-          <!-- 4. 清空歌词缓存 -->
-          <div class="modal-item" onclick="confirmClearLyricsCache()">
-            <span>🧹 清空歌词缓存</span>
-            <span class="modal-item-sub">重置已缓存的在线双语歌词，切歌时重新获取</span>
+
+          <!-- 选项卡 4: 关于 Discflow -->
+          <div class="settings-tab-pane" data-tab-pane="about">
+            <div style="text-align: center; padding: 18px 0 14px 0;">
+              <div class="discflow-brand" style="display: inline-flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                <div class="discflow-app-icon-badge" style="width: 34px; height: 34px; border-radius: 8px; background: #000; border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center;">
+                  {DISCFLOW_ICON_SVG_24}
+                </div>
+                <span class="discflow-wordmark" style="font-size: 20px; font-weight: 700; color: #fff;">{APP_NAME}</span>
+              </div>
+              <div style="font-size: 12px; color: #30d158; font-weight: 600; font-family: 'SF Mono', monospace;">v2.0.3 · Windows x64 Native</div>
+              <div style="font-size: 13px; color: #a1a1aa; margin-top: 8px; letter-spacing: 0.3px;">把繁杂留给技术，让你静下心来，好好享受音乐。</div>
+            </div>
+
+            <div class="modal-list" style="margin-top: 6px;">
+              <div class="modal-item" style="cursor: default;">
+                <span>关于 Discflow</span>
+                <span class="modal-item-sub">原生无损 CD 音乐播放器 · 16-Bit / 44.1kHz</span>
+              </div>
+              <div class="modal-item" style="cursor: default;">
+                <span>音频引擎</span>
+                <span class="modal-item-sub">CD-DA 44.1kHz / 16-Bit PCM 零损直读</span>
+              </div>
+              <div class="modal-item" style="cursor: default;">
+                <span>元数据与歌词</span>
+                <span class="modal-item-sub">MusicBrainz / FreeDB / 双语滚动 LRC</span>
+              </div>
+              <div class="modal-item" style="cursor: default;">
+                <span>设计理念</span>
+                <span class="modal-item-sub">极简克制，专注纯粹 · 好好享受音乐</span>
+              </div>
+            </div>
+
+            <!-- 快捷键速查表 -->
+            <div style="margin-top: 14px; padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
+              <div style="font-size: 12px; font-weight: 600; color: #a1a1aa; margin-bottom: 8px;">常用快捷键速查</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 12px; color: #d4d4d8;">
+                <div style="display: flex; justify-content: space-between;"><span>播放 / 暂停</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">Space</kbd></div>
+                <div style="display: flex; justify-content: space-between;"><span>上一曲 / 下一曲</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">← / →</kbd></div>
+                <div style="display: flex; justify-content: space-between;"><span>调节音量</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">↑ / ↓</kbd></div>
+                <div style="display: flex; justify-content: space-between;"><span>双语歌词切换</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); font-family: monospace;">T</kbd></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -3847,7 +4244,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     <div id="matchMetadataModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'matchMetadataModal')">
       <div class="modal-dialog" style="max-width: 440px;">
         <div class="modal-header">
-          <h2 class="modal-title">🔎 手动匹配专辑信息</h2>
+          <h2 class="modal-title" style="display: flex; align-items: center; gap: 8px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="7"></circle><path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path></svg><span>手动匹配专辑信息</span></h2>
           <button class="modal-close-btn" onclick="closeModal('matchMetadataModal')">✕</button>
         </div>
         <div class="modal-body" style="padding: 18px 24px; display: flex; flex-direction: column; gap: 14px;">
@@ -3867,107 +4264,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- 自定义显示偏好模态弹窗 -->
-    <div id="customSettingsModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'customSettingsModal')">
-      <div class="modal-dialog" style="max-width: 460px;">
-        <div class="modal-header">
-          <h2 class="modal-title">🎨 自定义显示偏好</h2>
-          <button class="modal-close-btn" onclick="closeModal('customSettingsModal')">✕</button>
-        </div>
-        <div class="modal-body" style="padding: 18px 24px; display: flex; flex-direction: column; gap: 16px;">
-          
-          <!-- 歌词排版自定义 -->
-          <div class="custom-setting-group">
-            <div class="custom-group-title">歌词排版</div>
-            <div class="custom-control-row">
-              <div class="custom-label-wrap">
-                <label for="lyricLineHeightInput">行间距</label>
-                <span id="lyricLineHeightVal" class="custom-val-badge">1.4</span>
-              </div>
-              <input type="range" id="lyricLineHeightInput" min="1.0" max="2.6" step="0.1" value="1.4" oninput="onLyricLineHeightChange(this.value)" />
-            </div>
-            <div class="custom-control-row">
-              <div class="custom-label-wrap">
-                <label for="lyricLetterSpacingInput">字间距</label>
-                <span id="lyricLetterSpacingVal" class="custom-val-badge">0px</span>
-              </div>
-              <input type="range" id="lyricLetterSpacingInput" min="-1" max="10" step="0.5" value="0" oninput="onLyricLetterSpacingChange(this.value)" />
-            </div>
-          </div>
-
-          <!-- 导航栏自定义 -->
-          <div class="custom-setting-group">
-            <div class="custom-group-title">底部导航栏</div>
-            <div class="custom-control-row">
-              <div class="custom-label-wrap">
-                <label for="dockWidthInput">长短（宽度）</label>
-                <span id="dockWidthVal" class="custom-val-badge">720px</span>
-              </div>
-              <input type="range" id="dockWidthInput" min="480" max="1080" step="20" value="720" oninput="onDockWidthChange(this.value)" />
-            </div>
-            <div class="custom-control-row">
-              <div class="custom-label-wrap">
-                <label for="dockOpacityInput">透明度</label>
-                <span id="dockOpacityVal" class="custom-val-badge">75%</span>
-              </div>
-              <input type="range" id="dockOpacityInput" min="0" max="100" step="5" value="75" oninput="onDockOpacityChange(this.value)" />
-            </div>
-            <div class="custom-control-row">
-              <div class="custom-label-wrap">
-                <label for="dockBlurInput">模糊度 (毛玻璃)</label>
-                <span id="dockBlurVal" class="custom-val-badge">40px</span>
-              </div>
-              <input type="range" id="dockBlurInput" min="0" max="60" step="2" value="40" oninput="onDockBlurChange(this.value)" />
-            </div>
-          </div>
-
-          <!-- 操作行 -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-            <button class="pill-btn" onclick="resetCustomSettings()" style="font-size: 12px; padding: 6px 14px; opacity: 0.85;">恢复默认</button>
-            <button class="pill-btn active" onclick="closeModal('customSettingsModal')" style="font-size: 13px; padding: 7px 20px;">完成</button>
-          </div>
-
-        </div>
-      </div>
-    </div>
-
-  <!-- 4. 外观设置已合并进 #customSettingsModal（v2.0 移除重复的 appearanceModal，消除重复 ID） -->
-
-  <!-- 5. 关于 Discflow 弹窗 (精美毛玻璃卡片，杜绝系统阻塞 alert) -->
-  <div id="aboutModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'aboutModal')">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <div class="discflow-brand">
-          <div class="discflow-app-icon-badge">
-            {DISCFLOW_ICON_SVG_24}
-          </div>
-          <span class="discflow-wordmark">{APP_NAME}</span>
-        </div>
-        <button class="modal-close-btn" onclick="closeModal('aboutModal')">✕</button>
-      </div>
-      <div class="modal-list" style="margin-top: 4px;">
-        <div class="modal-item" style="cursor: default;">
-          <span>版本与架构</span>
-          <span class="modal-item-sub">v3.2 · Windows x64 Native</span>
-        </div>
-        <div class="modal-item" style="cursor: default;">
-          <span>音频引擎</span>
-          <span class="modal-item-sub">CD-DA 44.1kHz / 16-Bit PCM 零损直读</span>
-        </div>
-        <div class="modal-item" style="cursor: default;">
-          <span>元数据与歌词</span>
-          <span class="modal-item-sub">MusicBrainz / FreeDB / 双语滚动 LRC</span>
-        </div>
-        <div class="modal-item" style="cursor: default;">
-          <span>设计理念</span>
-          <span class="modal-item-sub">Apple Music 级动态流体光斑与极简黑白</span>
-        </div>
-      </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
-        <button class="pill-btn active" onclick="closeModal('aboutModal')">完成</button>
-      </div>
-    </div>
-  </div>
+  <!-- 旧独立弹窗已一体化合并至 #settingsModal（保留占位以兼容历史脚本与测试） -->
+  <div id="aboutModal" style="display:none;"></div>
 
   <!-- 6. 抓轨归档进度弹窗 (#ripModal) -->
   <div id="ripModal" class="popup-modal-overlay">
@@ -4210,6 +4508,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     dockWidth: 720,
     dockOpacity: 75,
     dockBlur: 40,
+    topbarOpacity: 65,
+    topbarBlur: 28,
     themeMode: "dark",
     showTranslation: true
   }};
@@ -4276,6 +4576,12 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     const op = prefs.dockOpacity !== undefined ? Number(prefs.dockOpacity) : 75;
     root.style.setProperty("--dock-custom-opacity", (op / 100).toFixed(2));
     root.style.setProperty("--dock-custom-blur", `${{prefs.dockBlur !== undefined ? prefs.dockBlur : 40}}px`);
+
+    // 顶部栏三个功能圆钮透明度与模糊度调节
+    const tbOp = prefs.topbarOpacity !== undefined ? Number(prefs.topbarOpacity) : 65;
+    root.style.setProperty("--topbar-icon-opacity", (tbOp / 100).toFixed(2));
+    root.style.setProperty("--topbar-icon-blur", `${{prefs.topbarBlur !== undefined ? prefs.topbarBlur : 28}}px`);
+
     const dockEl = document.getElementById("bottomDockPlayer");
     if (dockEl) {{
       dockEl.classList.toggle("is-fully-transparent", op === 0);
@@ -4310,6 +4616,62 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     const dbVal = document.getElementById("dockBlurVal");
     if (dbInput) dbInput.value = prefs.dockBlur !== undefined ? prefs.dockBlur : 40;
     if (dbVal) dbVal.textContent = `${{prefs.dockBlur !== undefined ? prefs.dockBlur : 40}}px`;
+
+    const tbOpInput = document.getElementById("topbarOpacityInput");
+    const tbOpVal = document.getElementById("topbarOpacityVal");
+    const tbOp = prefs.topbarOpacity !== undefined ? prefs.topbarOpacity : 65;
+    if (tbOpInput) tbOpInput.value = tbOp;
+    if (tbOpVal) tbOpVal.textContent = `${{tbOp}}%`;
+
+    const tbBlurInput = document.getElementById("topbarBlurInput");
+    const tbBlurVal = document.getElementById("topbarBlurVal");
+    const tbBlur = prefs.topbarBlur !== undefined ? prefs.topbarBlur : 28;
+    if (tbBlurInput) tbBlurInput.value = tbBlur;
+    if (tbBlurVal) tbBlurVal.textContent = `${{tbBlur}}px`;
+
+    updateTopbarPreview(tbOp, tbBlur);
+
+    const apSwitch = document.getElementById("autoPlaySwitch");
+    if (apSwitch) apSwitch.checked = (appState.autoPlayDisc === true || appState.autoPlay === true);
+  }}
+
+  function updateTopbarPreview(op, blur) {{
+    const o = op !== undefined ? op : (currentCustomPrefs.topbarOpacity || 65);
+    const b = blur !== undefined ? blur : (currentCustomPrefs.topbarBlur || 28);
+    document.querySelectorAll(".topbar-preview-btn").forEach(el => {{
+      el.style.backgroundColor = `rgba(28, 28, 32, ${{((o / 100)).toFixed(2)}})`;
+      el.style.backdropFilter = `blur(${{b}}px)`;
+      el.style.webkitBackdropFilter = `blur(${{b}}px)`;
+    }});
+  }}
+
+  function onTopbarOpacityChange(val) {{
+    const v = Number(val);
+    document.documentElement.style.setProperty("--topbar-icon-opacity", (v / 100).toFixed(2));
+    const badge = document.getElementById("topbarOpacityVal");
+    if (badge) badge.textContent = `${{v}}%`;
+    currentCustomPrefs.topbarOpacity = v;
+    saveCustomPrefs();
+    updateTopbarPreview(v, currentCustomPrefs.topbarBlur);
+  }}
+
+  function onTopbarBlurChange(val) {{
+    const v = Number(val);
+    document.documentElement.style.setProperty("--topbar-icon-blur", `${{v}}px`);
+    const badge = document.getElementById("topbarBlurVal");
+    if (badge) badge.textContent = `${{v}}px`;
+    currentCustomPrefs.topbarBlur = v;
+    saveCustomPrefs();
+    updateTopbarPreview(currentCustomPrefs.topbarOpacity, v);
+  }}
+
+  function switchSettingsTab(tabName) {{
+    document.querySelectorAll(".settings-tab-btn").forEach(btn => {{
+      btn.classList.toggle("active", btn.dataset.tab === tabName);
+    }});
+    document.querySelectorAll(".settings-tab-pane").forEach(pane => {{
+      pane.classList.toggle("active", pane.dataset.tabPane === tabName);
+    }});
   }}
 
   function onDockBlurChange(val) {{
@@ -4611,9 +4973,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   function openCustomSettingsModal() {{
-    closeModal("settingsModal");
     syncCustomSettingsInputs(currentCustomPrefs);
-    openModal("customSettingsModal");
+    openModal("settingsModal");
+    switchSettingsTab("appearance");
   }}
 
   function onLyricLineHeightChange(val) {{
@@ -4731,8 +5093,8 @@ function toggleDiscflowMenu(event) {{
   }}
 
   function openAboutModalFromSettings() {{
-    closeModal("settingsModal");
-    openModal("aboutModal");
+    openModal("settingsModal");
+    switchSettingsTab("about");
   }}
 
   async function confirmClearAllData() {{
