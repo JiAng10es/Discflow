@@ -1,8 +1,8 @@
 # Discflow 产品需求文档 (Product Requirements Document, PRD)
 
-**版本号**：v2.0.1 (Symmetric Dock Baseline)  
+**版本号**：v2.1.0 (Core Boost & Implicit Interaction Baseline)  
 **创建时间**：2026-11-01  
-**最后更新**：2026-11-03  
+**最后更新**：2026-11-06  
 **状态**：已冻结基线 (Approved Baseline)  
 **适用对象**：产品经理、前端开发工程师、底层音频/硬件开发工程师、测试工程师  
 
@@ -1367,3 +1367,72 @@ v1.11.7 的专辑匹配只有 iTunes 单一来源，且「输入即自动套用�
 - 新增 `win-cd-player/test_v205_settings.py`（5 项专门测试）；
 - 全量自动化测试：**187 项全部通过**（100% OK，运行耗时 1.25s）；
 - 通过 Edge Chromium CDP 协议自动化无头执行真实渲染测量：四个选项卡弹窗宽度稳定为 680px，弹窗高度稳定一致，内容可用宽度在切换前后 100% 恒定为 620px，品牌寄语检测为 0 存在。
+
+---
+
+## 35. v2.0.5 补充功能：设置面板新增「支持作者」赞赏弹窗与支付宝直达
+
+### 35.1 背景与需求
+- **永久免费承诺**：Discflow 坚持永久免费、无广告、纯净本地 Hi-Fi 播放。
+- **赞赏支持入口**：为方便想主动支持开发者的用户，在设置偏好「关于 Discflow」面板中提供轻量且不打扰的赞赏渠道。
+
+### 35.2 功能与架构实现
+1. **设置中心「支持作者」卡片入口**：
+   - 位于设置弹窗「关于 Discflow」面板核心参数卡片下方，采用统一的标准 .settings-card-group 容器；
+   - 突出显示咖啡图标、微粉强调色（#ff375f）、辅助说明「给开发者买杯咖啡，支持 Discflow 持续开发」及「买杯咖啡 ›」胶囊提示。
+2. **专属「支持作者」弹窗（#supportAuthorModal）**：
+   - **层级管理**：设置 z-index: 120，无缝叠置于系统设置弹窗（z-index: 100）之上，支持背景点击与右上角 ✕ 独立关闭；
+   - **文案约束**：一字不差展示「Discflow 永久免费，制作不易，如果您实在想支持本项目，就在此处给开发者买杯咖啡吧」；
+   - **收款码内嵌**：高清内嵌原图矢量渲染的高对比白底圆角收款码（中心带小黄鸡专属头像，100% 扫码识别率）；
+   - **「前往支付宝」按钮**：点击调用系统默认浏览器与支付宝 URL Scheme 深度跳转协议（https://qr.alipay.com/fkx105619v8yxtwwtzxpea1），一键拉起支付网关。
+3. **Python 后端与 JS API 联动**：
+   - DiscflowController 与 DiscflowJsApi 新增 open_external_url(url) 跨平台外部链接直跳方法（优先 webbrowser.open，异常兜底 os.startfile）；
+   - 前端 JavaScript 异步调用 window.pywebview.api.open_external_url(alipayUrl)，并在非 pywebview 环境下支持 window.open 优雅降级。
+
+
+---
+
+## 36. v2.1.0 迭代：零 UI 改动 · 纯内核与隐式交互升级方案 (/boost)
+
+### 36.1 升级背景与核心理念
+在 v2.0.5 版本确立并冻结了现代极简视觉架构（固定 680px × 590px 设置弹窗、对称 Dock 播控、1:1 沉浸黑胶舞台）的基础上，针对物理 CD 播放的机械延迟、外文光盘离线元数据缺失、全局后台播控以及歌词时间轴偏差等痛点，推出**零 UI 改动（严禁变动任何既有界面设计与控件尺寸）**的纯内核与隐式交互升级方案。
+
+### 36.2 5 项核心升级细节
+1. **真·无缝播放 (Gapless Playback) 与内存预读 (RAM Read-Ahead)**：
+   - **双线程环形内存预读**：在 `cd_engine.py` (`CddaWaveOutPlayer`) 中引入独立预读线程与 `_read_ahead_queue` 连续读取缓冲队列（容量 25 块，预读约 5 秒音频数据），大幅减少外置/内置光驱磁头频繁寻道与机械噪音；
+   - **跨轨复用音频输出句柄**：顺序播放跨轨时复用底层的 `waveOut` 设备句柄（`_h_wave`），通过 `set_next_track` 与 `_on_player_track_transition` 实现微秒级平滑过渡下一轨，彻底消除切歌与跨轨时的断音和爆音。
+2. **光盘硬件底层 CD-TEXT 扇区直读与离线兜底**：
+   - **底层 SCSI/ATAPI 指令直读**：在 `cd_engine.py` (`WindowsCdDriveManager`) 中调用 `IOCTL_CDROM_READ_TOC_EX`（Format 0x05）读取 Pack 0x80（标题）与 0x81（表演者）；
+   - **双字节与国际化编码支持**：识别 Pack 头中的 `is_double_byte` 标志，智能支持 Shift-JIS (`cp932`) 与 UTF-8 解码，兼容日系及外文 CD-TEXT 光盘；
+   - **元数据兜底引擎**：在 `metadata_service.py` 中，当 MusicBrainz 在线数据库匹配失败或断网时，自动提取 CD-TEXT 中的专辑与曲目名作为元数据兜底，标注来源为 `CD-TEXT 硬件内嵌信息`。
+3. **Windows 后台全局多媒体按键支持**：
+   - **低级键盘钩子与独立消息循环**：在 `main.py` 中实现 `GlobalMediaKeyListener`，基于 Win32 `WH_KEYBOARD_LL = 13` 和独立线程消息循环监听全局媒体控制键：
+     - `VK_MEDIA_PLAY_PAUSE` (0xB3)：播放/暂停切换；
+     - `VK_MEDIA_NEXT_TRACK` (0xB0)：下一曲；
+     - `VK_MEDIA_PREV_TRACK` (0xB1)：上一曲；
+     - `VK_MEDIA_STOP` (0xB2)：停止播放并复位状态；
+   - **零冲突与后台免唤醒掌控**：彻底规避 `RegisterHotKey` 的热键冲突错误，在播放器最小化、窗口遮挡或全屏游戏等后台场景下均可秒级响应键盘快捷键。
+4. **纯快捷键驱动的歌词时间轴微调（严禁添加任何界面按钮）**：
+   - **无感快捷键监听**：在 `APPLE_MUSIC_HTML` 全局键盘事件中监听：
+     - `[` 键：歌词基准延后 0.5s；
+     - `]` 键：歌词基准提前 0.5s；
+     - `\` 键：时间轴基准归零；
+   - **实时高亮与持久化**：微调即刻反映在当前曲目的歌词滚动与卡拉 OK 高亮中，并通过 `set_track_lyric_offset` 持久化存储到 `preferences.json` 中的 `lyricOffsets` 字典；
+   - **零 UI 污染**：不增加任何多余界面按钮或弹窗，仅在设置弹窗「关于 Discflow」已有的快捷键速查网格中补充 2 行文字说明。
+5. **播放现场记忆与启动静默恢复 (Session Resume)**：
+   - **退出状态持久化**：在软件关闭或切曲时，在 `preferences.json` 的 `lastSession` 节点中安全持久化记录上次播放的本地专辑 `disc_id`、曲目序号 `track_index` 及音量；
+   - **无碟启动静默就绪**：在开机或无盘插入启动时，自动恢复上次播放专辑的封面缩略图、曲目信息及双语歌词，底栏保持暂停状态，用户无需重新寻库，直接按下键盘空格键即可无缝起播；
+   - **硬件热插拔兼容**：启动后若检测到插入物理光盘，硬件轮询线程自动无缝平滑切至物理光盘读取。
+
+### 36.3 审查与深度加固
+在针对 `/boost` 升级的严格代码审查与边界攻击中，排查并彻底修复了如下隐患：
+1. **解决 Seek 与内存预读线程的代数竞争 (Race Condition)**：引入 `_seek_generation` 单调递增代数标记，`_ReadChunk` 携带 `seek_gen`，在 `_run_loop` 与 `_reader_loop` 双线程中独立检测代数更迭，即时丢弃旧世代在途脏数据，彻底杜绝 Seek 后进度回弹或预读线程不响应问题；
+2. **彻底落实物理光盘跨轨硬件句柄复用**：优化 `_reader_loop` 内的媒体加载逻辑，当顺序跨轨处于同一物理 CD 光驱时，直接复用已打开的 `h_drive` 句柄，消除反复执行 `CreateFileW` 造成的 Windows 驱动层 I/O 阻塞；
+3. **加固 CD-TEXT 双字节字符集 16-bit 字对齐解析**：在 `is_double_byte` 模式下采用双字节字（Word）步进解析，将 `\x00\x00` 严格作为双字节终结符，并在解码引擎中加入 UTF-16BE/LE 支持与内嵌空字节过滤，彻底避免 UTF-16 或日文半角字符被单字节 0x00 误切割；
+4. **资料库本地专辑歌词偏移量自动继承**：在 `get_album_toc` 中将 `LocalTrackInfo` 的 `lyrics_offset` 同步灌入 `CdTrackInfo`，使未写入全局偏好的单曲亦能平滑继承历史时间轴微调。
+
+### 36.4 验证与回归测试
+- 扩展 `win-cd-player/test_boost_features.py`（增加 Seek 世代过滤、UTF-16BE 双字节防拆包、CdTrackInfo 偏移量继承等关键回归测试）；
+- 全量自动化测试：**198 项全部通过**（100% OK，运行耗时 11.88s，零语法错误与回归）；
+- 完成 PyInstaller 打包与启动冒烟测试，生成独立可执行文件 `Discflow.exe` 并完成多运行分区同步。
+

@@ -428,6 +428,9 @@ def lookup_album_metadata(
     if toc.cdtext_album:
         result.album_title = toc.cdtext_album
         result.matched_source = "CD-TEXT 硬件内嵌信息"
+    elif any(trk.title and not trk.title.startswith("Track ") for trk in toc.tracks):
+        result.album_title = "CD-TEXT Album"
+        result.matched_source = "CD-TEXT 硬件内嵌信息"
     if toc.cdtext_artist:
         result.artist = toc.cdtext_artist
 

@@ -252,6 +252,8 @@ def load_user_preferences() -> dict:
         "playMode": "loop",
         "showTranslation": True,
         "autoPlay": True,
+        "lastSession": {},
+        "lyricOffsets": {},
     }
     path = get_preferences_file_path()
     if os.path.isfile(path):
@@ -295,6 +297,7 @@ class LocalTrackInfo:
     lyrics_song_id: str = ""
     lyrics_locked: bool = False
     lyrics_matched_at: float = 0.0
+    lyrics_offset: float = 0.0
 
 
 @dataclass
@@ -602,6 +605,38 @@ class DiscflowLibraryManager:
                     pass
                 return False
 
+    def update_track_lyric_offset(self, disc_id: str, track_number: int, offset: float) -> bool:
+        """持久化保存单曲歌词时间轴微调偏移量 (秒) 到 album.json"""
+        with self._lock:
+            sub_dir = self.get_album_dir(disc_id)
+            meta_path = os.path.join(sub_dir, "album.json")
+            if not os.path.isfile(meta_path):
+                return False
+            tmp_path = meta_path + ".tmp"
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                hit = False
+                for trk in data.get("tracks", []):
+                    if int(trk.get("track_number", -1)) == int(track_number):
+                        trk["lyrics_offset"] = round(float(offset), 2)
+                        hit = True
+                        break
+                if not hit:
+                    return False
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp_path, meta_path)
+                self._cached_albums = None
+                return True
+            except Exception:
+                try:
+                    if os.path.isfile(tmp_path):
+                        os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False
+
     def export_library_zip(self, target_zip_path: str) -> bool:
         import zipfile
         with self._lock:
@@ -670,6 +705,7 @@ class DiscflowLibraryManager:
                 title=t.title,
                 artist=t.artist,
                 local_filepath=full_path,
+                lyrics_offset=float(getattr(t, "lyrics_offset", 0.0)),
             )
             tracks.append(trk)
 
