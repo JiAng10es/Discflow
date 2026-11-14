@@ -117,7 +117,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     --popover-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), inset 0 1px 1.2px rgba(255, 255, 255, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
     --scrubber-bg: rgba(255, 255, 255, 0.16);
     --scrubber-fill: var(--text-primary);
-    --dock-custom-blur: 40px;
+    --dock-custom-blur: 2px;
     --lyrics-line-height: 1.4;
     --lyrics-letter-spacing: 0px;
     --lyrics-margin-bottom: 12px;
@@ -125,9 +125,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     --karaoke-fill: var(--text-primary);
     --karaoke-idle: rgba(255, 255, 255, 0.34);
     --dock-custom-width: 720px;
-    --dock-custom-opacity: 0.75;
-    --topbar-icon-opacity: 0.65;
-    --topbar-icon-blur: 28px;
+    --dock-custom-opacity: 0.05;
+    --topbar-icon-opacity: 0.05;
+    --topbar-icon-blur: 2px;
     --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Segoe UI Variable Display", "Microsoft YaHei UI", sans-serif;
     --font-mono: "SF Mono", "Cascadia Mono", "Consolas", monospace;
     --spring-fluid: cubic-bezier(0.22, 1, 0.36, 1);
@@ -508,10 +508,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     width: 38px;
     height: 38px;
     border-radius: 50%;
-    background: rgba(28, 28, 32, var(--topbar-icon-opacity, 0.65));
+    background: rgba(28, 28, 32, var(--topbar-icon-opacity, 0.05));
     background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.08) 100%);
-    backdrop-filter: blur(var(--topbar-icon-blur, 28px)) saturate(190%) url(#discflow-liquid-droplet);
-    -webkit-backdrop-filter: blur(var(--topbar-icon-blur, 28px)) saturate(190%) url(#discflow-liquid-droplet);
+    backdrop-filter: blur(var(--topbar-icon-blur, 2px)) saturate(190%) url(#discflow-liquid-droplet);
+    -webkit-backdrop-filter: blur(var(--topbar-icon-blur, 2px)) saturate(190%) url(#discflow-liquid-droplet);
     border: 1px solid rgba(255, 255, 255, 0.16);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32), inset 0 1px 1px rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.2);
     color: var(--text-primary);
@@ -2616,10 +2616,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     align-items: center;
     gap: 16px;
     padding: 0 24px;
-    background: rgba(var(--dock-bg-rgb, 22, 22, 28), var(--dock-custom-opacity, 0.75));
+    background: rgba(var(--dock-bg-rgb, 22, 22, 28), var(--dock-custom-opacity, 0.05));
     background-image: var(--dock-liquid-sheen);
-    backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(195%) url(#discflow-liquid-lens);
-    -webkit-backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(195%) url(#discflow-liquid-lens);
+    backdrop-filter: blur(var(--dock-custom-blur, 2px)) saturate(195%) url(#discflow-liquid-lens);
+    -webkit-backdrop-filter: blur(var(--dock-custom-blur, 2px)) saturate(195%) url(#discflow-liquid-lens);
     border: 1px solid var(--dock-border);
     box-shadow: var(--dock-shadow);
     border-radius: 999px;
@@ -4151,75 +4151,50 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
         <div class="settings-modal-body">
           <!-- 选项卡 1: 外观与界面 -->
           <div id="customSettingsModal" class="settings-tab-pane active" data-tab-pane="appearance">
-            <!-- 顶部栏图标按键 -->
+            <!-- 顶部栏与底部导航栏统一自定义 -->
             <div class="settings-card-group" style="padding: 12px 16px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><circle cx="6" cy="12" r="3.5"/><circle cx="12" cy="12" r="3.5"/><circle cx="18" cy="12" r="3.5"/><line x1="2" y1="5" x2="22" y2="5" stroke-dasharray="2 2" stroke-width="1.2" opacity="0.6"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><rect x="2.5" y="14" width="19" height="7" rx="3.5"/><circle cx="7" cy="7" r="2.5"/><circle cx="12" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/></svg>
                   <div>
-                    <div class="settings-item-title">顶部栏图标按键 (Top Bar Buttons)</div>
-                    <div class="settings-item-sub">自定义读盘、出仓、外观切换 3 个功能圆钮的视觉质感</div>
+                    <div class="settings-item-title">顶部栏与底部导航栏 (Top Bar &amp; Dock)</div>
+                    <div class="settings-item-sub">同步调节顶部功能圆钮与底部播放器胶囊的背景透明度、毛玻璃及宽度</div>
                   </div>
                 </div>
                 <!-- 实时预览微缩卡 -->
                 <div id="settingsTopbarPreview" style="display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: rgba(0,0,0,0.35); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
                   <span style="font-size: 11px; color: var(--text-tertiary);">效果预览:</span>
-                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.05); backdrop-filter: blur(2px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3a9 9 0 0 1 8.5 6"/><polyline points="16 9 20.5 9 20.5 4.5"/><path d="M12 21a9 9 0 0 1-8.5-6"/><polyline points="8 15 3.5 15 3.5 19.5"/></svg>
                   </div>
-                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.05); backdrop-filter: blur(2px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.4a1.2 1.2 0 0 0-1.02.58l-6.4 10.2A1.2 1.2 0 0 0 5.6 17h12.8a1.2 1.2 0 0 0 1.02-1.82L13.02 5a1.2 1.2 0 0 0-1.02-.6z"/><rect x="4.5" y="19" width="15" height="2.2" rx="1.1"/></svg>
                   </div>
-                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.65); backdrop-filter: blur(28px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
+                  <div class="topbar-preview-btn" style="width: 24px; height: 24px; border-radius: 50%; background: rgba(28,28,32,0.05); backdrop-filter: blur(2px); border: 1px solid rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; color: #fff;">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" fill-opacity="0.2"/></svg>
                   </div>
                 </div>
               </div>
               <div class="custom-control-row" style="margin-bottom: 8px;">
                 <div class="custom-label-wrap">
-                  <label for="topbarOpacityInput">背景透明度</label>
-                  <span id="topbarOpacityVal" class="custom-val-badge">65%</span>
+                  <label for="dockOpacityInput">背景透明度</label>
+                  <span id="dockOpacityVal" class="custom-val-badge">5%</span>
                 </div>
-                <input type="range" id="topbarOpacityInput" min="0" max="100" step="5" value="65" oninput="onTopbarOpacityChange(this.value)" />
-              </div>
-              <div class="custom-control-row">
-                <div class="custom-label-wrap">
-                  <label for="topbarBlurInput">毛玻璃模糊度</label>
-                  <span id="topbarBlurVal" class="custom-val-badge">28px</span>
-                </div>
-                <input type="range" id="topbarBlurInput" min="0" max="60" step="2" value="28" oninput="onTopbarBlurChange(this.value)" />
-              </div>
-            </div>
-
-            <!-- 底部微播控 Dock 栏自定义 -->
-            <div class="settings-card-group" style="padding: 12px 16px;">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><rect x="2.5" y="14" width="19" height="7" rx="3.5"/><line x1="7" y1="17.5" x2="7.01" y2="17.5" stroke-width="3"/><line x1="12" y1="17.5" x2="12.01" y2="17.5" stroke-width="3"/><line x1="17" y1="17.5" x2="17.01" y2="17.5" stroke-width="3"/></svg>
-                <div>
-                  <div class="settings-item-title">底部导航栏 (Dock Player)</div>
-                  <div class="settings-item-sub">调整底部播放器胶囊长短尺寸、背景透明度与毛玻璃</div>
-                </div>
+                <input type="range" id="dockOpacityInput" min="0" max="100" step="1" value="5" oninput="onDockOpacityChange(this.value)" />
               </div>
               <div class="custom-control-row" style="margin-bottom: 8px;">
                 <div class="custom-label-wrap">
-                  <label for="dockWidthInput">长短（宽度）</label>
+                  <label for="dockBlurInput">毛玻璃模糊度</label>
+                  <span id="dockBlurVal" class="custom-val-badge">2px</span>
+                </div>
+                <input type="range" id="dockBlurInput" min="0" max="60" step="1" value="2" oninput="onDockBlurChange(this.value)" />
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="dockWidthInput">底部栏长短（宽度）</label>
                   <span id="dockWidthVal" class="custom-val-badge">720px</span>
                 </div>
                 <input type="range" id="dockWidthInput" min="480" max="1080" step="20" value="720" oninput="onDockWidthChange(this.value)" />
-              </div>
-              <div class="custom-control-row" style="margin-bottom: 8px;">
-                <div class="custom-label-wrap">
-                  <label for="dockOpacityInput">透明度</label>
-                  <span id="dockOpacityVal" class="custom-val-badge">75%</span>
-                </div>
-                <input type="range" id="dockOpacityInput" min="0" max="100" step="5" value="75" oninput="onDockOpacityChange(this.value)" />
-              </div>
-              <div class="custom-control-row">
-                <div class="custom-label-wrap">
-                  <label for="dockBlurInput">模糊度 (毛玻璃)</label>
-                  <span id="dockBlurVal" class="custom-val-badge">40px</span>
-                </div>
-                <input type="range" id="dockBlurInput" min="0" max="60" step="2" value="40" oninput="onDockBlurChange(this.value)" />
               </div>
             </div>
 
@@ -4762,10 +4737,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     lyricLineHeight: 1.4,
     lyricLetterSpacing: 0,
     dockWidth: 720,
-    dockOpacity: 75,
-    dockBlur: 40,
-    topbarOpacity: 65,
-    topbarBlur: 28,
+    dockOpacity: 5,
+    dockBlur: 2,
+    topbarOpacity: 5,
+    topbarBlur: 2,
     themeMode: "dark",
     autoPlay: true,
     showTranslation: true
@@ -4833,14 +4808,14 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     root.style.setProperty("--lyrics-margin-bottom", `${{mb}}px`);
     root.style.setProperty("--lyrics-letter-spacing", `${{prefs.lyricLetterSpacing}}px`);
     root.style.setProperty("--dock-custom-width", `${{prefs.dockWidth}}px`);
-    const op = prefs.dockOpacity !== undefined ? Number(prefs.dockOpacity) : 75;
+    const op = prefs.dockOpacity !== undefined ? Number(prefs.dockOpacity) : 5;
+    const blurVal = prefs.dockBlur !== undefined ? Number(prefs.dockBlur) : 2;
     root.style.setProperty("--dock-custom-opacity", (op / 100).toFixed(2));
-    root.style.setProperty("--dock-custom-blur", `${{prefs.dockBlur !== undefined ? prefs.dockBlur : 40}}px`);
+    root.style.setProperty("--dock-custom-blur", `${{blurVal}}px`);
 
-    // 顶部栏三个功能圆钮透明度与模糊度调节
-    const tbOp = prefs.topbarOpacity !== undefined ? Number(prefs.topbarOpacity) : 65;
-    root.style.setProperty("--topbar-icon-opacity", (tbOp / 100).toFixed(2));
-    root.style.setProperty("--topbar-icon-blur", `${{prefs.topbarBlur !== undefined ? prefs.topbarBlur : 28}}px`);
+    // 顶部栏三个功能圆钮与底部导航栏保持同一透明度与模糊度
+    root.style.setProperty("--topbar-icon-opacity", (op / 100).toFixed(2));
+    root.style.setProperty("--topbar-icon-blur", `${{blurVal}}px`);
 
     const dockEl = document.getElementById("bottomDockPlayer");
     if (dockEl) {{
@@ -4868,28 +4843,17 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
     const doInput = document.getElementById("dockOpacityInput");
     const doVal = document.getElementById("dockOpacityVal");
-    const op = prefs.dockOpacity !== undefined ? Number(prefs.dockOpacity) : 75;
+    const op = prefs.dockOpacity !== undefined ? Number(prefs.dockOpacity) : 5;
     if (doInput) doInput.value = op;
     if (doVal) doVal.textContent = `${{op}}%`;
 
     const dbInput = document.getElementById("dockBlurInput");
     const dbVal = document.getElementById("dockBlurVal");
-    if (dbInput) dbInput.value = prefs.dockBlur !== undefined ? prefs.dockBlur : 40;
-    if (dbVal) dbVal.textContent = `${{prefs.dockBlur !== undefined ? prefs.dockBlur : 40}}px`;
+    const blur = prefs.dockBlur !== undefined ? Number(prefs.dockBlur) : 2;
+    if (dbInput) dbInput.value = blur;
+    if (dbVal) dbVal.textContent = `${{blur}}px`;
 
-    const tbOpInput = document.getElementById("topbarOpacityInput");
-    const tbOpVal = document.getElementById("topbarOpacityVal");
-    const tbOp = prefs.topbarOpacity !== undefined ? prefs.topbarOpacity : 65;
-    if (tbOpInput) tbOpInput.value = tbOp;
-    if (tbOpVal) tbOpVal.textContent = `${{tbOp}}%`;
-
-    const tbBlurInput = document.getElementById("topbarBlurInput");
-    const tbBlurVal = document.getElementById("topbarBlurVal");
-    const tbBlur = prefs.topbarBlur !== undefined ? prefs.topbarBlur : 28;
-    if (tbBlurInput) tbBlurInput.value = tbBlur;
-    if (tbBlurVal) tbBlurVal.textContent = `${{tbBlur}}px`;
-
-    updateTopbarPreview(tbOp, tbBlur);
+    updateTopbarPreview(op, blur);
 
     const apSwitch = document.getElementById("autoPlaySwitch");
     if (apSwitch) {{
@@ -4903,33 +4867,13 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   function updateTopbarPreview(op, blur) {{
-    const o = op !== undefined ? op : (currentCustomPrefs.topbarOpacity || 65);
-    const b = blur !== undefined ? blur : (currentCustomPrefs.topbarBlur || 28);
+    const o = op !== undefined ? Number(op) : (currentCustomPrefs.dockOpacity !== undefined ? Number(currentCustomPrefs.dockOpacity) : 5);
+    const b = blur !== undefined ? Number(blur) : (currentCustomPrefs.dockBlur !== undefined ? Number(currentCustomPrefs.dockBlur) : 2);
     document.querySelectorAll(".topbar-preview-btn").forEach(el => {{
       el.style.backgroundColor = `rgba(28, 28, 32, ${{((o / 100)).toFixed(2)}})`;
       el.style.backdropFilter = `blur(${{b}}px)`;
       el.style.webkitBackdropFilter = `blur(${{b}}px)`;
     }});
-  }}
-
-  function onTopbarOpacityChange(val) {{
-    const v = Number(val);
-    document.documentElement.style.setProperty("--topbar-icon-opacity", (v / 100).toFixed(2));
-    const badge = document.getElementById("topbarOpacityVal");
-    if (badge) badge.textContent = `${{v}}%`;
-    currentCustomPrefs.topbarOpacity = v;
-    saveCustomPrefs();
-    updateTopbarPreview(v, currentCustomPrefs.topbarBlur);
-  }}
-
-  function onTopbarBlurChange(val) {{
-    const v = Number(val);
-    document.documentElement.style.setProperty("--topbar-icon-blur", `${{v}}px`);
-    const badge = document.getElementById("topbarBlurVal");
-    if (badge) badge.textContent = `${{v}}px`;
-    currentCustomPrefs.topbarBlur = v;
-    saveCustomPrefs();
-    updateTopbarPreview(currentCustomPrefs.topbarOpacity, v);
   }}
 
   function switchSettingsTab(tabName) {{
@@ -4946,7 +4890,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   function onDockBlurChange(val) {{
-    currentCustomPrefs.dockBlur = parseInt(val, 10);
+    const v = parseInt(val, 10);
+    currentCustomPrefs.dockBlur = v;
+    currentCustomPrefs.topbarBlur = v;
     applyCustomPrefs(currentCustomPrefs);
     saveCustomPrefs();
   }}
@@ -5268,7 +5214,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   function onDockOpacityChange(val) {{
-    currentCustomPrefs.dockOpacity = parseInt(val, 10);
+    const v = parseInt(val, 10);
+    currentCustomPrefs.dockOpacity = v;
+    currentCustomPrefs.topbarOpacity = v;
     applyCustomPrefs(currentCustomPrefs);
     saveCustomPrefs();
   }}
