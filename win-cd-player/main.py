@@ -109,11 +109,12 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 <style>
     :root {{
     --dock-bg-rgb: 22, 22, 28;
-    --dock-border: rgba(255, 255, 255, 0.16);
-    --dock-shadow: 0 20px 48px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    --dock-border: rgba(255, 255, 255, 0.18);
+    --dock-shadow: 0 20px 48px rgba(0, 0, 0, 0.45), inset 0 1px 1.5px rgba(255, 255, 255, 0.32), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
+    --dock-liquid-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 45%, rgba(255, 255, 255, 0) 65%, rgba(255, 255, 255, 0.08) 100%);
     --popover-bg: rgba(26, 26, 32, 0.94);
     --popover-border: rgba(255, 255, 255, 0.18);
-    --popover-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+    --popover-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), inset 0 1px 1.2px rgba(255, 255, 255, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
     --scrubber-bg: rgba(255, 255, 255, 0.16);
     --scrubber-fill: var(--text-primary);
     --dock-custom-blur: 40px;
@@ -248,10 +249,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
     --dock-bg-rgb: 255, 255, 255;
     --dock-border: rgba(0, 0, 0, 0.12);
-    --dock-shadow: 0 16px 40px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    --dock-shadow: 0 16px 40px rgba(0, 0, 0, 0.12), inset 0 1px 1.5px rgba(255, 255, 255, 0.95), inset 0 -1px 1px rgba(0, 0, 0, 0.05);
+    --dock-liquid-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0.18) 45%, rgba(255, 255, 255, 0) 65%, rgba(255, 255, 255, 0.35) 100%);
     --popover-bg: rgba(255, 255, 255, 0.94);
     --popover-border: rgba(0, 0, 0, 0.12);
-    --popover-shadow: 0 16px 36px rgba(0, 0, 0, 0.15);
+    --popover-shadow: 0 16px 36px rgba(0, 0, 0, 0.15), inset 0 1px 1.2px rgba(255, 255, 255, 0.9), inset 0 -1px 1px rgba(0, 0, 0, 0.04);
     --scrubber-bg: rgba(0, 0, 0, 0.12);
     --scrubber-fill: #1D1D1F;
   }}
@@ -507,16 +509,17 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     height: 38px;
     border-radius: 50%;
     background: rgba(28, 28, 32, var(--topbar-icon-opacity, 0.65));
-    backdrop-filter: blur(var(--topbar-icon-blur, 28px));
-    -webkit-backdrop-filter: blur(var(--topbar-icon-blur, 28px));
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.08) 100%);
+    backdrop-filter: blur(var(--topbar-icon-blur, 28px)) saturate(190%) url(#discflow-liquid-droplet);
+    -webkit-backdrop-filter: blur(var(--topbar-icon-blur, 28px)) saturate(190%) url(#discflow-liquid-droplet);
     border: 1px solid rgba(255, 255, 255, 0.16);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32), inset 0 1px 1px rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.2);
     color: var(--text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: transform 0.18s var(--spring-bounce), background-color 0.2s ease, border-color 0.2s ease;
+    transition: transform 0.18s var(--spring-bounce), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   }}
 
   .top-icon-btn:hover {{
@@ -549,7 +552,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     gap: 4px;
     z-index: 120;
     user-select: none;
-    animation: menuFadeIn 0.22s var(--spring-bounce);
+    transform-origin: top left;
+    animation: menuFadeIn 0.2s var(--spring-fluid);
   }}
 
   .discflow-popover-menu.is-open {{
@@ -719,15 +723,18 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   .modal-dialog {{
     width: clamp(340px, 42vw, 480px);
     background: var(--bg-elevated-1);
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.01) 40%, rgba(255, 255, 255, 0.04) 100%);
+    backdrop-filter: blur(48px) saturate(190%) url(#discflow-liquid-lens);
+    -webkit-backdrop-filter: blur(48px) saturate(190%) url(#discflow-liquid-lens);
     border: 1px solid var(--border-hairline);
     border-radius: 20px;
     padding: clamp(18px, 2.4vw, 28px);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48), inset 0 1px 1.2px rgba(255, 255, 255, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
     display: flex;
     flex-direction: column;
     gap: 16px;
-    transform: scale(0.92);
-    transition: transform 0.28s var(--spring-bounce);
+    transform: scale(0.96);
+    transition: transform 0.24s var(--spring-fluid);
   }}
 
   .popup-modal-overlay.open .modal-dialog {{
@@ -823,6 +830,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
   .player-column {{
     width: 100%;
+    min-width: 0;
     max-width: var(--left-col-max);
     margin: 0 auto;
     display: flex;
@@ -978,6 +986,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   .right-stage {{
     position: relative;
     height: 100%;
+    min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -986,6 +995,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
   .lyrics-viewport {{
     flex: 1;
+    min-width: 0;
     min-height: 0;
     overflow-y: auto;
     padding: 34vh clamp(14px, 2.2vw, 32px) 38vh clamp(10px, 1.4vw, 20px);
@@ -1304,12 +1314,16 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     font-weight: 600;
     cursor: pointer;
     outline: none;
-    transition: all 0.22s var(--spring-bounce);
+    transition: transform 0.16s var(--spring-fluid), background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
   }}
 
   .mode-pill-btn:hover {{
     color: var(--text-primary);
     background: rgba(255, 255, 255, 0.08);
+  }}
+
+  .mode-pill-btn:active {{
+    transform: scale(0.96);
   }}
 
   .mode-pill-btn.active {{
@@ -1737,6 +1751,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   /* 谜底黑胶卡片 (封套 + 露出 38% 黑胶盘 + 弹簧滑出动效) */
   .vinyl-card {{
     position: relative;
+    min-width: 0;
     background: var(--bg-card);
     border: 1px solid var(--border-hairline);
     border-radius: 14px;
@@ -2602,8 +2617,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     gap: 16px;
     padding: 0 24px;
     background: rgba(var(--dock-bg-rgb, 22, 22, 28), var(--dock-custom-opacity, 0.75));
-    backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(190%);
-    -webkit-backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(190%);
+    background-image: var(--dock-liquid-sheen);
+    backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(195%) url(#discflow-liquid-lens);
+    -webkit-backdrop-filter: blur(var(--dock-custom-blur, 40px)) saturate(195%) url(#discflow-liquid-lens);
     border: 1px solid var(--dock-border);
     box-shadow: var(--dock-shadow);
     border-radius: 999px;
@@ -2715,6 +2731,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     transform: scale(1.12);
   }}
 
+  .dock-ctrl-btn:active,
+  .dock-action-btn:active {{
+    transform: scale(0.92);
+  }}
+
   .dock-right-actions {{
     justify-self: end;
     display: flex;
@@ -2776,14 +2797,16 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     justify-content: space-between;
     gap: 8px;
     background: rgba(26, 26, 32, 0.92);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
+    background-image: var(--dock-liquid-sheen);
+    backdrop-filter: blur(40px) saturate(190%) url(#discflow-liquid-lens);
+    -webkit-backdrop-filter: blur(40px) saturate(190%) url(#discflow-liquid-lens);
     border: 1px solid rgba(255, 255, 255, 0.14);
-    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    box-shadow: var(--popover-shadow);
     border-radius: 22px;
+    transform-origin: bottom center;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity 0.2s ease, transform 0.22s var(--spring-fluid);
     z-index: 120;
     user-select: none;
   }}
@@ -2796,8 +2819,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
   [data-theme="light"] .dock-volume-popover.vertical {{
     background: rgba(255, 255, 255, 0.94);
+    background-image: var(--dock-liquid-sheen);
     border-color: rgba(0, 0, 0, 0.1);
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    box-shadow: var(--popover-shadow);
     color: #1D1D1F;
   }}
 
@@ -2877,7 +2901,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.16s ease;
+    transition: transform 0.16s var(--spring-fluid), background-color 0.16s ease, border-color 0.16s ease;
+  }}
+
+  .dock-vol-popover-icon:active {{
+    transform: scale(0.92);
   }}
 
   [data-theme="light"] .dock-vol-popover-icon {{
@@ -3196,7 +3224,11 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.16s var(--spring-fluid), background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  }}
+
+  .fluid-mode-btn:active {{
+    transform: scale(0.94);
   }}
 
   .fluid-mode-btn:hover {{
@@ -3434,9 +3466,15 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   /* 浅色模式全 App 统一适配微调 */
   [data-theme="light"] .top-icon-btn {{
     background: rgba(255, 255, 255, var(--topbar-icon-opacity, 0.85));
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.3) 100%);
     border-color: rgba(0, 0, 0, 0.1);
     color: #1D1D1F;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.85), inset 0 -1px 1px rgba(0, 0, 0, 0.04);
+  }}
+
+  [data-theme="light"] .modal-dialog {{
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.15) 40%, rgba(255, 255, 255, 0.35) 100%);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15), inset 0 1px 1.2px rgba(255, 255, 255, 0.95), inset 0 -1px 1px rgba(0, 0, 0, 0.05);
   }}
 
   /* ================= 一体化四分类系统设置偏好中心样式 ================= */
@@ -3488,7 +3526,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.16s ease;
+    transition: transform 0.16s var(--spring-fluid), background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+  }}
+  .settings-tab-btn:active {{
+    transform: scale(0.97);
   }}
   .settings-tab-btn:hover {{
     color: var(--text-primary);
@@ -3740,17 +3781,48 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
   /* 透明度为 0% 时底栏边框与投影自适应柔化 */
   .bottom-dock-player.is-fully-transparent {{
+    background-image: none;
     border-color: rgba(255, 255, 255, 0.08);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   }}
 
   [data-theme="light"] .bottom-dock-player.is-fully-transparent {{
+    background-image: none;
     border-color: rgba(0, 0, 0, 0.06);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+  }}
+
+  /* 系统级减弱动态效果支持 (Accessibility: prefers-reduced-motion) */
+  @media (prefers-reduced-motion: reduce) {{
+    *, *::before, *::after {{
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }}
+    .mesh-blob {{
+      animation: none !important;
+    }}
   }}
 </style>
 </head>
 <body class="is-playing">
+
+  <!-- 原生 Liquid Glass (液态玻璃) 光学折射 SVG 滤镜定义 (无任何外部依赖，GPU 加速) -->
+  <svg width="0" height="0" style="position: absolute; width: 0; height: 0; pointer-events: none;" aria-hidden="true">
+    <defs>
+      <!-- 大组件轻量微距折射滤镜 (适用于 Dock 栏、音量弹窗、模态对话框) -->
+      <filter id="discflow-liquid-lens" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+        <feTurbulence type="fractalNoise" baseFrequency="0.015 0.015" numOctaves="2" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+      <!-- 小图标晶莹液滴折射滤镜 (适用于顶部圆形悬浮按钮) -->
+      <filter id="discflow-liquid-droplet" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035 0.035" numOctaves="2" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.2" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
+  </svg>
 
   <!-- 1. 动态专辑流体背景层 (Mesh Gradient + 54px 磨砂遮罩) -->
   <div class="ambient-stage">
