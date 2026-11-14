@@ -8501,22 +8501,21 @@ class DiscflowController:
         target = ""
         if phys:
             # 启动时部分外置/休眠光驱首次 CHECK_VERIFY 可能返回 False，短暂重试并尝试读取 TOC 唤醒光驱
-            for attempt in range(4):
+            for attempt in range(5):
                 for drv in phys:
                     if WindowsCdDriveManager.is_disc_ready(drv):
                         target = drv
                         break
-                    if attempt >= 1:
-                        try:
-                            toc = WindowsCdDriveManager.read_toc(drv, allow_zero_fallback=False)
-                            if toc is not None and len(toc.tracks) > 0:
-                                target = drv
-                                break
-                        except Exception:
-                            pass
-                if target or attempt == 3:
+                    try:
+                        toc = WindowsCdDriveManager.read_toc(drv)
+                        if toc is not None and len(toc.tracks) > 0:
+                            target = drv
+                            break
+                    except Exception:
+                        pass
+                if target or attempt == 4:
                     break
-                time.sleep(0.45)
+                time.sleep(0.5)
 
         if target:
             threading.Thread(target=self._load_drive_async, args=(target,), daemon=True).start()
@@ -8591,6 +8590,24 @@ class DiscflowController:
                             ).start()
                             break
                     else:
+                        # 部分 USB 光驱在休眠/刚插入时 CHECK_VERIFY 返回 False 但 read_toc 可唤醒读出
+                        if (
+                            p_drv not in self._non_audio_drives
+                            and (self.current_toc is None or self.current_toc.drive_letter != p_drv)
+                            and (self._watcher_miss_count.get(p_drv, 0) % 2 == 0)
+                        ):
+                            try:
+                                probe_toc = WindowsCdDriveManager.read_toc(p_drv)
+                                if probe_toc is not None and len(probe_toc.tracks) > 0:
+                                    self._watcher_miss_count[p_drv] = 0
+                                    threading.Thread(
+                                        target=self._load_drive_async,
+                                        args=(p_drv,),
+                                        daemon=True,
+                                    ).start()
+                                    break
+                            except Exception:
+                                pass
                         # 光盘已取出或未就绪时清除非音频标记，等待下次放盘重新识别
                         self._non_audio_drives.discard(p_drv)
                         # 物理防抖：外置 USB 光驱在寻道或刚放入时可能偶发瞬态未就绪
