@@ -778,16 +778,16 @@ class CddaWaveOutPlayer:
                     h_drive = WindowsCdDriveManager.open_drive_handle(drv)
                     current_opened_drive = drv
 
-        def push_chunk(chunk: _ReadChunk) -> bool:
+        def push_chunk(chunk: _ReadChunk) -> str:
             while True:
                 with self._lock:
                     if self._session_id != my_session_id:
-                        return False
+                        return "stopped"
                     if self._seek_generation != chunk.seek_gen:
-                        return False
+                        return "stale_seek"
                 try:
                     self._read_ahead_queue.put(chunk, timeout=0.08)
-                    return True
+                    return "ok"
                 except queue.Full:
                     continue
 
@@ -829,7 +829,7 @@ class CddaWaveOutPlayer:
                         cur_lba = next_trk.start_lba
                         open_media(cur_trk, cur_drv)
                         # 压入跨轨边界标记
-                        if not push_chunk(
+                        push_res = push_chunk(
                             _ReadChunk(
                                 lba=cur_lba,
                                 data=b"",
@@ -838,12 +838,13 @@ class CddaWaveOutPlayer:
                                 seek_gen=cur_seek_gen,
                                 is_track_boundary=True,
                             )
-                        ):
+                        )
+                        if push_res == "stopped":
                             break
                         continue
                     else:
                         # 全部曲目读取完毕，压入 EOF 标记
-                        push_chunk(
+                        push_res = push_chunk(
                             _ReadChunk(
                                 lba=-1,
                                 data=b"",
@@ -853,6 +854,10 @@ class CddaWaveOutPlayer:
                                 is_eof=True,
                             )
                         )
+                        if push_res == "stale_seek":
+                            continue
+                        if push_res == "stopped":
+                            break
                         break
 
                 # 控制预读上限 (约 5 秒音频)，避免无限制占用内存
@@ -910,7 +915,7 @@ class CddaWaveOutPlayer:
                             break
                         pcm_bytes = b"\x00" * required_bytes
 
-                if not push_chunk(
+                push_res = push_chunk(
                     _ReadChunk(
                         lba=cur_lba,
                         data=pcm_bytes,
@@ -918,8 +923,11 @@ class CddaWaveOutPlayer:
                         track_index=cur_idx,
                         seek_gen=cur_seek_gen,
                     )
-                ):
+                )
+                if push_res == "stopped":
                     break
+                if push_res == "stale_seek":
+                    continue
                 cur_lba += chunk_count
         finally:
             if h_drive is not None:

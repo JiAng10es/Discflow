@@ -46,6 +46,7 @@ from metadata_service import (
     download_image_bytes,
     prefetch_lyrics_for_tracks,
     refetch_album_cover,
+    update_cached_cover,
     search_album_candidates,
     search_lyric_candidates,
 )
@@ -8498,10 +8499,24 @@ class DiscflowController:
     def _initial_boot(self):
         phys = self._refresh_cached_drives()
         target = ""
-        for drv in phys:
-            if WindowsCdDriveManager.is_disc_ready(drv):
-                target = drv
-                break
+        if phys:
+            # 启动时部分外置/休眠光驱首次 CHECK_VERIFY 可能返回 False，短暂重试并尝试读取 TOC 唤醒光驱
+            for attempt in range(4):
+                for drv in phys:
+                    if WindowsCdDriveManager.is_disc_ready(drv):
+                        target = drv
+                        break
+                    if attempt >= 1:
+                        try:
+                            toc = WindowsCdDriveManager.read_toc(drv, allow_zero_fallback=False)
+                            if toc is not None and len(toc.tracks) > 0:
+                                target = drv
+                                break
+                        except Exception:
+                            pass
+                if target or attempt == 3:
+                    break
+                time.sleep(0.45)
 
         if target:
             threading.Thread(target=self._load_drive_async, args=(target,), daemon=True).start()
@@ -8800,6 +8815,7 @@ class DiscflowController:
             return
         if self.cover_data_url:
             return  # 期间已经被别的路径补上了
+        update_cached_cover(disc_id, data_url)
         self.cover_data_url = data_url
         self._bump_meta()
 

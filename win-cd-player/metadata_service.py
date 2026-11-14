@@ -362,7 +362,9 @@ def _fetch_cover_from_itunes(artist: str, album_title: str) -> Optional[bytes]:
     return None
 
 
-def _fetch_cover_art_bytes(release_id: str, artist: str, album_title: str) -> Optional[bytes]:
+def _fetch_cover_art_bytes(
+    release_id: str, artist: str, album_title: str, timeout: float = 6.5
+) -> Optional[bytes]:
     """
     多源并发获取专辑封面并择优（v1.11 优化）：
     - 优先级：CoverArtArchive 官方封面 > 网易云 > iTunes；
@@ -372,7 +374,8 @@ def _fetch_cover_art_bytes(release_id: str, artist: str, album_title: str) -> Op
     tier_of: Dict[object, int] = {}
     results: Dict[object, bytes] = {}
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    pool = ThreadPoolExecutor(max_workers=3)
+    try:
         if release_id:
             fut_caa = pool.submit(_fetch_cover_from_caa, release_id)
             tier_of[fut_caa] = 0
@@ -382,7 +385,7 @@ def _fetch_cover_art_bytes(release_id: str, artist: str, album_title: str) -> Op
         tier_of[fut_itunes] = 2
 
         try:
-            for future in as_completed(list(tier_of.keys()), timeout=3.2):
+            for future in as_completed(list(tier_of.keys()), timeout=timeout):
                 try:
                     data = future.result()
                 except Exception:
@@ -395,6 +398,8 @@ def _fetch_cover_art_bytes(release_id: str, artist: str, album_title: str) -> Op
         except Exception:
             # 超时后使用已到达的结果，不再等待慢源
             pass
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     if not results:
         return None
@@ -419,6 +424,14 @@ def lookup_album_metadata(
                 on_partial(cached)
             except Exception:
                 pass
+        if (
+            not cached.cover_data_url
+            and cached.album_title
+            and cached.album_title not in ("Audio CD", "CD-TEXT Album")
+        ):
+            cover_bytes = _fetch_cover_art_bytes("", cached.artist, cached.album_title, timeout=6.5)
+            if cover_bytes:
+                cached.cover_data_url = _bytes_to_data_url(cover_bytes)
         return cached
 
     if not toc or not toc.tracks:
@@ -865,6 +878,15 @@ def download_image_bytes(url: str) -> Optional[bytes]:
     return None
 
 
+def update_cached_cover(disc_id: str, cover_data_url: str) -> None:
+    """将后台补抓到的封面同步回写到内存元数据缓存，避免下次读盘仍无封面。"""
+    if not disc_id or not cover_data_url:
+        return
+    cached = _METADATA_CACHE.get(disc_id)
+    if cached is not None and not cached.cover_data_url:
+        cached.cover_data_url = cover_data_url
+
+
 def refetch_album_cover(album_title: str, artist: str) -> str:
     """
     按专辑名 + 艺术家重新抓一次封面，返回 Base64 Data URL（失败返回空串）。
@@ -875,7 +897,7 @@ def refetch_album_cover(album_title: str, artist: str) -> str:
     if not (album_title or "").strip():
         return ""
     try:
-        raw = _fetch_cover_art_bytes("", artist or "", album_title)
+        raw = _fetch_cover_art_bytes("", artist or "", album_title, timeout=8.5)
         if raw:
             return _bytes_to_data_url(raw)
     except Exception:
