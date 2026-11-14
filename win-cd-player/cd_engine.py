@@ -271,7 +271,7 @@ class WindowsCdDriveManager:
         return drives
 
     @staticmethod
-    def open_drive_handle(drive_letter: str, read_access: bool = True):
+    def open_drive_handle(drive_letter: str, read_access: bool = True, allow_zero_fallback: bool = True):
         clean_letter = drive_letter.split()[0].rstrip("\\/")
         device_path = f"\\\\.\\{clean_letter}"
         access = GENERIC_READ if read_access else 0
@@ -284,7 +284,7 @@ class WindowsCdDriveManager:
             0,
             None,
         )
-        if handle == INVALID_HANDLE_VALUE or handle is None or handle == 0:
+        if allow_zero_fallback and (handle == INVALID_HANDLE_VALUE or handle is None or handle == 0):
             # 降级兜底：以 0 权限 (仅查询属性) 打开，足够响应 IOCTL 状态检测与弹出
             handle = kernel32.CreateFileW(
                 device_path,
@@ -443,7 +443,9 @@ class WindowsCdDriveManager:
         if not drive_letter:
             return None
 
-        handle = cls.open_drive_handle(drive_letter)
+        handle = cls.open_drive_handle(drive_letter, read_access=True, allow_zero_fallback=False)
+        if handle is None:
+            handle = cls.open_drive_handle(drive_letter, read_access=False, allow_zero_fallback=True)
         if handle is None:
             return None
 

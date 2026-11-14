@@ -7442,6 +7442,7 @@ class DiscflowController:
         self._lyrics_version: int = 1
         self._load_token: int = 0
         self._watcher_miss_count: Dict[str, int] = {}
+        self._non_audio_drives: set = set()
 
         self._cached_drives: List[str] = []
         self.current_toc: Optional[CdDiscToc] = None
@@ -7609,9 +7610,26 @@ class DiscflowController:
             threading.Thread(target=self._load_drive_async, args=(drive_letter,), daemon=True).start()
 
     def rescan_drive(self):
-        target = self.current_drive
-        if not target and self._cached_drives:
-            target = self._cached_drives[0]
+        phys = self._refresh_cached_drives()
+        self._non_audio_drives.clear()
+        target = ""
+        for drv in phys:
+            if WindowsCdDriveManager.is_disc_ready(drv):
+                target = drv
+                break
+        if not target:
+            if self.current_drive and self.current_drive in phys:
+                target = self.current_drive
+            elif phys:
+                target = phys[0]
+
+        if not target:
+            with self._lock:
+                self.is_loading = False
+                self.status_text = "未检测到可用光驱 · 请连接外置或内置 CD 光驱"
+                self._bump_meta()
+            return
+
         self.current_toc = None
         self._bump_meta()
         threading.Thread(target=self._load_drive_async, args=(target,), daemon=True).start()
@@ -7620,6 +7638,7 @@ class DiscflowController:
         drv = self.current_drive
         if not drv:
             return
+        self._non_audio_drives.discard(drv)
         self._load_token += 1
         self.player.stop()
         self.current_toc = None
@@ -8541,6 +8560,8 @@ class DiscflowController:
                     ready = WindowsCdDriveManager.is_disc_ready(p_drv)
                     if ready:
                         self._watcher_miss_count[p_drv] = 0
+                        if p_drv in self._non_audio_drives:
+                            continue
                         if (
                             self.current_toc is None
                             or self.current_toc.drive_letter != p_drv
@@ -8555,6 +8576,8 @@ class DiscflowController:
                             ).start()
                             break
                     else:
+                        # 光盘已取出或未就绪时清除非音频标记，等待下次放盘重新识别
+                        self._non_audio_drives.discard(p_drv)
                         # 物理防抖：外置 USB 光驱在寻道或刚放入时可能偶发瞬态未就绪
                         # 只有连续 3 次巡检 (约 5.4 秒) 均明确未就绪，且当前载入了该光驱，才判定为退盘
                         self._watcher_miss_count[p_drv] = self._watcher_miss_count.get(p_drv, 0) + 1
@@ -8584,6 +8607,13 @@ class DiscflowController:
             self._bump_lyrics()
 
     def _load_drive_async(self, drive_letter: str):
+        if not drive_letter:
+            with self._lock:
+                self.is_loading = False
+                self.status_text = "未检测到可用光驱 · 请连接外置或内置 CD 光驱"
+                self._bump_meta()
+            return
+
         with self._lock:
             self._load_token += 1
             my_token = self._load_token
@@ -8602,7 +8632,7 @@ class DiscflowController:
 
         toc: Optional[CdDiscToc] = None
         try:
-            max_attempts = 6
+            max_attempts = 12
             for attempt in range(max_attempts):
                 if my_token != self._load_token or self._closed:
                     return
@@ -8614,12 +8644,15 @@ class DiscflowController:
 
                 if attempt < max_attempts - 1:
                     self.status_text = f"光驱 {drive_letter} 正在旋转启动 ({attempt + 1}/{max_attempts})..."
-                    time.sleep(0.75)
+                    self._bump_meta()
+                    time.sleep(0.8)
 
             if my_token != self._load_token or self._closed:
                 return
 
             if not toc or not toc.tracks:
+                if WindowsCdDriveManager.is_disc_ready(drive_letter):
+                    self._non_audio_drives.add(drive_letter)
                 with self._lock:
                     if my_token == self._load_token:
                         self.current_toc = None
@@ -8633,6 +8666,22 @@ class DiscflowController:
                         self._bump_meta()
                 return
 
+            audio_indices = [i for i, t in enumerate(toc.tracks) if not getattr(t, "is_data_track", False)]
+            if not audio_indices:
+                self._non_audio_drives.add(drive_letter)
+                with self._lock:
+                    if my_token == self._load_token:
+                        self.current_toc = None
+                        self.is_loading = False
+                        self.elapsed_sec = 0.0
+                        self.duration_sec = 0.0
+                        self.status_text = f"光驱 {drive_letter} 中的光盘不含标准音频 CD (CD-DA) 音轨"
+                        self.album_title = f"非音频 CD ({drive_letter})"
+                        self.artist = "请更换标准音频 CD 光盘"
+                        self.cover_data_url = ""
+                        self._bump_meta()
+                return
+
             with self._lock:
                 if my_token != self._load_token or self._closed:
                     return
@@ -8641,7 +8690,7 @@ class DiscflowController:
                 self.artist = toc.cdtext_artist or f"DiscID {toc.disc_id[:10]}"
                 self.year = ""
                 self.cover_data_url = ""
-                self.status_text = f"已就绪 ({drive_letter}) · {len(toc.tracks)} 首音轨 · 正在匹配封面与元数据..."
+                self.status_text = f"已就绪 ({drive_letter}) · {len(audio_indices)} 首音轨 · 正在匹配封面与元数据..."
                 self.is_loading = False
                 self._bump_meta()
 
@@ -8650,7 +8699,7 @@ class DiscflowController:
                 auto_play = bool(load_user_preferences().get("autoPlay", True))
             except Exception:
                 auto_play = True
-            self._start_track(0, autoplay=auto_play)
+            self._start_track(audio_indices[0], autoplay=auto_play)
             threading.Thread(target=self._fetch_metadata_async, args=(toc, my_token), daemon=True).start()
         except Exception as e:
             with self._lock:
