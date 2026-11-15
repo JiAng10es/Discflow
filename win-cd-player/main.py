@@ -124,7 +124,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     --lyrics-margin-bottom: 12px;
     /* 逐字歌词卡拉 OK 高亮：已唱部分与未唱部分 */
     --karaoke-fill: var(--text-primary);
-    --karaoke-idle: rgba(255, 255, 255, 0.34);
+    --karaoke-idle: rgba(255, 255, 255, 0.58);
     --dock-custom-width: 720px;
     --dock-custom-opacity: 0.05;
     --topbar-icon-opacity: 0.05;
@@ -183,8 +183,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   :root,
   [data-theme="dark"] {{
     --bg-base: #000000;
-    --bg-elevated-1: rgba(28, 28, 30, 0.68);
-    --bg-elevated-2: rgba(44, 44, 46, 0.62);
+    --bg-elevated-1: rgba(44, 46, 56, 0.42);
+    --bg-elevated-2: rgba(58, 60, 72, 0.48);
     --bg-pill: rgba(255, 255, 255, 0.09);
     --bg-pill-hover: rgba(255, 255, 255, 0.16);
     --bg-pill-active: rgba(255, 255, 255, 0.94);
@@ -219,6 +219,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
       --text-tertiary: rgba(60, 60, 67, 0.38);
       --track-bar-bg: rgba(0, 0, 0, 0.14);
       --track-bar-fill: rgba(0, 0, 0, 0.84);
+      --karaoke-idle: rgba(0, 0, 0, 0.48);
       --lyric-glow: rgba(0, 0, 0, 0.08);
       /* 极简黑白 App Icon 语义色 (浅色模式下黑线白底) */
       --app-icon-bg: #FFFFFF;
@@ -240,7 +241,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     --text-primary: #1D1D1F;
     --text-secondary: #515154;
     --text-tertiary: #86868B;
-    --karaoke-idle: rgba(0, 0, 0, 0.28);
+    --karaoke-idle: rgba(0, 0, 0, 0.48);
     --track-bar-bg: rgba(0, 0, 0, 0.12);
     --track-bar-fill: rgba(0, 0, 0, 0.85);
     --lyric-glow: rgba(0, 0, 0, 0.06);
@@ -541,11 +542,12 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     top: 54px;
     left: 16px;
     min-width: 190px;
-    background: rgba(24, 24, 28, 0.85);
-    backdrop-filter: blur(40px) saturate(190%);
-    -webkit-backdrop-filter: blur(40px) saturate(190%);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    background: rgba(44, 46, 56, 0.46);
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.08) 100%);
+    backdrop-filter: blur(40px) saturate(185%);
+    -webkit-backdrop-filter: blur(40px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34), inset 0 1px 1px rgba(255, 255, 255, 0.28);
     border-radius: 18px;
     padding: 6px;
     display: none;
@@ -704,9 +706,9 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     position: fixed;
     inset: 0;
     z-index: 100;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: rgba(8, 10, 16, 0.24);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     display: none;
     align-items: center;
     justify-content: center;
@@ -724,13 +726,13 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   .modal-dialog {{
     width: clamp(340px, 42vw, 480px);
     background: var(--bg-elevated-1);
-    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.01) 40%, rgba(255, 255, 255, 0.04) 100%);
-    backdrop-filter: blur(48px) saturate(190%) url(#discflow-liquid-lens);
-    -webkit-backdrop-filter: blur(48px) saturate(190%) url(#discflow-liquid-lens);
-    border: 1px solid var(--border-hairline);
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 45%, rgba(255, 255, 255, 0.08) 100%);
+    backdrop-filter: blur(44px) saturate(185%) url(#discflow-liquid-lens);
+    -webkit-backdrop-filter: blur(44px) saturate(185%) url(#discflow-liquid-lens);
+    border: 1px solid rgba(255, 255, 255, 0.20);
     border-radius: 20px;
     padding: clamp(18px, 2.4vw, 28px);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48), inset 0 1px 1.2px rgba(255, 255, 255, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.36), inset 0 1px 1.2px rgba(255, 255, 255, 0.32), inset 0 -1px 1px rgba(0, 0, 0, 0.15);
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -995,12 +997,12 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   .lyrics-viewport {{
+    position: relative;
     flex: 1;
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
     padding: 34vh clamp(14px, 2.2vw, 32px) 38vh clamp(10px, 1.4vw, 20px);
-    scroll-behavior: smooth;
     mask-image: linear-gradient(
       to bottom,
       transparent 0%,
@@ -1117,24 +1119,28 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     word-break: break-word;
   }}
 
-  /* 逐字卡拉 OK 歌词：每个字词独立 span，按播放进度用渐变裁切做填充高亮 */
+  /* 逐字卡拉 OK 歌词：双层定位高亮，彻底摆脱 background-clip: text 渲染失效 */
   .lyric-word {{
+    position: relative;
     display: inline-block;
     white-space: pre;
   }}
 
   .lyric-item.active .lyric-word {{
-    background-image: linear-gradient(
-      90deg,
-      var(--karaoke-fill) 0%,
-      var(--karaoke-fill) var(--wp, 0%),
-      var(--karaoke-idle) var(--wp, 0%),
-      var(--karaoke-idle) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
+    color: var(--karaoke-idle);
+  }}
+
+  .lyric-item.active .lyric-word::after {{
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--wp, 0%);
+    height: 100%;
+    overflow: hidden;
+    white-space: pre;
+    color: var(--karaoke-fill);
+    pointer-events: none;
   }}
 
   .lyric-trans {{
@@ -1438,7 +1444,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   }}
 
   .lyric-cand {{
-    border: 1px solid var(--border-hairline);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 10px;
     padding: 9px 11px;
     cursor: pointer;
@@ -1524,7 +1531,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
   .album-cand {{
     display: flex;
     gap: 12px;
-    border: 1px solid var(--border-hairline);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 10px;
     padding: 9px 11px;
     cursor: pointer;
@@ -2609,14 +2617,14 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     transform: translateX(-50%);
     z-index: 60;
     height: 74px;
-    width: var(--dock-custom-width, 720px);
-    min-width: 500px;
+    width: min(var(--dock-custom-width, 720px), 92vw);
+    min-width: 480px;
     max-width: 92vw;
     display: grid;
-    grid-template-columns: minmax(160px, 236px) 1fr minmax(160px, 236px);
+    grid-template-columns: minmax(0, 1fr) minmax(170px, 1.35fr) minmax(84px, 1fr);
     align-items: center;
-    gap: 16px;
-    padding: 0 24px;
+    gap: 14px;
+    padding: 0 20px;
     background: rgba(var(--dock-bg-rgb, 22, 22, 28), var(--dock-custom-opacity, 0.05));
     background-image: var(--dock-liquid-sheen);
     backdrop-filter: blur(var(--dock-custom-blur, 2px)) saturate(195%) url(#discflow-liquid-lens);
@@ -2627,18 +2635,34 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     user-select: none;
     flex-shrink: 0;
     white-space: nowrap;
+    box-sizing: border-box;
     transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, opacity 0.3s ease;
+  }}
+
+  .bottom-dock-player.is-compact {{
+    padding: 0 14px;
+    gap: 8px;
+    grid-template-columns: minmax(0, 0.95fr) minmax(156px, 1.45fr) minmax(72px, 0.8fr);
+  }}
+
+  .bottom-dock-player.is-compact .dock-center-controls {{
+    gap: 10px;
+  }}
+
+  .bottom-dock-player.is-compact .dock-time-text {{
+    min-width: 26px;
+    font-size: 10px;
   }}
 
   .dock-album-cluster {{
     justify-self: start;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     cursor: pointer;
     flex: 0 1 236px;
-    min-width: 132px;
-    max-width: 236px;
+    min-width: 0;
+    max-width: 100%;
     width: 100%;
     overflow: hidden;
     transition: transform 0.18s ease;
@@ -2652,7 +2676,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     justify-self: center;
     width: 100%;
     max-width: 380px;
-    min-width: 180px;
+    min-width: 156px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -3567,8 +3591,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     to {{ opacity: 1; }}
   }}
   .settings-card-group {{
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.075);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     overflow: hidden;
     margin-bottom: 12px;
@@ -4344,7 +4368,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
                 </span>
                 <span class="discflow-wordmark" style="font-size: 20px; font-weight: 700; color: #fff;">{APP_NAME}</span>
               </div>
-              <div style="font-size: 12px; color: #30d158; font-weight: 600; font-family: 'SF Mono', monospace;">v2.0.6 · Windows x64 Native</div>
+              <div style="font-size: 12px; color: #30d158; font-weight: 600; font-family: 'SF Mono', monospace;">v2.1.0 · Windows x64 Native</div>
             </div>
 
             <div class="settings-card-group">
@@ -4760,9 +4784,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
 
     try {{
       const savedTheme = localStorage.getItem("discflow_theme");
-      if (savedTheme) {{
-        applyTheme(savedTheme);
-      }}
+      const fallbackTheme = currentCustomPrefs.themeMode ||
+        (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      const initTheme = (savedTheme === "light" || savedTheme === "dark") ? savedTheme : fallbackTheme;
+      applyTheme(initTheme, false);
     }} catch (e) {{}}
   }}
 
@@ -4782,8 +4807,8 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
       if (prefs && typeof prefs === "object") {{
         currentCustomPrefs = {{ ...DEFAULT_CUSTOM_PREFS, ...currentCustomPrefs, ...prefs }};
         applyCustomPrefs(currentCustomPrefs);
-        if (prefs.themeMode) {{
-          applyTheme(prefs.themeMode);
+        if (prefs.themeMode === "light" || prefs.themeMode === "dark") {{
+          applyTheme(prefs.themeMode, false);
         }}
         if (typeof prefs.autoPlay === "boolean") {{
           if (typeof appState !== "undefined") appState.autoPlayDisc = prefs.autoPlay;
@@ -4821,6 +4846,7 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
     const dockEl = document.getElementById("bottomDockPlayer");
     if (dockEl) {{
       dockEl.classList.toggle("is-fully-transparent", op === 0);
+      dockEl.classList.toggle("is-compact", Number(prefs.dockWidth || 720) <= 580);
     }}
     applyTranslationVisibility(prefs.showTranslation !== false);
     syncCustomSettingsInputs(prefs);
@@ -4864,6 +4890,10 @@ APPLE_MUSIC_HTML = f"""<!DOCTYPE html>
             ? appState.autoPlayDisc
             : true);
       apSwitch.checked = isAuto;
+    }}
+
+    if (typeof recenterActiveLyric === "function") {{
+      recenterActiveLyric();
     }}
   }}
 
@@ -5415,6 +5445,7 @@ function toggleDiscflowMenu(event) {{
     showTranslation: currentCustomPrefs.showTranslation !== false,
     autoPlayDisc: true
   }};
+  window._discflowAppReady = true;
 
   function openModal(id) {{
     const el = document.getElementById(id);
@@ -5506,6 +5537,9 @@ function toggleDiscflowMenu(event) {{
     currentCustomPrefs.showTranslation = next;
     applyTranslationVisibility(next);
     saveCustomPrefs();
+    if (typeof recenterActiveLyric === "function") {{
+      recenterActiveLyric();
+    }}
   }}
 
   function toggleAutoPlay() {{
@@ -5663,10 +5697,14 @@ function toggleDiscflowMenu(event) {{
       }} else {{
         end = start + Math.min(6, Math.max(2, text.length * 0.3));
       }}
-      const dur = Math.max(0.6, Math.min(12, end - start));
-
       const tokens = tokenizeKaraokeLine(text);
       if (!tokens.length) continue;
+      // 防止句间长间奏被均摊进普通 LRC 最后一个字，导致逐字与人声严重拖节
+      const rawGap = Math.max(0.55, end - start);
+      const effectiveGap = rawGap > 1.2 ? rawGap - 0.15 : rawGap;
+      const estimatedSungDur = Math.max(1.4, tokens.length * 0.36);
+      const dur = Math.min(effectiveGap, estimatedSungDur);
+
       const weights = tokens.map(tk => Math.max(1, (tk.trim() || tk).length));
       const totalW = weights.reduce((a, b) => a + b, 0) || 1;
 
@@ -5688,6 +5726,7 @@ function toggleDiscflowMenu(event) {{
   function renderLyricsList(lyrics) {{
     lyrics = ensureWordTimings(lyrics);
     appState.activeLyricIndex = -1;
+    userScrollLockUntil = 0;
 
     const viewports = [
       document.getElementById("lyricsViewport"),
@@ -5725,9 +5764,11 @@ function toggleDiscflowMenu(event) {{
           line.words.forEach(w => {{
             const span = document.createElement("span");
             span.className = "lyric-word";
+            const wText = w.w || "";
             span.dataset.t = String(typeof w.t === "number" ? w.t : line.time);
             span.dataset.d = String(typeof w.d === "number" && w.d > 0 ? w.d : 0.25);
-            span.textContent = w.w || "";
+            span.dataset.text = wText;
+            span.textContent = wText;
             orig.appendChild(span);
           }});
         }} else {{
@@ -5755,6 +5796,10 @@ function toggleDiscflowMenu(event) {{
     }});
 
     applyTranslationVisibility(appState.showTranslation !== false);
+    syncKaraokeAnchor();
+    const curSec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
+    updateActiveLyric(curSec, true);
+    renderKaraokeWords(appState.activeLyricIndex, curSec - (Number(currentTrackLyricOffset) || 0.0));
   }}
 
   let currentTrackLyricOffset = 0.0;
@@ -5779,16 +5824,30 @@ function toggleDiscflowMenu(event) {{
     }}
   }}
 
+  function recenterActiveLyric() {{
+    if (!window._discflowAppReady || !appState.lyrics || appState.lyrics.length === 0) return;
+    userScrollLockUntil = 0;
+    requestAnimationFrame(() => {{
+      const curSec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
+      updateActiveLyric(curSec, true);
+      if (!appState.isPlaying) {{
+        renderKaraokeWords(
+          appState.activeLyricIndex,
+          curSec - (Number(currentTrackLyricOffset) || 0.0)
+        );
+      }}
+    }});
+  }}
+
   function updateActiveLyric(elapsedSec, forceUpdate = false) {{
     const lyrics = appState.lyrics;
     if (!lyrics || lyrics.length === 0) return;
 
-    // 加 60ms 前向偏置，并叠加快捷键微调的当前曲目时间轴偏移量 (秒)
-    const probe = (Number(elapsedSec) || 0) + 0.06;
-    const effectiveProbe = probe - (Number(currentTrackLyricOffset) || 0.0);
+    // 统一时间基准：硬件真声卡位置已消除队列滞后，直接应用用户微调偏移即可
+    const effectiveProbe = (Number(elapsedSec) || 0) - (Number(currentTrackLyricOffset) || 0.0);
 
-    // 修复 Bug：前奏阶段（当前时间小于首句歌词起始时间）不应提前激活首句，设为 -1
-    let activeIdx = -1;
+    // 若当前时间早于首句歌词（如刚打开应用、刚切歌或前奏阶段），默认聚焦首句，避免整页歌词全暗无高亮
+    let activeIdx = 0;
     for (let i = lyrics.length - 1; i >= 0; i--) {{
       if (effectiveProbe >= lyrics[i].time) {{
         activeIdx = i;
@@ -5819,21 +5878,65 @@ function toggleDiscflowMenu(event) {{
 
       if (activeIdx >= 0 && Date.now() > userScrollLockUntil && items[activeIdx]) {{
         const targetEl = items[activeIdx];
-        const viewportHeight = vp.clientHeight;
-        const targetTop = targetEl.offsetTop - viewportHeight * 0.36 + targetEl.clientHeight * 0.5;
-        vp.scrollTo({{
-          top: Math.max(0, targetTop),
-          behavior: "smooth"
-        }});
+        const vpRect = vp.getBoundingClientRect();
+        if (vpRect.height > 20) {{
+          const elRect = targetEl.getBoundingClientRect();
+          const currentCenter = elRect.top + elRect.height * 0.5;
+          const desiredCenter = vpRect.top + vpRect.height * 0.38;
+          const maxScroll = Math.max(0, vp.scrollHeight - vp.clientHeight);
+          const targetTop = Math.min(maxScroll, Math.max(0, vp.scrollTop + (currentCenter - desiredCenter)));
+          smoothScrollViewport(vp, targetTop, 260);
+        }}
       }}
     }});
   }}
 
-  // --- 逐字歌词卡拉 OK 渲染循环（rAF 自走时钟 + 轻微纠偏，避免高亮来回跳动） ---
+  const _vpScrollAnim = new WeakMap();
+  function smoothScrollViewport(vp, targetTop, durationMs = 220) {{
+    const prevId = _vpScrollAnim.get(vp);
+    if (prevId) cancelAnimationFrame(prevId);
+    const startTop = vp.scrollTop;
+    const diff = targetTop - startTop;
+    if (Math.abs(diff) < 2) {{
+      vp.scrollTop = targetTop;
+      return;
+    }}
+    const startTime = performance.now();
+    const tick = (now) => {{
+      const t = Math.min(1, (now - startTime) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      vp.scrollTop = startTop + diff * eased;
+      if (t < 1) {{
+        _vpScrollAnim.set(vp, requestAnimationFrame(tick));
+      }} else {{
+        _vpScrollAnim.delete(vp);
+      }}
+    }};
+    _vpScrollAnim.set(vp, requestAnimationFrame(tick));
+  }}
+
+  // --- 逐字歌词卡拉 OK 渲染循环（单向防回退时钟 + 弹性追帧，彻底消除回退抽搐） ---
   let karaokeRafId = null;
   let karaokeClock = 0;      // 当前播放位置的连续估计值（秒）
   let karaokeLastTs = 0;     // 上一帧时间戳
   let karaokeTrackKey = "";  // 碟片 + 曲目标识，用于切歌时硬重置
+  let karaokeRate = 1.0;     // 弹性追帧速率（0.72 ~ 1.22），绝不往回倒退
+
+  function renderKaraokeWords(idx, sec) {{
+    if (idx < 0) return;
+    const lyrics = appState.lyrics;
+    if (!lyrics || !lyrics.length) return;
+    const line = lyrics[idx];
+    if (!line || !Array.isArray(line.words) || !line.words.length) return;
+    document.querySelectorAll(`.lyric-item[data-index="${{idx}}"]`).forEach(item => {{
+      item.querySelectorAll(".lyric-word").forEach(wEl => {{
+        const t = parseFloat(wEl.dataset.t || "0");
+        const d = Math.max(0.08, parseFloat(wEl.dataset.d || "0.25"));
+        const p = Math.max(0, Math.min(1, (sec - t) / d));
+        wEl.style.setProperty("--wp", (p * 100).toFixed(1) + "%");
+      }});
+    }});
+  }}
 
   function syncKaraokeAnchor() {{
     const backend = Number(appState.elapsedSec) || 0;
@@ -5843,22 +5946,28 @@ function toggleDiscflowMenu(event) {{
       karaokeTrackKey = key;
       karaokeClock = backend;
       karaokeLastTs = 0;
+      karaokeRate = 1.0;
       return;
     }}
 
     if (!appState.isPlaying) {{
       karaokeClock = backend;
       karaokeLastTs = 0;
+      karaokeRate = 1.0;
       return;
     }}
 
     const drift = backend - karaokeClock;
-    if (Math.abs(drift) > 0.45) {{
-      // 拖动进度条 / 跳转：必须硬同步
+    if (Math.abs(drift) > 0.65) {{
+      // 拖动进度条 Seek 或明显跳变：允许硬同步
       karaokeClock = backend;
+      karaokeRate = 1.0;
+    }} else if (drift >= 0) {{
+      // 前端略慢：平滑加速追帧
+      karaokeRate = Math.min(1.22, 1.0 + drift * 0.65);
     }} else {{
-      // 常规轮询：只做 12% 的柔性纠偏，肉眼不可见，杜绝「跳来跳去」
-      karaokeClock += drift * 0.12;
+      // 前端略快于后端离散回调（-0.65s ~ 0）：严禁往回倒退，仅轻微降速等后端追上
+      karaokeRate = Math.max(0.72, 1.0 + drift * 0.90);
     }}
   }}
 
@@ -5869,25 +5978,17 @@ function toggleDiscflowMenu(event) {{
       const now = performance.now();
       if (appState.isPlaying) {{
         const dt = karaokeLastTs ? (now - karaokeLastTs) / 1000 : 0;
-        karaokeClock += Math.min(Math.max(dt, 0), 0.25);
+        karaokeClock += Math.min(Math.max(dt, 0), 0.25) * karaokeRate;
       }}
       karaokeLastTs = now;
 
       const lyrics = appState.lyrics;
       if (!lyrics || !lyrics.length) return;
-      const idx = appState.activeLyricIndex;
-      if (idx < 0) return;
-      const line = lyrics[idx];
-      if (!line || !Array.isArray(line.words) || !line.words.length) return;
-      const sec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
-      document.querySelectorAll(`.lyric-item[data-index="${{idx}}"]`).forEach(item => {{
-        item.querySelectorAll(".lyric-word").forEach(wEl => {{
-          const t = parseFloat(wEl.dataset.t || "0");
-          const d = Math.max(0.08, parseFloat(wEl.dataset.d || "0.25"));
-          const p = Math.max(0, Math.min(1, (sec - t) / d));
-          wEl.style.setProperty("--wp", (p * 100).toFixed(1) + "%");
-        }});
-      }});
+      const baseSec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
+      if (appState.isPlaying) {{
+        updateActiveLyric(baseSec, false);
+      }}
+      renderKaraokeWords(appState.activeLyricIndex, baseSec - (Number(currentTrackLyricOffset) || 0.0));
     }};
     karaokeRafId = requestAnimationFrame(step);
   }}
@@ -6812,6 +6913,7 @@ function toggleDiscflowMenu(event) {{
       document.getElementById("remainingTime").textContent = `-${{formatTime(rem)}}`;
     }}
 
+    let lyricsRendered = false;
     if (hasLyricsUpdate) {{
       // 判重签名只取稳定字段并带上曲目索引：
       // ensureWordTimings 会给行对象挂 words 字段，用 JSON.stringify 判重会因自身副作用而误判「未变化」，
@@ -6825,9 +6927,17 @@ function toggleDiscflowMenu(event) {{
       if (window._lastLyricsSig !== sig) {{
         window._lastLyricsSig = sig;
         renderLyricsList(appState.lyrics || []);
+        lyricsRendered = true;
       }}
     }}
-    updateActiveLyric(appState.elapsedSec || 0);
+    syncKaraokeAnchor();
+    updateActiveLyric(appState.isPlaying ? karaokeClock : (appState.elapsedSec || 0), lyricsRendered);
+    if (!appState.isPlaying) {{
+      renderKaraokeWords(
+        appState.activeLyricIndex,
+        (Number(appState.elapsedSec) || 0) - (Number(currentTrackLyricOffset) || 0.0)
+      );
+    }}
 
     if (hasMetaUpdate || prevTrackIdx !== appState.currentTrackIndex || prevDiscId !== appState.discId) {{
       renderQueueList();
@@ -7160,7 +7270,10 @@ function toggleDiscflowMenu(event) {{
     applyRightPanelMode(appState.rightPanelMode === mode ? "hidden" : mode);
   }}
 
-  function applyTheme(mode) {{
+  function applyTheme(mode, persist = true) {{
+    if (mode !== "light" && mode !== "dark") {{
+      mode = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+    }}
     appState.themeMode = mode;
     currentCustomPrefs.themeMode = mode;
     document.documentElement.setAttribute("data-theme", mode);
@@ -7171,7 +7284,9 @@ function toggleDiscflowMenu(event) {{
     if (sub) {{
       sub.textContent = mode === "light" ? "当前：浅色模式 (点击切换深色)" : "当前：深色模式 (点击切换浅色)";
     }}
-    saveCustomPrefs();
+    if (persist) {{
+      saveCustomPrefs();
+    }}
   }}
 
   function cycleTheme() {{

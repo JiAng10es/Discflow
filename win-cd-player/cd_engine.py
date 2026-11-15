@@ -147,6 +147,26 @@ class WAVEHDR(ctypes.Structure):
     ]
 
 
+TIME_BYTES = 0x0004
+
+
+class _MMTIME_U(ctypes.Union):
+    _fields_ = [
+        ("ms", wintypes.DWORD),
+        ("sample", wintypes.DWORD),
+        ("cb", wintypes.DWORD),
+        ("ticks", wintypes.DWORD),
+        ("smpte_pad", ctypes.c_ubyte * 8),
+    ]
+
+
+class MMTIME(ctypes.Structure):
+    _fields_ = [
+        ("wType", wintypes.UINT),
+        ("u", _MMTIME_U),
+    ]
+
+
 winmm.waveOutOpen.argtypes = [
     ctypes.POINTER(wintypes.HANDLE),
     ctypes.c_uint,
@@ -180,6 +200,9 @@ winmm.waveOutSetVolume.restype = wintypes.UINT
 
 winmm.waveOutClose.argtypes = [wintypes.HANDLE]
 winmm.waveOutClose.restype = wintypes.UINT
+
+winmm.waveOutGetPosition.argtypes = [wintypes.HANDLE, ctypes.POINTER(MMTIME), wintypes.UINT]
+winmm.waveOutGetPosition.restype = wintypes.UINT
 
 
 # ============================================================================
@@ -997,6 +1020,10 @@ class CddaWaveOutPlayer:
             track_completed_normally = False
             current_playing_track = track
             run_seek_gen = 0
+            submitted_bytes = 0
+            track_base_bytes = 0
+            track_base_sec = 0.0
+            mmt = MMTIME()
 
             try:
                 while True:
@@ -1022,6 +1049,10 @@ class CddaWaveOutPlayer:
                         for h in headers:
                             if h.dwFlags & WHDR_PREPARED:
                                 winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(h), ctypes.sizeof(WAVEHDR))
+                        submitted_bytes = 0
+                        track_base_bytes = 0
+                        with self._lock:
+                            track_base_sec = max(0.0, (self._seek_target_lba - current_playing_track.start_lba) / CD_FRAMES_PER_SECOND)
                         if not playing:
                             winmm.waveOutPause(h_wave)
 
@@ -1047,6 +1078,8 @@ class CddaWaveOutPlayer:
                     if chunk.is_track_boundary:
                         # 无缝跨轨过渡：平滑推进下一轨，绝不关闭与重开音频设备句柄
                         current_playing_track = chunk.track
+                        track_base_bytes = submitted_bytes
+                        track_base_sec = 0.0
                         with self._lock:
                             self._track = chunk.track
                             self._current_track_index = chunk.track_index
@@ -1096,6 +1129,7 @@ class CddaWaveOutPlayer:
 
                     winmm.waveOutPrepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
                     winmm.waveOutWrite(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                    submitted_bytes += len(pcm_bytes)
 
                     buf_idx = (buf_idx + 1) % num_buffers
 
@@ -1104,7 +1138,18 @@ class CddaWaveOutPlayer:
                         if self._session_id != my_session_id:
                             break
                         self._current_lba = chunk.lba + chunk_sec_count
-                        elapsed_sec = max(0.0, (self._current_lba - current_playing_track.start_lba) / CD_FRAMES_PER_SECOND)
+                        fallback_sec = max(0.0, (self._current_lba - current_playing_track.start_lba) / CD_FRAMES_PER_SECOND)
+
+                    # 优先从声卡硬件位置读取真实已输出的音频进度，消除环形队列提前量
+                    mmt.wType = TIME_BYTES
+                    if winmm.waveOutGetPosition(h_wave, ctypes.byref(mmt), ctypes.sizeof(mmt)) == 0 and mmt.wType == TIME_BYTES:
+                        hw_bytes = int(mmt.u.cb)
+                        if hw_bytes >= track_base_bytes:
+                            elapsed_sec = max(0.0, track_base_sec + (hw_bytes - track_base_bytes) / 176400.0)
+                        else:
+                            elapsed_sec = 0.0
+                    else:
+                        elapsed_sec = fallback_sec
 
                     if self.on_position:
                         self.on_position(elapsed_sec)
