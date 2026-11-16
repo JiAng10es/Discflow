@@ -707,7 +707,7 @@ function toggleDiscflowMenu(event) {
     `;
   }
 
-  let appState = {
+  var appState = {
     drive: "",
     drives: [],
     discId: "",

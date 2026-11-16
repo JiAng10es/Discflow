@@ -101,6 +101,70 @@ class TestStartupThemeAndSsrHydration(unittest.TestCase):
         self.assertIn('"themeMode": "light"', html)
         self.assertIn('"albumTitle": "SSR Test Album"', html)
 
+    def test_rendered_scripts_boot_without_tdz_or_runtime_error(self):
+        """整段渲染后的前端脚本在首帧执行时不得因 TDZ 或未定义变量抛出异常导致界面按钮失灵"""
+        import re
+        import shutil
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 不可用，跳过前端启动执行校验")
+        html = render_frontend_html(
+            init_prefs={"themeMode": "light", "dockOpacity": 5},
+            init_state={"isPlaying": False, "albumTitle": "Boot Test", "tracks": []},
+        )
+        scripts = re.findall(r"<script(?:\s[^>]*)?>([\s\S]*?)</script>", html)
+        harness = """
+const makeEl = () => ({
+  style: { setProperty: () => {} },
+  classList: { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false },
+  setAttribute: () => {},
+  getAttribute: () => 'light',
+  addEventListener: () => {},
+  querySelectorAll: () => [],
+  querySelector: () => null,
+  getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 20, bottom: 20 }),
+  getContext: () => ({ createRadialGradient: () => ({ addColorStop: () => {} }), fillRect: () => {}, clearRect: () => {} }),
+  dataset: {}, innerHTML: '', textContent: '', value: '', checked: false, src: '',
+  scrollHeight: 100, clientHeight: 100, scrollTop: 0,
+});
+global.window = global;
+global.window.addEventListener = () => {};
+global.window.removeEventListener = () => {};
+global.navigator = { userAgent: 'test' };
+global.document = {
+  documentElement: makeEl(), body: makeEl(), hidden: false,
+  getElementById: () => makeEl(), querySelectorAll: () => [], querySelector: () => null,
+  addEventListener: () => {}, createElement: () => makeEl(),
+};
+global.localStorage = { getItem: () => null, setItem: () => {} };
+global.requestAnimationFrame = () => 1;
+global.cancelAnimationFrame = () => {};
+global.matchMedia = () => ({ matches: false });
+global.Image = function() {};
+global.setInterval = () => 1;
+global.setTimeout = () => 1;
+global.clearTimeout = () => {};
+global.clearInterval = () => {};
+"""
+        tail = """
+if (!window._discflowAppReady || typeof togglePlayPause !== 'function' || typeof switchMainView !== 'function') {
+  throw new Error('Frontend functions failed to initialize');
+}
+"""
+        path = os.path.join(tempfile.gettempdir(), "discflow_boot_smoke.js")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(harness + "\n" + "\n".join(scripts) + "\n" + tail)
+        try:
+            proc = subprocess.run([node, path], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, f"前端启动脚本执行异常：{proc.stderr[:800]}")
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
     def test_prefs_defaults_match_frontend_and_set_theme_mode(self):
         prefs = library_service.load_user_preferences()
         self.assertEqual(prefs.get("dockOpacity"), 5)
