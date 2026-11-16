@@ -48,15 +48,17 @@ class TestAmbientAndOpacity(unittest.TestCase):
         self.assertIn('[data-theme="light"] .artwork-card', self.html)
         self.assertIn("rgba(0, 0, 0, 0.10)", self.html)
 
-        # 3. 浅色模式背景流体光斑混合模式优化
+        # 3. 浅色模式背景流体光斑混合模式优化（高调柔光不发黑）
         self.assertIn('[data-theme="light"] .mesh-blob', self.html)
-        self.assertIn("mix-blend-mode: multiply;", self.html)
+        self.assertIn("mix-blend-mode: normal;", self.html)
+        self.assertIn("filter: brightness(1.36) saturate(135%);", self.html)
 
-        # 4. 浅色模式流体背景必须有足够存在感，不能只剩纯白底色（v1.11.2）
+        # 4. 浅色模式流体背景与珍珠浅底保持透亮氛围
         self.assertIn('[data-theme="light"] .mesh-canvas', self.html)
         self.assertIn('[data-theme="light"] body.is-playing .mesh-canvas.has-cover', self.html)
-        self.assertIn("opacity: 0.62;", self.html)
-        self.assertIn("linear-gradient(180deg, #FCFCFE 0%, #F4F4F8 46%, #ECECF2 100%)", self.html)
+        self.assertIn("opacity: 0.56;", self.html)
+        self.assertIn("linear-gradient(180deg, #FFFFFF 0%, #F7F8FC 48%, #EEF1F8 100%)", self.html)
+        self.assertIn("rgba(255, 255, 255, 0.42)", self.html)
 
     def test_dock_opacity_slider_min_zero(self):
         # 1. 输入滑块 min 改为 0

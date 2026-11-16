@@ -535,9 +535,9 @@
   /* 关于页版本更新横幅 */
   .about-update-banner {
     display: none;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
     margin-bottom: 12px;
     padding: 12px 14px;
     border-radius: 13px;
@@ -546,6 +546,42 @@
   }
   .about-update-banner.visible {
     display: flex;
+  }
+  .about-update-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .about-update-progress-wrap {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .about-update-progress-wrap.visible {
+    display: flex;
+  }
+  .about-update-progress-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    overflow: hidden;
+  }
+  [data-theme="light"] .about-update-progress-track {
+    background: rgba(0, 0, 0, 0.08);
+  }
+  .about-update-progress-fill {
+    width: 0%;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #30d158 0%, #5eead4 100%);
+    transition: width 0.2s ease;
+  }
+  .about-update-progress-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
   }
   .about-update-banner.is-latest {
     background: rgba(255, 255, 255, 0.05);
@@ -3923,59 +3959,57 @@
     box-shadow: 0 clamp(16px, 2.6vh, 32px) clamp(32px, 4.8vw, 64px) rgba(0, 0, 0, 0.12), 0 4px 14px rgba(0, 0, 0, 0.06);
   }
 
+  /* 浅色模式流体背景：改用高调柔光混色 + 明亮低对比底纱，避免 multiply 混黑发灰 */
   [data-theme="light"] .mesh-blob {
-    mix-blend-mode: multiply;
-    opacity: 0.88;
+    mix-blend-mode: normal;
+    opacity: 0.68;
+    filter: brightness(1.36) saturate(135%);
   }
 
-  /* 浅色模式流体背景：深色模式靠 screen 叠加发光，浅色模式必须提高存在感，
-     否则只剩一层纯白底色，完全丢失 Apple Music 的通透氛围 */
   [data-theme="light"] .mesh-canvas {
-    filter: blur(clamp(58px, 7.4vw, 96px)) saturate(190%);
+    filter: blur(clamp(62px, 7.6vw, 98px)) saturate(145%) brightness(1.18);
   }
 
   [data-theme="light"] body.is-playing .mesh-canvas.has-cover {
-    opacity: 0.95;
+    opacity: 0.88;
   }
 
   [data-theme="light"] body:not(.is-playing) .mesh-canvas.has-cover {
-    opacity: 0.62;
+    opacity: 0.56;
   }
 
-  /* 浅色模式底色不再是单一 #F5F5F7，而是带极淡垂直渐变与顶部高光，
-     让界面有纵深和玻璃质感，而不是「一张白纸」 */
+  /* 浅色模式空闲珍珠渐变底色：洁净通透，带有轻微天光层 */
   [data-theme="light"] body {
     background-image:
-      radial-gradient(125% 85% at 50% -12%, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0) 58%),
-      linear-gradient(180deg, #FCFCFE 0%, #F4F4F8 46%, #ECECF2 100%);
+      radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 62%),
+      linear-gradient(180deg, #FFFFFF 0%, #F7F8FC 48%, #EEF1F8 100%);
   }
 
   [data-theme="light"] .frosted-scrim {
-    background: rgba(245, 245, 247, 0.72);
+    background: rgba(255, 255, 255, 0.42);
   }
 
-  /* 浅色模式：封面底图更淡，压暗层换成白色柔光，避免整页发灰 */
   [data-theme="light"] .art-backdrop {
-    filter: blur(80px) saturate(165%) brightness(1.08);
+    filter: blur(88px) saturate(150%) brightness(1.42) contrast(0.84);
   }
 
   [data-theme="light"] body.has-artwork .art-backdrop {
-    opacity: 0.5;
+    opacity: 0.40;
   }
 
   [data-theme="light"] body.has-artwork:not(.is-playing) .art-backdrop {
-    opacity: 0.34;
+    opacity: 0.26;
   }
 
   [data-theme="light"] .ambient-vignette {
     background:
-      radial-gradient(125% 92% at 50% 42%, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0.46) 100%),
+      radial-gradient(125% 92% at 50% 44%, rgba(255, 255, 255, 0.08) 34%, rgba(255, 255, 255, 0.56) 100%),
       linear-gradient(
         180deg,
-        rgba(255, 255, 255, 0.52) 0%,
-        rgba(255, 255, 255, 0) 26%,
-        rgba(255, 255, 255, 0) 70%,
-        rgba(255, 255, 255, 0.56) 100%
+        rgba(255, 255, 255, 0.58) 0%,
+        rgba(255, 255, 255, 0.05) 28%,
+        rgba(255, 255, 255, 0.05) 70%,
+        rgba(255, 255, 255, 0.62) 100%
       );
   }
 

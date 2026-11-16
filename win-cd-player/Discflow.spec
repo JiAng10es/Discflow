@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('ui', 'ui'), ('discflow.ico', '.')],
+    datas=[('ui', 'ui')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
