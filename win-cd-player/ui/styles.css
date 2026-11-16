@@ -322,7 +322,8 @@
     background-size: cover;
     background-repeat: no-repeat;
     filter: blur(76px) saturate(195%);
-    transform: scale(1.12);
+    transform: scale(1.12) translateZ(0);
+    contain: strict;
     opacity: 0;
     transition: opacity 1.1s var(--spring-fluid);
     will-change: opacity;
@@ -584,8 +585,8 @@
     border-radius: 50%;
     background: rgba(28, 28, 32, var(--topbar-icon-opacity, 0.05));
     background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.08) 100%);
-    backdrop-filter: blur(var(--topbar-icon-blur, 2px)) saturate(190%) url(#discflow-liquid-droplet);
-    -webkit-backdrop-filter: blur(var(--topbar-icon-blur, 2px)) saturate(190%) url(#discflow-liquid-droplet);
+    backdrop-filter: blur(var(--topbar-icon-blur, 2px)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--topbar-icon-blur, 2px)) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.16);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32), inset 0 1px 1px rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.2);
     color: var(--text-primary);
@@ -799,8 +800,8 @@
     width: clamp(340px, 42vw, 480px);
     background: var(--bg-elevated-1);
     background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 45%, rgba(255, 255, 255, 0.08) 100%);
-    backdrop-filter: blur(44px) saturate(185%) url(#discflow-liquid-lens);
-    -webkit-backdrop-filter: blur(44px) saturate(185%) url(#discflow-liquid-lens);
+    backdrop-filter: blur(44px) saturate(175%);
+    -webkit-backdrop-filter: blur(44px) saturate(175%);
     border: 1px solid rgba(255, 255, 255, 0.20);
     border-radius: 20px;
     padding: clamp(18px, 2.4vw, 28px);
@@ -1148,11 +1149,10 @@
     opacity: 0.32;
     filter: blur(1.35px);
     transition:
-      transform 0.58s var(--spring-fluid),
-      opacity 0.48s ease-out,
-      filter 0.48s ease-out,
-      background-color 0.25s ease;
-    will-change: transform, opacity, filter;
+      transform 0.42s var(--spring-fluid),
+      opacity 0.36s ease-out,
+      filter 0.36s ease-out,
+      background-color 0.2s ease;
   }
 
   .lyric-item.near {
@@ -2744,8 +2744,8 @@
     padding: 0 20px;
     background: rgba(var(--dock-bg-rgb, 22, 22, 28), var(--dock-custom-opacity, 0.05));
     background-image: var(--dock-liquid-sheen);
-    backdrop-filter: blur(var(--dock-custom-blur, 2px)) saturate(195%) url(#discflow-liquid-lens);
-    -webkit-backdrop-filter: blur(var(--dock-custom-blur, 2px)) saturate(195%) url(#discflow-liquid-lens);
+    backdrop-filter: blur(var(--dock-custom-blur, 2px)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--dock-custom-blur, 2px)) saturate(180%);
     border: 1px solid var(--dock-border);
     box-shadow: var(--dock-shadow);
     border-radius: 999px;
@@ -2927,8 +2927,8 @@
     gap: 8px;
     background: rgba(26, 26, 32, 0.92);
     background-image: var(--dock-liquid-sheen);
-    backdrop-filter: blur(40px) saturate(190%) url(#discflow-liquid-lens);
-    -webkit-backdrop-filter: blur(40px) saturate(190%) url(#discflow-liquid-lens);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: var(--popover-shadow);
     border-radius: 22px;

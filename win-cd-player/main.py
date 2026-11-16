@@ -288,6 +288,7 @@ class DiscflowController:
         self._lock = threading.Lock()
         self._closed = False
         self._booted = False
+        self._boot_scanning = False
 
         # 状态版本号：前端轮询仅在版本号变更时才拉取大型 Base64 封面或歌单/歌词，彻底消除跨线程 evaluate_js 死锁
         self._meta_version: int = 1
@@ -1703,10 +1704,19 @@ class DiscflowController:
                 except Exception:
                     pass
 
-        # 曲名已变：未锁定的歌词全部作废，锁定的保留
+        # 曲名/专辑已重新匹配：清理被新专辑覆盖曲目的歌词缓存与旧锁定，保证立即重抓当前曲目歌词
+        cur_tn = None
+        if toc_ref and 0 <= self.current_track_index < len(toc_ref.tracks):
+            cur_tn = toc_ref.tracks[self.current_track_index].track_number
         for tn in list(self.lyrics_cache.keys()):
-            if tn not in self.lyrics_locked_tracks:
+            if tn in track_titles or tn in song_ids or tn not in self.lyrics_locked_tracks:
                 self.lyrics_cache.pop(tn, None)
+                self.lyrics_locked_tracks.discard(tn)
+        for tn in set(track_titles.keys()) | set(song_ids.keys()):
+            self.lyrics_locked_tracks.discard(tn)
+            self.lyrics_missed_tracks.discard(tn)
+        if cur_tn is not None and cur_tn not in self.lyrics_cache:
+            self.current_lyrics = []
         self._bump_lyrics()
 
         try:
@@ -1939,9 +1949,13 @@ class DiscflowController:
             lines, info = _fetch_lines(trk)
             return (trk, lines, info, "hit" if lines else "miss")
 
+        ordered_tracks = sorted(
+            tracks,
+            key=lambda t: (0 if self._is_current_track(t.track_number) else 1, int(t.track_number)),
+        )
         try:
             with ThreadPoolExecutor(max_workers=4) as pool:
-                for trk, lines, info, status in pool.map(_work, tracks):
+                for trk, lines, info, status in pool.map(_work, ordered_tracks):
                     if status == "ok":
                         matched += 1
                     if status == "hit" and lines:
@@ -2092,57 +2106,62 @@ class DiscflowController:
         return phys
 
     def _initial_boot(self):
-        phys = self._refresh_cached_drives()
-        target = ""
-        if phys:
-            # 启动时部分外置/休眠光驱首次 CHECK_VERIFY 可能返回 False，短暂重试并尝试读取 TOC 唤醒光驱
-            for attempt in range(5):
-                for drv in phys:
-                    if WindowsCdDriveManager.is_disc_ready(drv):
-                        target = drv
-                        break
-                    try:
-                        toc = WindowsCdDriveManager.read_toc(drv)
-                        if toc is not None and len(toc.tracks) > 0:
+        self._boot_scanning = True
+        try:
+            phys = self._refresh_cached_drives()
+            target = ""
+            if phys:
+                # 启动时部分外置/休眠光驱首次 CHECK_VERIFY 可能返回 False，短暂重试并尝试读取 TOC 唤醒光驱
+                for attempt in range(5):
+                    for drv in phys:
+                        if WindowsCdDriveManager.is_disc_ready(drv):
                             target = drv
                             break
-                    except Exception:
-                        pass
-                if target or attempt == 4:
-                    break
-                time.sleep(0.5)
+                        try:
+                            toc = WindowsCdDriveManager.read_toc(drv)
+                            if toc is not None and len(toc.tracks) > 0:
+                                target = drv
+                                break
+                        except Exception:
+                            pass
+                    if target or attempt == 4:
+                        break
+                    time.sleep(0.5)
 
-        if target:
-            threading.Thread(target=self._load_drive_async, args=(target,), daemon=True).start()
-        else:
-            # 无物理光盘插入时，若启动预恢复已成功则不重复加载，仅异步补取缺失歌词
-            if getattr(self, "_initial_session_resumed", False) and self.current_toc:
-                restored = True
-                threading.Thread(target=self._prefetch_lyrics_async, args=(self._load_token,), daemon=True).start()
+            if target:
+                self.is_loading = True
+                threading.Thread(target=self._load_drive_async, args=(target,), daemon=True).start()
             else:
-                restored = self._try_resume_last_session()
-            if not restored:
-                with self._lock:
-                    self.is_loading = False
-                    self.current_toc = None
-                    self.current_drive = ""
-                    if phys:
-                        self.status_text = f"光驱 {phys[0]} 已就绪 · 请放入音频 CD 光盘"
-                        self.album_title = f"等待光驱 {phys[0]} 放入 CD"
-                    else:
-                        self.status_text = "未检测到可用光驱 · 请连接外置或内置 CD 光驱"
-                        self.album_title = "等待放入音频 CD"
-                    self.artist = "放入音频 CD 或从「资料库」选择唱片即可播放"
-                    self.cover_data_url = ""
-                    self._bump_meta()
+                # 无物理光盘插入时，若启动预恢复已成功则不重复加载，仅异步补取缺失歌词
+                if getattr(self, "_initial_session_resumed", False) and self.current_toc:
+                    restored = True
+                    threading.Thread(target=self._prefetch_lyrics_async, args=(self._load_token,), daemon=True).start()
+                else:
+                    restored = self._try_resume_last_session()
+                if not restored:
+                    with self._lock:
+                        self.is_loading = False
+                        self.current_toc = None
+                        self.current_drive = ""
+                        if phys:
+                            self.status_text = f"光驱 {phys[0]} 已就绪 · 请放入音频 CD 光盘"
+                            self.album_title = f"等待光驱 {phys[0]} 放入 CD"
+                        else:
+                            self.status_text = "未检测到可用光驱 · 请连接外置或内置 CD 光驱"
+                            self.album_title = "等待放入音频 CD"
+                        self.artist = "放入音频 CD 或从「资料库」选择唱片即可播放"
+                        self.cover_data_url = ""
+                        self._bump_meta()
+        finally:
+            self._boot_scanning = False
 
     def _hardware_watcher_loop(self):
         while not self._closed:
             time.sleep(1.8)
             if self._closed:
                 break
-            # 若当前正在高优先级加载读盘，暂缓该轮巡检，避免并发冲突
-            if self.is_loading:
+            # 若当前正在启动扫描或高优先级加载读盘，暂缓该轮巡检，避免双线程并发打断 _load_token
+            if self._boot_scanning or self.is_loading:
                 continue
 
             try:

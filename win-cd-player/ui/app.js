@@ -978,7 +978,13 @@ function toggleDiscflowMenu(event) {
     for (let i = 0; i < lyrics.length; i++) {
       const line = lyrics[i];
       if (!line) continue;
-      if (Array.isArray(line.words) && line.words.length) continue;
+      if (
+        Array.isArray(line.words) &&
+        line.words.length > 0 &&
+        line.words.some(w => w && typeof w.t === "number" && !Number.isNaN(w.t) && Number(w.d) > 0)
+      ) {
+        continue;
+      }
       const text = String(line.text || "");
       if (!text.trim()) continue;
 
@@ -1018,6 +1024,8 @@ function toggleDiscflowMenu(event) {
   function renderLyricsList(lyrics) {
     lyrics = ensureWordTimings(lyrics);
     appState.activeLyricIndex = -1;
+    _activeKaraokeIndex = -1;
+    _activeKaraokeWords = [];
     userScrollLockUntil = 0;
 
     const viewports = [
@@ -1213,6 +1221,8 @@ function toggleDiscflowMenu(event) {
   let karaokeLastTs = 0;     // 上一帧时间戳
   let karaokeTrackKey = "";  // 碟片 + 曲目标识，用于切歌时硬重置
   let karaokeRate = 1.0;     // 弹性追帧速率（0.72 ~ 1.22），绝不往回倒退
+  let _activeKaraokeIndex = -1;
+  let _activeKaraokeWords = [];
 
   function renderKaraokeWords(idx, sec) {
     if (idx < 0) return;
@@ -1220,14 +1230,29 @@ function toggleDiscflowMenu(event) {
     if (!lyrics || !lyrics.length) return;
     const line = lyrics[idx];
     if (!line || !Array.isArray(line.words) || !line.words.length) return;
-    document.querySelectorAll(`.lyric-item[data-index="${idx}"]`).forEach(item => {
-      item.querySelectorAll(".lyric-word").forEach(wEl => {
-        const t = parseFloat(wEl.dataset.t || "0");
-        const d = Math.max(0.08, parseFloat(wEl.dataset.d || "0.25"));
-        const p = Math.max(0, Math.min(1, (sec - t) / d));
-        wEl.style.setProperty("--wp", (p * 100).toFixed(1) + "%");
+    if (_activeKaraokeIndex !== idx || !_activeKaraokeWords.length) {
+      _activeKaraokeIndex = idx;
+      const nodes = [];
+      document.querySelectorAll(`.lyric-item[data-index="${idx}"]`).forEach(item => {
+        item.querySelectorAll(".lyric-word").forEach(wEl => {
+          nodes.push({
+            el: wEl,
+            t: parseFloat(wEl.dataset.t || "0"),
+            d: Math.max(0.08, parseFloat(wEl.dataset.d || "0.25")),
+          });
+        });
       });
-    });
+      _activeKaraokeWords = nodes;
+    }
+    for (let i = 0; i < _activeKaraokeWords.length; i++) {
+      const item = _activeKaraokeWords[i];
+      const p = Math.max(0, Math.min(1, (sec - item.t) / item.d));
+      const wpStr = (p * 100).toFixed(1) + "%";
+      if (item.el._lastWp !== wpStr) {
+        item.el._lastWp = wpStr;
+        item.el.style.setProperty("--wp", wpStr);
+      }
+    }
   }
 
   function syncKaraokeAnchor() {
@@ -1265,22 +1290,22 @@ function toggleDiscflowMenu(event) {
 
   function startKaraokeLoop() {
     if (karaokeRafId) return;
+    if (!appState.isPlaying || document.hidden || !appState.lyrics || !appState.lyrics.length) return;
     const step = () => {
+      const lyrics = appState.lyrics;
+      if (!appState.isPlaying || document.hidden || !lyrics || !lyrics.length) {
+        karaokeRafId = null;
+        karaokeLastTs = 0;
+        return;
+      }
       karaokeRafId = requestAnimationFrame(step);
       const now = performance.now();
-      if (appState.isPlaying) {
-        const dt = karaokeLastTs ? (now - karaokeLastTs) / 1000 : 0;
-        karaokeClock += Math.min(Math.max(dt, 0), 0.25) * karaokeRate;
-      }
+      const dt = karaokeLastTs ? (now - karaokeLastTs) / 1000 : 0;
+      karaokeClock += Math.min(Math.max(dt, 0), 0.25) * karaokeRate;
       karaokeLastTs = now;
 
-      const lyrics = appState.lyrics;
-      if (!lyrics || !lyrics.length) return;
-      const baseSec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
-      if (appState.isPlaying) {
-        updateActiveLyric(baseSec, false);
-      }
-      renderKaraokeWords(appState.activeLyricIndex, baseSec - (Number(currentTrackLyricOffset) || 0.0));
+      updateActiveLyric(karaokeClock, false);
+      renderKaraokeWords(appState.activeLyricIndex, karaokeClock - (Number(currentTrackLyricOffset) || 0.0));
     };
     karaokeRafId = requestAnimationFrame(step);
   }
@@ -2361,6 +2386,9 @@ function toggleDiscflowMenu(event) {
     }
 
     syncImmersiveState();
+    if (appState.isPlaying && appState.lyrics && appState.lyrics.length && !document.hidden) {
+      startKaraokeLoop();
+    }
   };
 
   window.__onBackendStatePush = function(res) {
@@ -2422,7 +2450,7 @@ function toggleDiscflowMenu(event) {
   }
 
   function triggerImmediatePoll() {
-    setTimeout(pollBackendState, 16);
+    setTimeout(pollBackendState, 0);
   }
 
   const scrubberHit = document.getElementById("scrubberHit");

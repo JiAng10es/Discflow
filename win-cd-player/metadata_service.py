@@ -362,26 +362,55 @@ def _fetch_cover_from_itunes(artist: str, album_title: str) -> Optional[bytes]:
     return None
 
 
+def _fetch_cover_from_qq(artist: str, album_title: str) -> Optional[bytes]:
+    clean_album = re.sub(r"\s*\+\d+$", "", album_title or "").strip()
+    if not clean_album or clean_album in ("Audio CD", "CD-TEXT Album"):
+        return None
+    for q_term in list(dict.fromkeys(q for q in (f"{artist} {clean_album}".strip(), clean_album) if q)):
+        try:
+            albums = _qq_album_search(q_term, limit=4)
+            for alb in albums:
+                pic_url = (alb.get("cover_url") or "").strip()
+                if not pic_url:
+                    continue
+                img_resp = requests.get(
+                    pic_url,
+                    headers={"User-Agent": USER_AGENT, "Referer": "https://y.qq.com/"},
+                    timeout=REQ_TIMEOUT,
+                )
+                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                    return img_resp.content
+        except Exception:
+            pass
+    return None
+
+
 def _fetch_cover_art_bytes(
     release_id: str, artist: str, album_title: str, timeout: float = 6.5
 ) -> Optional[bytes]:
     """
-    多源并发获取专辑封面并择优（v1.11 优化）：
-    - 优先级：CoverArtArchive 官方封面 > 网易云 > iTunes；
+    多源并发获取专辑封面并择优（v1.11 优化 + QQ 音乐并发兜底）：
+    - 优先级：CoverArtArchive 官方封面 > 网易云 / QQ音乐 > iTunes；
     - 官方封面一旦命中立即返回，避免被较慢的源拖住；
     - 同级来源中取体积更大（分辨率更高）的一张，而不是「谁先返回用谁」。
     """
+    clean_artist = _primary_artist((artist or "").strip())
+    if clean_artist.lower() in ("various artists", "various", "未知艺术家", "群星", "audio cd") or clean_artist.startswith("DiscID"):
+        clean_artist = ""
+
     tier_of: Dict[object, int] = {}
     results: Dict[object, bytes] = {}
 
-    pool = ThreadPoolExecutor(max_workers=3)
+    pool = ThreadPoolExecutor(max_workers=4)
     try:
         if release_id:
             fut_caa = pool.submit(_fetch_cover_from_caa, release_id)
             tier_of[fut_caa] = 0
-        fut_netease = pool.submit(_fetch_cover_from_netease, artist, album_title)
+        fut_netease = pool.submit(_fetch_cover_from_netease, clean_artist, album_title)
         tier_of[fut_netease] = 1
-        fut_itunes = pool.submit(_fetch_cover_from_itunes, artist, album_title)
+        fut_qq = pool.submit(_fetch_cover_from_qq, clean_artist, album_title)
+        tier_of[fut_qq] = 1
+        fut_itunes = pool.submit(_fetch_cover_from_itunes, clean_artist, album_title)
         tier_of[fut_itunes] = 2
 
         try:
