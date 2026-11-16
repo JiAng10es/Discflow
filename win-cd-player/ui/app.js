@@ -11,6 +11,7 @@
     topbarBlur: 2,
     themeMode: "dark",
     autoPlay: true,
+    closeToTray: true,
     showTranslation: true
   };
 
@@ -26,15 +27,10 @@
     applyCustomPrefs(currentCustomPrefs);
 
     try {
-      const injectedTheme = (window.__INITIAL_THEME__ === "light" || window.__INITIAL_THEME__ === "dark")
-        ? window.__INITIAL_THEME__
-        : document.documentElement.getAttribute("data-theme");
       const savedTheme = localStorage.getItem("discflow_theme");
       const fallbackTheme = currentCustomPrefs.themeMode ||
         (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      const initTheme = (injectedTheme === "light" || injectedTheme === "dark")
-        ? injectedTheme
-        : ((savedTheme === "light" || savedTheme === "dark") ? savedTheme : fallbackTheme);
+      const initTheme = (savedTheme === "light" || savedTheme === "dark") ? savedTheme : fallbackTheme;
       applyTheme(initTheme, false);
     } catch (e) {}
   }
@@ -138,6 +134,11 @@
             ? appState.autoPlayDisc
             : true);
       apSwitch.checked = isAuto;
+    }
+
+    const traySwitch = document.getElementById("closeToTraySwitch");
+    if (traySwitch) {
+      traySwitch.checked = (prefs && typeof prefs.closeToTray === "boolean") ? prefs.closeToTray : true;
     }
 
     if (typeof recenterActiveLyric === "function") {
@@ -829,6 +830,21 @@ function toggleDiscflowMenu(event) {
         window.pywebview.api.save_preferences({ autoPlay: !!isAuto }).catch(() => {});
       }
     }
+  }
+
+  function toggleCloseToTray() {
+    const sw = document.getElementById("closeToTraySwitch");
+    const next = sw ? !!sw.checked : true;
+    currentCustomPrefs.closeToTray = next;
+    saveCustomPrefs();
+    if (window.pywebview && window.pywebview.api) {
+      if (window.pywebview.api.set_close_to_tray) {
+        window.pywebview.api.set_close_to_tray(next).catch(() => {});
+      } else if (window.pywebview.api.save_preferences) {
+        window.pywebview.api.save_preferences({ closeToTray: next }).catch(() => {});
+      }
+    }
+    showToast(next ? "已开启：关闭窗口时最小化到托盘" : "已关闭：点击关闭直接退出程序");
   }
 
   let isDraggingScrubber = false;
@@ -2201,9 +2217,6 @@ function toggleDiscflowMenu(event) {
     if ("updateAvailable" in payload) {
       renderUpdateNotice(payload.updateAvailable);
     }
-    if ("updateDownload" in payload) {
-      renderUpdateDownloadState(payload.updateDownload);
-    }
 
     document.body.classList.toggle("is-playing", !!appState.isPlaying);
     document.getElementById("playIcon").style.display = appState.isPlaying ? "none" : "block";
@@ -2690,32 +2703,15 @@ function toggleDiscflowMenu(event) {
     });
   });
 
-  // ================= 版本检查、软件内直连下载与覆盖安装 =================
+  // ================= 版本检查与新版本提醒 =================
   let latestUpdateMeta = null;
-  let latestUpdateDownload = null;
-  let updateDownloadPollTimer = null;
-
-  function formatBytesMB(bytes) {
-    const n = Number(bytes || 0);
-    if (!n || n <= 0) return "0.0 MB";
-    return `${(n / 1048576).toFixed(1)} MB`;
-  }
 
   function renderUpdateNotice(info) {
     const pill = document.getElementById("updateNoticePill");
     const txt = document.getElementById("updateNoticeText");
     if (info && info.hasUpdate && info.latestVersion) {
       latestUpdateMeta = info;
-      if (txt) {
-        const st = latestUpdateDownload && latestUpdateDownload.status;
-        if (st === "downloading") {
-          txt.textContent = `下载更新 ${Number(latestUpdateDownload.progress || 0)}%`;
-        } else if (st === "ready") {
-          txt.textContent = `v${info.latestVersion} 已就绪`;
-        } else {
-          txt.textContent = `发现 v${info.latestVersion}`;
-        }
-      }
+      if (txt) txt.textContent = `发现 v${info.latestVersion}`;
       if (pill && !info.ignored) {
         pill.classList.add("visible");
       } else if (pill) {
@@ -2727,88 +2723,11 @@ function toggleDiscflowMenu(event) {
     }
   }
 
-  function renderUpdateDownloadState(dlState) {
-    if (!dlState || typeof dlState !== "object") return;
-    latestUpdateDownload = dlState;
-    const status = dlState.status || "idle";
-    const pct = Math.max(0, Math.min(100, Number(dlState.progress || 0)));
-    const wrap = document.getElementById("aboutUpdateProgressWrap");
-    const fill = document.getElementById("aboutUpdateProgressFill");
-    const text = document.getElementById("aboutUpdateProgressText");
-    const dlBtn = document.getElementById("aboutUpdateDownloadBtn");
-    const installBtn = document.getElementById("aboutUpdateInstallBtn");
-    const pillTxt = document.getElementById("updateNoticeText");
-    const ver = dlState.version || (latestUpdateMeta && latestUpdateMeta.latestVersion) || "";
-
-    if (fill) fill.style.width = `${pct}%`;
-
-    if (status === "downloading") {
-      if (wrap) wrap.classList.add("visible");
-      if (dlBtn) {
-        dlBtn.style.display = "inline-flex";
-        dlBtn.disabled = true;
-        dlBtn.textContent = `下载中 ${pct}%`;
-      }
-      if (installBtn) installBtn.style.display = "none";
-      const totalStr = dlState.totalBytes > 0 ? ` / ${formatBytesMB(dlState.totalBytes)}` : "";
-      if (text) text.textContent = `正在软件内下载 v${ver}：${pct}%（${formatBytesMB(dlState.downloadedBytes)}${totalStr}）`;
-      if (pillTxt) pillTxt.textContent = `下载更新 ${pct}%`;
-    } else if (status === "ready") {
-      stopUpdateDownloadPoll();
-      if (wrap) wrap.classList.add("visible");
-      if (fill) fill.style.width = "100%";
-      if (dlBtn) dlBtn.style.display = "none";
-      if (installBtn) {
-        installBtn.style.display = "inline-flex";
-        installBtn.disabled = false;
-        installBtn.textContent = "立即重启并覆盖安装";
-      }
-      if (text) text.textContent = `v${ver} 安装包已就绪（${formatBytesMB(dlState.totalBytes || dlState.downloadedBytes)}），点击按钮将自动覆盖当前版本并重启`;
-      if (pillTxt && ver) pillTxt.textContent = `v${ver} 已就绪`;
-    } else if (status === "error") {
-      stopUpdateDownloadPoll();
-      if (wrap) wrap.classList.add("visible");
-      if (dlBtn && latestUpdateMeta && latestUpdateMeta.hasUpdate) {
-        dlBtn.style.display = "inline-flex";
-        dlBtn.disabled = false;
-        dlBtn.textContent = "重试下载";
-      }
-      if (installBtn) installBtn.style.display = "none";
-      if (text) text.textContent = dlState.error || "下载出错，请检查网络后重试";
-    } else {
-      stopUpdateDownloadPoll();
-      if (wrap) wrap.classList.remove("visible");
-      if (installBtn) installBtn.style.display = "none";
-    }
-  }
-
-  function stopUpdateDownloadPoll() {
-    if (updateDownloadPollTimer) {
-      clearInterval(updateDownloadPollTimer);
-      updateDownloadPollTimer = null;
-    }
-  }
-
-  function ensureUpdateDownloadPoll() {
-    if (updateDownloadPollTimer) return;
-    updateDownloadPollTimer = setInterval(async () => {
-      if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_update_download_state) {
-        stopUpdateDownloadPoll();
-        return;
-      }
-      try {
-        const st = await window.pywebview.api.get_update_download_state();
-        renderUpdateDownloadState(st);
-      } catch (e) {}
-    }, 350);
-  }
-
   function renderAboutUpdateBanner(info) {
     const banner = document.getElementById("aboutUpdateBanner");
     const title = document.getElementById("aboutUpdateTitle");
     const sub = document.getElementById("aboutUpdateSub");
     const dlBtn = document.getElementById("aboutUpdateDownloadBtn");
-    const installBtn = document.getElementById("aboutUpdateInstallBtn");
     const rowSub = document.getElementById("aboutCheckUpdateSub");
     if (!banner || !info) return;
 
@@ -2821,7 +2740,6 @@ function toggleDiscflowMenu(event) {
       }
       if (sub) sub.textContent = info.error || "请检查网络连接后重试";
       if (dlBtn) dlBtn.style.display = "none";
-      if (installBtn) installBtn.style.display = "none";
       return;
     }
 
@@ -2831,19 +2749,10 @@ function toggleDiscflowMenu(event) {
         title.textContent = `发现新版本 v${info.latestVersion}`;
         title.style.color = "#4ade80";
       }
-      const sizeHint = info.assetSize > 0 ? `（安装包约 ${formatBytesMB(info.assetSize)}）` : "";
-      const noteLine = (info.notes || "").split(/\r?\n/).find(l => l.trim()) || `支持软件内直接下载并覆盖安装${sizeHint}`;
+      const noteLine = (info.notes || "").split(/\r?\n/).find(l => l.trim()) || "点击右侧前往 GitHub Releases 下载最新版本";
       if (sub) sub.textContent = noteLine.replace(/^#+\s*/, "");
-      if (dlBtn) {
-        dlBtn.style.display = "inline-flex";
-        dlBtn.disabled = false;
-        dlBtn.textContent = "立即更新";
-      }
-      if (installBtn) installBtn.style.display = "none";
+      if (dlBtn) dlBtn.style.display = "inline-flex";
       if (rowSub) rowSub.textContent = `当前 v${info.currentVersion} · 最新 v${info.latestVersion}`;
-      if (latestUpdateDownload && latestUpdateDownload.status && latestUpdateDownload.status !== "idle") {
-        renderUpdateDownloadState(latestUpdateDownload);
-      }
     } else {
       banner.classList.add("is-latest");
       if (title) {
@@ -2852,7 +2761,6 @@ function toggleDiscflowMenu(event) {
       }
       if (sub) sub.textContent = "当前已经是 GitHub Releases 最新发布版本";
       if (dlBtn) dlBtn.style.display = "none";
-      if (installBtn) installBtn.style.display = "none";
       if (rowSub) rowSub.textContent = `当前 v${info.currentVersion} · 已是最新`;
     }
   }
@@ -2894,11 +2802,6 @@ function toggleDiscflowMenu(event) {
   function openSettingsUpdate() {
     openModal("settingsModal");
     switchSettingsTab("about");
-    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_update_download_state) {
-      window.pywebview.api.get_update_download_state().then(st => {
-        if (st && st.status && st.status !== "idle") renderUpdateDownloadState(st);
-      }).catch(() => {});
-    }
     if (latestUpdateMeta) {
       renderAboutUpdateBanner(latestUpdateMeta);
     } else {
@@ -2916,49 +2819,12 @@ function toggleDiscflowMenu(event) {
     }
   }
 
-  async function startInAppUpdate() {
-    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.start_update_download) {
-      showToast("当前环境不支持软件内直连下载");
-      return;
-    }
-    try {
-      const st = await window.pywebview.api.start_update_download();
-      renderUpdateDownloadState(st);
-      if (st && st.status === "downloading") {
-        ensureUpdateDownloadPoll();
-        showToast("已开始软件内下载更新包");
-      } else if (st && st.status === "error") {
-        showToast(st.error || "无法启动下载");
-      }
-    } catch (e) {
-      showToast("启动下载失败");
-    }
-  }
-
-  async function applyInAppUpdate() {
-    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.apply_downloaded_update) {
-      return;
-    }
-    const installBtn = document.getElementById("aboutUpdateInstallBtn");
-    if (installBtn) {
-      installBtn.disabled = true;
-      installBtn.textContent = "正在重启安装...";
-    }
-    try {
-      const res = await window.pywebview.api.apply_downloaded_update();
-      if (!res || !res.ok) {
-        if (installBtn) {
-          installBtn.disabled = false;
-          installBtn.textContent = "立即重启并覆盖安装";
-        }
-        showToast((res && res.error) || "覆盖安装失败");
-      }
-    } catch (e) {
-      if (installBtn) {
-        installBtn.disabled = false;
-        installBtn.textContent = "立即重启并覆盖安装";
-      }
-      showToast("覆盖安装失败");
+  function openUpdateDownload() {
+    const url = (latestUpdateMeta && latestUpdateMeta.releaseUrl) || "https://github.com/JiAng10es/Discflow/releases";
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external_url) {
+      window.pywebview.api.open_external_url(url).catch(() => {});
+    } else {
+      window.open(url, "_blank");
     }
   }
 

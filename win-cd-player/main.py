@@ -14,9 +14,7 @@ from ctypes import wintypes
 import json
 import os
 import re
-import subprocess
 import sys
-import tempfile
 import threading
 import time
 from dataclasses import asdict
@@ -61,7 +59,6 @@ APP_NAME = "Discflow"
 APP_VERSION = "2.2.0"
 GITHUB_RELEASES_API = "https://api.github.com/repos/JiAng10es/Discflow/releases/latest"
 GITHUB_RELEASES_PAGE = "https://github.com/JiAng10es/Discflow/releases"
-_MIN_UPDATE_BYTES = 1_000_000
 
 
 # ============================================================================
@@ -109,17 +106,7 @@ ALIPAY_QR_BASE64 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX
 # ============================================================================
 # 2. Discflow 前端 UI (Apple Music 设计语言 + 内联 SVG 品牌图标系统)
 # ============================================================================
-def _resolve_initial_theme() -> str:
-    try:
-        prefs = load_user_preferences()
-        mode = str(prefs.get("themeMode", "dark") or "dark").strip().lower()
-        return "light" if mode == "light" else "dark"
-    except Exception:
-        return "dark"
-
-
-def _load_frontend_html(init_theme: Optional[str] = None) -> str:
-    theme = "light" if str(init_theme or _resolve_initial_theme()).strip().lower() == "light" else "dark"
+def _load_frontend_html() -> str:
     base_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     ui_dir = os.path.join(base_dir, "ui")
     with open(os.path.join(ui_dir, "index.html"), "r", encoding="utf-8") as f:
@@ -130,7 +117,6 @@ def _load_frontend_html(init_theme: Optional[str] = None) -> str:
         js_text = f.read()
     return (
         html_tpl
-        .replace("__INIT_THEME__", theme)
         .replace("/* __INLINE_STYLES__ */", css_text, 1)
         .replace("/* __INLINE_SCRIPTS__ */", js_text, 1)
         .replace("__ALIPAY_QR_BASE64__", ALIPAY_QR_BASE64)
@@ -318,85 +304,53 @@ class DiscflowController:
         try:
             init_prefs = load_user_preferences()
             self.volume_pct: int = int(max(0, min(100, int(init_prefs.get("volume", 80)))))
+            self._close_to_tray: bool = bool(init_prefs.get("closeToTray", True))
             self._ignored_update_version: str = str(init_prefs.get("ignoredUpdateVersion", "") or "")
         except Exception:
             self.volume_pct = 80
+            self._close_to_tray = True
             self._ignored_update_version = ""
         self.player.set_volume(self.volume_pct / 100.0)
+        self._force_quit: bool = False
+        self._tray_icon = None
+        self._tray_menu = None
         self._update_info: Optional[dict] = None
-        self._download_lock = threading.Lock()
-        self._download_state: dict = {
-            "status": "idle",
-            "version": "",
-            "progress": 0,
-            "downloadedBytes": 0,
-            "totalBytes": 0,
-            "filePath": "",
-            "error": "",
-            "canSelfUpdate": bool(getattr(sys, "frozen", False)),
-        }
         self._saved_maximized: bool = False
+        self._ui_hidden: bool = False
         self._push_event = threading.Event()
         self._last_pushed_meta_ver: int = -1
         self._last_pushed_lyrics_ver: int = -1
         self._last_pushed_track_idx: int = -1
 
     @staticmethod
-    def _get_window_dpi_scale(hwnd: int = 0) -> float:
-        """获取窗口所在显示器的 DPI 缩放比例（pywebview create_window 按逻辑像素乘以该比例）"""
-        try:
-            user32 = ctypes.windll.user32
-            dpi = 0
-            if hwnd and hasattr(user32, "GetDpiForWindow"):
-                dpi = int(user32.GetDpiForWindow(hwnd) or 0)
-            if not dpi and hasattr(user32, "GetDpiForSystem"):
-                dpi = int(user32.GetDpiForSystem() or 0)
-            scale = (dpi / 96.0) if dpi > 0 else 1.0
-            if 0.75 <= scale <= 4.0:
-                return scale
-        except Exception:
-            pass
-        return 1.0
-
-    @staticmethod
-    def _get_logical_virtual_screen() -> tuple:
-        """返回虚拟桌面的逻辑像素边界 (vx, vy, vw, vh)，用于高 DPI 下校验保存的窗口位置与尺寸"""
-        scale = DiscflowController._get_window_dpi_scale(0)
-        try:
-            user32 = ctypes.windll.user32
-            vx = int(round(user32.GetSystemMetrics(76) / scale))
-            vy = int(round(user32.GetSystemMetrics(77) / scale))
-            vw = int(round((user32.GetSystemMetrics(78) or 1920) / scale))
-            vh = int(round((user32.GetSystemMetrics(79) or 1080) / scale))
-            return vx, vy, max(880, vw), max(620, vh)
-        except Exception:
-            return 0, 0, 1920, 1080
-
-    @staticmethod
     def _load_initial_window_bounds() -> tuple:
-        """读取上次关闭前保存的逻辑窗口尺寸、坐标与最大化状态，并校验在当前桌面逻辑区域内"""
+        """读取上次关闭前保存的窗口尺寸、坐标与最大化状态，并校验在当前桌面可见区域内"""
         w, h, x, y, maximized = 1120, 740, None, None, False
         try:
             prefs = load_user_preferences()
             wb = prefs.get("windowBounds")
             if isinstance(wb, dict):
-                vx, vy, vw, vh = DiscflowController._get_logical_virtual_screen()
                 sw = int(wb.get("width", 1120) or 1120)
                 sh = int(wb.get("height", 740) or 740)
-                w = max(880, min(vw, sw))
-                h = max(620, min(vh, sh))
+                w = max(880, min(3840, sw))
+                h = max(620, min(2160, sh))
                 maximized = bool(wb.get("maximized", False))
                 if wb.get("x") is not None and wb.get("y") is not None:
                     sx = int(wb.get("x"))
                     sy = int(wb.get("y"))
-                    if vx - 40 <= sx <= vx + vw - 160 and vy - 20 <= sy <= vy + vh - 120:
+                    user32 = ctypes.windll.user32
+                    vx = user32.GetSystemMetrics(76)  # SM_XVIRTUALSCREEN
+                    vy = user32.GetSystemMetrics(77)  # SM_YVIRTUALSCREEN
+                    vw = user32.GetSystemMetrics(78) or 1920  # SM_CXVIRTUALSCREEN
+                    vh = user32.GetSystemMetrics(79) or 1080  # SM_CYVIRTUALSCREEN
+                    if vx - 80 <= sx <= vx + vw - 160 and vy - 40 <= sy <= vy + vh - 120:
                         x, y = sx, sy
         except Exception:
             pass
         return w, h, x, y, maximized
 
     def _save_window_bounds(self):
-        """将当前窗口的逻辑像素尺寸/坐标（物理像素除以窗口 DPI 缩放）与最大化状态持久化"""
+        """将当前窗口尺寸/坐标（非最大化时）与最大化状态持久化到 preferences.json"""
         try:
             if not self._window:
                 return
@@ -413,15 +367,14 @@ class DiscflowController:
             rect = wintypes.RECT()
             if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
                 return
-            scale = self._get_window_dpi_scale(hwnd)
             prev_prefs = load_user_preferences()
             prev_wb = prev_prefs.get("windowBounds") if isinstance(prev_prefs.get("windowBounds"), dict) else {}
             if not is_zoomed:
                 wb = {
-                    "x": int(round(rect.left / scale)),
-                    "y": int(round(rect.top / scale)),
-                    "width": max(880, int(round((rect.right - rect.left) / scale))),
-                    "height": max(620, int(round((rect.bottom - rect.top) / scale))),
+                    "x": int(rect.left),
+                    "y": int(rect.top),
+                    "width": max(880, int(rect.right - rect.left)),
+                    "height": max(620, int(rect.bottom - rect.top)),
                     "maximized": False,
                 }
             else:
@@ -477,6 +430,126 @@ class DiscflowController:
         except Exception:
             pass
 
+    def _setup_tray_icon(self):
+        """初始化 Windows 系统托盘图标与右键菜单（复用 WinForms NotifyIcon，零额外依赖）"""
+        if not self._window:
+            return
+        native = getattr(self._window, "native", None)
+        if native is None:
+            return
+        try:
+            import clr
+            clr.AddReference("System.Windows.Forms")
+            clr.AddReference("System.Drawing")
+            import System
+            import System.Windows.Forms as WF
+            import System.Drawing as SD
+
+            def _init():
+                if self._tray_icon is not None:
+                    return
+                base_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+                ico_path = os.path.join(base_dir, "discflow.ico")
+                icon_obj = SD.Icon(ico_path) if os.path.isfile(ico_path) else SD.SystemIcons.Application
+
+                menu = WF.ContextMenuStrip()
+                header_item = WF.ToolStripMenuItem("Discflow · 就绪")
+                header_item.Enabled = False
+                show_item = WF.ToolStripMenuItem("显示主窗口")
+                show_item.Font = SD.Font(show_item.Font, SD.FontStyle.Bold)
+                play_item = WF.ToolStripMenuItem("播放 / 暂停")
+                prev_item = WF.ToolStripMenuItem("上一曲")
+                next_item = WF.ToolStripMenuItem("下一曲")
+                exit_item = WF.ToolStripMenuItem("退出 Discflow")
+
+                show_item.Click += lambda s, e: self.show_window()
+                play_item.Click += lambda s, e: threading.Thread(target=self.toggle_play_pause, daemon=True).start()
+                prev_item.Click += lambda s, e: threading.Thread(target=self.prev_track, daemon=True).start()
+                next_item.Click += lambda s, e: threading.Thread(target=self.next_track, daemon=True).start()
+                exit_item.Click += lambda s, e: self.exit_app()
+
+                def _on_menu_open(s, e):
+                    try:
+                        cur_title = "待播放"
+                        if self.current_toc and 0 <= self.current_track_index < len(self.current_toc.tracks):
+                            t = self.current_toc.tracks[self.current_track_index]
+                            cur_title = t.title or f"Track {t.track_number}"
+                        status_prefix = "正在播放" if self.player.is_playing() else "已暂停"
+                        header_item.Text = f"{status_prefix} · {cur_title[:26]}"
+                        play_item.Text = "暂停" if self.player.is_playing() else "播放"
+                    except Exception:
+                        pass
+
+                menu.Opening += _on_menu_open
+                menu.Items.Add(header_item)
+                menu.Items.Add(WF.ToolStripSeparator())
+                menu.Items.Add(show_item)
+                menu.Items.Add(play_item)
+                menu.Items.Add(prev_item)
+                menu.Items.Add(next_item)
+                menu.Items.Add(WF.ToolStripSeparator())
+                menu.Items.Add(exit_item)
+
+                tray = WF.NotifyIcon()
+                tray.Icon = icon_obj
+                tray.Text = APP_NAME
+                tray.ContextMenuStrip = menu
+                tray.Visible = True
+                tray.DoubleClick += lambda s, e: self.show_window()
+
+                self._tray_menu = menu
+                self._tray_icon = tray
+
+            native.BeginInvoke(System.Action(_init))
+        except Exception as e:
+            print("Setup tray icon failed:", e)
+
+    def _dispose_tray_icon(self):
+        tray = self._tray_icon
+        self._tray_icon = None
+        if tray is not None:
+            try:
+                tray.Visible = False
+                tray.Dispose()
+            except Exception:
+                pass
+
+    def show_window(self):
+        self._ui_hidden = False
+        if not self._window:
+            return
+        try:
+            self._window.show()
+            native = getattr(self._window, "native", None)
+            if native is not None:
+                import System
+                def _restore():
+                    try:
+                        import System.Windows.Forms as WF
+                        if native.WindowState == WF.FormWindowState.Minimized:
+                            native.WindowState = WF.FormWindowState.Normal
+                        native.Show()
+                        native.Activate()
+                    except Exception:
+                        pass
+                native.BeginInvoke(System.Action(_restore))
+            self._schedule_ui_push()
+        except Exception:
+            pass
+
+    def hide_to_tray(self):
+        self._ui_hidden = True
+        self._save_window_bounds()
+        if self._window:
+            try:
+                self._window.hide()
+            except Exception:
+                pass
+
+    def set_close_to_tray(self, enabled: bool) -> bool:
+        self._close_to_tray = bool(enabled)
+        return save_user_preferences({"closeToTray": self._close_to_tray})
+
     def minimize_window(self):
         if self._window:
             try:
@@ -499,7 +572,24 @@ class DiscflowController:
         return bool(getattr(self, "_is_maximized", False))
 
     def close_window(self):
+        if self._close_to_tray and self._tray_icon is not None:
+            self.hide_to_tray()
+            return
+        self.exit_app()
+
+    def on_window_closing(self):
+        """拦截 Alt+F4 / 系统关闭请求：开启托盘驻留且非主动退出时隐藏到托盘"""
         self._save_window_bounds()
+        if not self._force_quit and self._close_to_tray and self._tray_icon is not None:
+            self.hide_to_tray()
+            return False
+        self._dispose_tray_icon()
+        return True
+
+    def exit_app(self):
+        self._force_quit = True
+        self._save_window_bounds()
+        self._dispose_tray_icon()
         if self._window:
             try:
                 self._window.destroy()
@@ -509,6 +599,7 @@ class DiscflowController:
     def shutdown(self):
         self._closed = True
         self._save_window_bounds()
+        self._dispose_tray_icon()
         self._save_session_state()
         if hasattr(self, "_media_keys") and self._media_keys:
             self._media_keys.stop()
@@ -521,30 +612,6 @@ class DiscflowController:
             nums.append(0)
         return tuple(nums[:4])
 
-    @staticmethod
-    def _select_exe_asset(assets: list) -> tuple:
-        """从 GitHub Release assets 中筛选 Windows 可执行安装包 (优先 Discflow.exe)"""
-        chosen = None
-        for item in assets or []:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "")
-            url = str(item.get("browser_download_url") or "")
-            if not url:
-                continue
-            if name.lower() == "discflow.exe":
-                chosen = item
-                break
-            if name.lower().endswith(".exe") and chosen is None:
-                chosen = item
-        if chosen:
-            return (
-                str(chosen.get("name") or "Discflow.exe"),
-                str(chosen.get("browser_download_url") or ""),
-                int(chosen.get("size") or 0),
-            )
-        return "", "", 0
-
     def check_for_updates(self, force: bool = False) -> dict:
         if not force and self._update_info is not None:
             return dict(self._update_info)
@@ -555,10 +622,6 @@ class DiscflowController:
             "hasUpdate": False,
             "ignored": False,
             "releaseUrl": GITHUB_RELEASES_PAGE,
-            "assetName": "",
-            "assetUrl": "",
-            "assetSize": 0,
-            "canSelfUpdate": bool(getattr(sys, "frozen", False)),
             "notes": "",
             "publishedAt": "",
             "error": "",
@@ -575,17 +638,12 @@ class DiscflowController:
             data = r.json()
             tag = str(data.get("tag_name") or "").lstrip("vV").strip()
             has_upd = bool(tag and self._parse_version_tuple(tag) > self._parse_version_tuple(APP_VERSION))
-            asset_name, asset_url, asset_size = self._select_exe_asset(data.get("assets") or [])
             res.update({
                 "ok": True,
                 "latestVersion": tag or APP_VERSION,
                 "hasUpdate": has_upd,
                 "ignored": bool(has_upd and tag == self._ignored_update_version),
                 "releaseUrl": str(data.get("html_url") or GITHUB_RELEASES_PAGE),
-                "assetName": asset_name,
-                "assetUrl": asset_url,
-                "assetSize": asset_size,
-                "canSelfUpdate": bool(getattr(sys, "frozen", False)),
                 "notes": str(data.get("body") or ""),
                 "publishedAt": str(data.get("published_at") or ""),
             })
@@ -602,203 +660,6 @@ class DiscflowController:
         if self._update_info and self._update_info.get("latestVersion") == clean:
             self._update_info["ignored"] = True
         return save_user_preferences({"ignoredUpdateVersion": clean})
-
-    def get_update_download_state(self) -> dict:
-        with self._download_lock:
-            return dict(self._download_state)
-
-    def start_update_download(self) -> dict:
-        """在软件内直接下载最新 Discflow.exe 安装包并实时推送下载进度"""
-        info = self._update_info
-        if not info or not info.get("assetUrl"):
-            info = self.check_for_updates(force=True)
-        asset_url = str((info or {}).get("assetUrl") or "")
-        version = str((info or {}).get("latestVersion") or "")
-        expected_size = int((info or {}).get("assetSize") or 0)
-        if not info or not info.get("ok") or not asset_url:
-            with self._download_lock:
-                self._download_state = {
-                    "status": "error",
-                    "version": version,
-                    "progress": 0,
-                    "downloadedBytes": 0,
-                    "totalBytes": expected_size,
-                    "filePath": "",
-                    "error": (info or {}).get("error") or "未找到可下载的 Windows 安装包资源",
-                    "canSelfUpdate": bool(getattr(sys, "frozen", False)),
-                }
-                snap = dict(self._download_state)
-            self._schedule_ui_push()
-            return snap
-
-        with self._download_lock:
-            cur_status = self._download_state.get("status")
-            cur_ver = self._download_state.get("version")
-            cur_path = self._download_state.get("filePath") or ""
-            if cur_status == "downloading":
-                return dict(self._download_state)
-            if cur_status == "ready" and cur_ver == version and cur_path and os.path.isfile(cur_path):
-                return dict(self._download_state)
-            self._download_state = {
-                "status": "downloading",
-                "version": version,
-                "progress": 0,
-                "downloadedBytes": 0,
-                "totalBytes": expected_size,
-                "filePath": "",
-                "error": "",
-                "canSelfUpdate": bool(getattr(sys, "frozen", False)),
-            }
-            snap = dict(self._download_state)
-
-        self._schedule_ui_push()
-        threading.Thread(
-            target=self._download_update_worker,
-            args=(version, asset_url, expected_size),
-            daemon=True,
-        ).start()
-        return snap
-
-    def _download_update_worker(self, version: str, asset_url: str, expected_size: int):
-        safe_ver = re.sub(r"[^0-9A-Za-z._-]", "_", version or "latest")
-        temp_dir = tempfile.gettempdir()
-        final_path = os.path.join(temp_dir, f"Discflow_update_{safe_ver}.exe")
-        part_path = final_path + ".part"
-        try:
-            with requests.get(
-                asset_url,
-                headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"},
-                stream=True,
-                timeout=(8, 60),
-                allow_redirects=True,
-            ) as resp:
-                if resp.status_code != 200:
-                    raise RuntimeError(f"下载失败 (HTTP {resp.status_code})")
-                total = int(resp.headers.get("Content-Length") or expected_size or 0)
-                downloaded = 0
-                last_push_pct = -1
-                last_push_ts = 0.0
-                with open(part_path, "wb") as f:
-                    for chunk in resp.iter_content(chunk_size=65536):
-                        if self._closed:
-                            return
-                        if not chunk:
-                            continue
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        pct = int(min(99, (downloaded * 100) // total)) if total > 0 else 0
-                        now = time.monotonic()
-                        with self._download_lock:
-                            self._download_state["downloadedBytes"] = downloaded
-                            self._download_state["totalBytes"] = total
-                            self._download_state["progress"] = pct
-                        if pct - last_push_pct >= 2 or (now - last_push_ts) >= 0.25:
-                            last_push_pct = pct
-                            last_push_ts = now
-                            self._schedule_ui_push()
-
-            if downloaded < _MIN_UPDATE_BYTES:
-                raise RuntimeError("安装包体积异常，请检查网络后重试")
-            if expected_size > 0 and downloaded != expected_size:
-                raise RuntimeError(f"安装包大小校验失败 ({downloaded}/{expected_size})")
-            with open(part_path, "rb") as vf:
-                if vf.read(2) != b"MZ":
-                    raise RuntimeError("下载文件非有效 Windows 可执行程序")
-
-            os.replace(part_path, final_path)
-            with self._download_lock:
-                self._download_state.update({
-                    "status": "ready",
-                    "progress": 100,
-                    "downloadedBytes": downloaded,
-                    "totalBytes": total or downloaded,
-                    "filePath": final_path,
-                    "error": "",
-                })
-        except Exception as e:
-            try:
-                if os.path.isfile(part_path):
-                    os.remove(part_path)
-            except Exception:
-                pass
-            with self._download_lock:
-                self._download_state.update({
-                    "status": "error",
-                    "filePath": "",
-                    "error": str(e),
-                })
-        self._schedule_ui_push()
-
-    def apply_downloaded_update(self) -> dict:
-        """关闭当前实例并使用分离批处理脚本把已下载的新版 EXE 覆盖回当前路径并重启"""
-        with self._download_lock:
-            st = dict(self._download_state)
-        src_path = str(st.get("filePath") or "")
-        if st.get("status") != "ready" or not src_path or not os.path.isfile(src_path):
-            return {"ok": False, "error": "请先下载完整的新版本安装包"}
-        try:
-            with open(src_path, "rb") as vf:
-                if vf.read(2) != b"MZ":
-                    return {"ok": False, "error": "安装包格式校验失败"}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-        if not getattr(sys, "frozen", False):
-            return {
-                "ok": False,
-                "devMode": True,
-                "filePath": src_path,
-                "error": f"源码开发模式已跳过自动覆盖，新版本已保存至：{src_path}",
-            }
-
-        target_exe = os.path.abspath(sys.executable)
-        pid = os.getpid()
-        bat_path = os.path.join(tempfile.gettempdir(), "discflow_apply_update.bat")
-        bat_script = "\r\n".join([
-            "@echo off",
-            "chcp 65001 >nul",
-            "setlocal",
-            f'set "PID={pid}"',
-            f'set "SRC={src_path}"',
-            f'set "DST={target_exe}"',
-            "set /a TRIES=0",
-            ":wait_exit",
-            'tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul',
-            "if not errorlevel 1 (",
-            "    set /a TRIES+=1",
-            "    if %TRIES% GEQ 60 goto do_copy",
-            "    timeout /t 1 /nobreak >nul",
-            "    goto wait_exit",
-            ")",
-            ":do_copy",
-            "set /a CTRIES=0",
-            ":copy_loop",
-            'copy /y "%SRC%" "%DST%" >nul 2>&1',
-            "if errorlevel 1 (",
-            "    set /a CTRIES+=1",
-            "    if %CTRIES% GEQ 12 goto launch_only",
-            "    timeout /t 1 /nobreak >nul",
-            "    goto copy_loop",
-            ")",
-            'del /f /q "%SRC%" >nul 2>&1',
-            ":launch_only",
-            'start "" "%DST%"',
-            'del "%~f0" >nul 2>&1',
-            "",
-        ])
-        try:
-            with open(bat_path, "w", encoding="utf-8") as bf:
-                bf.write(bat_script)
-            creation_flags = 0x08000000 | 0x00000008  # CREATE_NO_WINDOW | DETACHED_PROCESS
-            subprocess.Popen(
-                ["cmd", "/c", bat_path],
-                creationflags=creation_flags,
-                close_fds=True,
-            )
-            threading.Timer(0.15, self.close_window).start()
-            return {"ok": True, "target": target_exe}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
 
     def _auto_check_updates_bg(self):
         time.sleep(2.5)
@@ -826,7 +687,7 @@ class DiscflowController:
                 continue
             time.sleep(0.015)
             self._push_event.clear()
-            if self._closed or not self._booted or not self._window:
+            if self._closed or self._ui_hidden or not self._booted or not self._window:
                 continue
             try:
                 payload = self.poll_state(
@@ -880,10 +741,6 @@ class DiscflowController:
             "lyricsBatch": dict(self._lyrics_batch),
         }
 
-        with self._download_lock:
-            if self._download_state.get("status") != "idle":
-                state["updateDownload"] = dict(self._download_state)
-
         if int(client_meta_ver) != meta_ver:
             if self._update_info and self._update_info.get("hasUpdate"):
                 state["updateAvailable"] = dict(self._update_info)
@@ -929,6 +786,7 @@ class DiscflowController:
             if self._booted:
                 return
             self._booted = True
+        self._setup_tray_icon()
         if getattr(self, "_saved_maximized", False):
             self.toggle_maximize_window()
         threading.Thread(target=self._initial_boot, daemon=True).start()
@@ -2390,6 +2248,9 @@ class DiscflowJsApi:
     def close_window(self):
         self._ctrl.close_window()
 
+    def set_close_to_tray(self, enabled: bool) -> bool:
+        return self._ctrl.set_close_to_tray(enabled)
+
     def begin_window_resize(self, edge_code: int):
         self._ctrl.begin_window_resize(edge_code)
 
@@ -2398,15 +2259,6 @@ class DiscflowJsApi:
 
     def ignore_update_version(self, ver: str) -> bool:
         return self._ctrl.ignore_update_version(ver)
-
-    def start_update_download(self) -> dict:
-        return self._ctrl.start_update_download()
-
-    def get_update_download_state(self) -> dict:
-        return self._ctrl.get_update_download_state()
-
-    def apply_downloaded_update(self) -> dict:
-        return self._ctrl.apply_downloaded_update()
 
     def select_drive(self, drive_letter: str):
         self._ctrl.select_drive(drive_letter)
@@ -2529,26 +2381,25 @@ AppleMusicCdController = DiscflowController
 
 
 def main():
-    init_theme = _resolve_initial_theme()
-    init_bg = "#F5F5F7" if init_theme == "light" else "#000000"
     controller = DiscflowController()
     js_api = DiscflowJsApi(controller)
     win_w, win_h, win_x, win_y, win_max = DiscflowController._load_initial_window_bounds()
     controller._saved_maximized = win_max
     win = webview.create_window(
         title=APP_NAME,
-        html=_load_frontend_html(init_theme),
+        html=APPLE_MUSIC_HTML,
         js_api=js_api,
         width=win_w,
         height=win_h,
         x=win_x,
         y=win_y,
         min_size=(880, 620),
-        background_color=init_bg,
+        background_color="#000000",
         frameless=True,
         easy_drag=False,
     )
     controller.bind_window(win)
+    win.events.closing += controller.on_window_closing
     win.events.closed += controller.shutdown
     win.events.loaded += lambda: controller.ui_ready()
     webview.start(gui="edgechromium", debug=False)

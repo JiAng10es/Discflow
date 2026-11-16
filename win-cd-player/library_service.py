@@ -252,6 +252,7 @@ def load_user_preferences() -> dict:
         "playMode": "loop",
         "showTranslation": True,
         "autoPlay": True,
+        "closeToTray": True,
         "windowBounds": {},
         "ignoredUpdateVersion": "",
         "lastSession": {},
