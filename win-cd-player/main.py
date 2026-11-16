@@ -47,6 +47,7 @@ from metadata_service import (
     _bytes_to_data_url,
     lookup_album_metadata,
     fetch_lyrics_for_candidate,
+    enrich_lyrics_with_word_timings,
     lookup_track_lyrics,
     match_tracks_by_duration,
     _has_cjk,
@@ -1048,7 +1049,7 @@ class DiscflowController:
             self._push_event.set()
 
     def _ui_push_worker(self):
-        """后台合并去抖推送协程：避免从音频/钩子线程直接同步调用 evaluate_js 引发死锁"""
+        """后台去抖轻量唤醒协程：通知前端主动拉取最新增量状态，避免双通道版本号互踩与大载荷卡顿"""
         while not self._closed:
             self._push_event.wait(timeout=1.0)
             if self._closed:
@@ -1060,16 +1061,7 @@ class DiscflowController:
             if self._closed or not self._booted or not self._window:
                 continue
             try:
-                payload = self.poll_state(
-                    self._last_pushed_meta_ver,
-                    self._last_pushed_lyrics_ver,
-                    self._last_pushed_track_idx,
-                )
-                self._last_pushed_meta_ver = payload.get("metaVersion", self._last_pushed_meta_ver)
-                self._last_pushed_lyrics_ver = payload.get("lyricsVersion", self._last_pushed_lyrics_ver)
-                self._last_pushed_track_idx = payload.get("currentTrackIndex", self._last_pushed_track_idx)
-                js_code = f"window.__onBackendStatePush && window.__onBackendStatePush({json.dumps(payload, ensure_ascii=False)});"
-                self._window.evaluate_js(js_code)
+                self._window.evaluate_js("window.triggerImmediatePoll && window.triggerImmediatePoll();")
             except Exception:
                 pass
 
@@ -1922,22 +1914,17 @@ class DiscflowController:
                     {"source": sid.get("source") or "", "song_id": sid["song_id"]}
                 )
                 if lines:
+                    if not any(isinstance(ln, dict) and ln.get("words") for ln in lines):
+                        lines = enrich_lyrics_with_word_timings(
+                            trk.title, trk.artist, trk.duration_sec, lines
+                        )
                     return lines, {"source": sid.get("source") or "", "song_id": sid["song_id"]}
             try:
-                cands = search_lyric_candidates(
-                    trk.title, trk.artist, trk.duration_sec, limit=3, detail_top=1
-                )
+                direct_lines = lookup_track_lyrics(trk.title, trk.artist, trk.duration_sec)
+                if direct_lines:
+                    return direct_lines, {}
             except Exception:
-                return [], {}
-            for cand in cands:
-                dur = float(cand.get("duration_sec") or 0)
-                if dur <= 0:
-                    continue
-                if abs(dur - float(trk.duration_sec or 0)) <= 3.0:
-                    lines = fetch_lyrics_for_candidate(cand)
-                    if lines:
-                        return lines, {"source": str(cand.get("source") or ""), "song_id": str(cand.get("song_id") or "")}
-                    break
+                pass
             return [], {}
 
         def _work(trk):
@@ -1987,6 +1974,7 @@ class DiscflowController:
                         "matched": matched,
                         "missed": list(missed),
                     }
+                    self._schedule_ui_push()
         finally:
             self.lyrics_missed_tracks = set(missed)
             self._lyrics_batch = {
@@ -2419,17 +2407,10 @@ class DiscflowController:
                     ).start()
 
     def _fetch_metadata_async(self, toc: CdDiscToc, my_token: int):
-        lyrics_triggered = [False]
-
         def _on_partial(partial_meta: AlbumMetadataResult):
+            # 仅先应用文字元数据并高优拉取当前播放曲目（如 Track 1）歌词，
+            # 暂不在回调内启动整碟批量抓词，避免与封面下载争抢并发导致限流超时。
             self._apply_metadata_to_state(partial_meta, my_token)
-            if not lyrics_triggered[0] and self.current_toc:
-                lyrics_triggered[0] = True
-                threading.Thread(
-                    target=self._prefetch_lyrics_async,
-                    args=(my_token,),
-                    daemon=True,
-                ).start()
 
         meta: AlbumMetadataResult = lookup_album_metadata(toc, on_partial=_on_partial)
 
@@ -2462,8 +2443,7 @@ class DiscflowController:
                 daemon=True,
             ).start()
 
-        if not lyrics_triggered[0] and self.current_toc:
-            lyrics_triggered[0] = True
+        if self.current_toc and not self._closed and my_token == self._load_token:
             threading.Thread(
                 target=self._prefetch_lyrics_async,
                 args=(my_token,),
@@ -2586,6 +2566,8 @@ class DiscflowController:
                 continue
             if trk.track_number in self.lyrics_locked_tracks:
                 continue
+            if (my_token, trk.track_number, trk.title, trk.artist) in self._lyrics_fetching_keys:
+                continue
             existing = self.lyrics_cache.get(trk.track_number)
             if existing and self._lyrics_quality_ok(existing):
                 continue
@@ -2620,7 +2602,7 @@ class DiscflowController:
             except Exception:
                 return int(item["track_number"]), []
 
-        workers = max(1, min(4, len(pending)))
+        workers = max(1, min(2, len(pending)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [pool.submit(_fetch_one, item) for item in pending]
             for fut in as_completed(futures):

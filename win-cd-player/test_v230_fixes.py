@@ -443,6 +443,190 @@ class TestFirstTrackLyricsFix(unittest.TestCase):
         self.assertIn("if (patch.lyricsVersion < localLyricsVer)", js)
         self.assertIn("const needLyricsRecovery = Boolean(", js)
         self.assertIn("needLyricsRecovery ? -1 : localLyricsVer", js)
+        self.assertIn("const hasMetaPayload =", js)
+        self.assertIn("const hasLyricsPayload =", js)
+
+    def test_repeated_plain_lyrics_push_keeps_words_and_karaoke_scan(self):
+        """连续两次下发不含 words 的普通歌词后，仍保留逐字时间轴且激活行 --wp 正常推进"""
+        import re
+        import shutil
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 不可用，跳过前端卡拉 OK 状态校验")
+        html = render_frontend_html(
+            init_prefs={"themeMode": "light", "dockOpacity": 5},
+            init_state={"isPlaying": False, "albumTitle": "Init", "tracks": []},
+        )
+        scripts = re.findall(r"<script(?:\s[^>]*)?>([\s\S]*?)</script>", html)
+        harness = """
+function makeNode(tag) {
+  const classes = new Set();
+  const children = [];
+  const styles = {};
+  const node = {
+    tagName: tag || 'DIV',
+    dataset: {},
+    children,
+    style: {
+      setProperty: (k, v) => { styles[k] = String(v); },
+      getProperty: (k) => styles[k],
+    },
+    _styles: styles,
+    className: '',
+    innerHTML: '',
+    textContent: '',
+    value: '',
+    checked: false,
+    src: '',
+    scrollHeight: 200,
+    clientHeight: 200,
+    scrollTop: 0,
+    options: [],
+    classList: {
+      add: (...xs) => xs.forEach(x => classes.add(x)),
+      remove: (...xs) => xs.forEach(x => classes.delete(x)),
+      toggle: (x, f) => { if (f === undefined) { classes.has(x) ? classes.delete(x) : classes.add(x); } else if (f) { classes.add(x); } else { classes.delete(x); } },
+      contains: (x) => classes.has(x),
+    },
+    setAttribute: () => {},
+    getAttribute: () => 'light',
+    addEventListener: () => {},
+    appendChild: (c) => { children.push(c); return c; },
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 40, bottom: 40 }),
+    getContext: () => ({ createRadialGradient: () => ({ addColorStop: () => {} }), fillRect: () => {}, clearRect: () => {} }),
+  };
+  node.querySelectorAll = (sel) => {
+    const out = [];
+    const match = (el) => {
+      if (sel === '.lyric-word') return el.className === 'lyric-word';
+      if (sel === '.lyric-item') return el.className === 'lyric-item';
+      const m = sel.match(/^\\.lyric-item\\[data-index="(\\d+)"\\]$/);
+      if (m) return el.className === 'lyric-item' && String(el.dataset.index) === m[1];
+      return false;
+    };
+    const walk = (root) => {
+      for (const ch of (root.children || [])) {
+        if (match(ch)) out.push(ch);
+        walk(ch);
+      }
+    };
+    walk(node);
+    return out;
+  };
+  node.querySelector = (sel) => node.querySelectorAll(sel)[0] || null;
+  return node;
+}
+const els = {};
+const getEl = (id) => (els[id] || (els[id] = makeNode('DIV')));
+global.window = global;
+global.window.addEventListener = () => {};
+global.window.removeEventListener = () => {};
+global.navigator = { userAgent: 'test' };
+global.document = {
+  documentElement: makeNode('HTML'),
+  body: makeNode('BODY'),
+  hidden: false,
+  getElementById: getEl,
+  querySelectorAll: (sel) => {
+    if (sel.startsWith('.lyric-')) {
+      return [...getEl('lyricsViewport').querySelectorAll(sel), ...getEl('standaloneLyricsViewport').querySelectorAll(sel)];
+    }
+    return [];
+  },
+  querySelector: (sel) => {
+    if (sel === '#lyricsViewport .lyric-word') return getEl('lyricsViewport').querySelector('.lyric-word');
+    return null;
+  },
+  addEventListener: () => {},
+  createElement: (tag) => makeNode(tag),
+};
+global.localStorage = { getItem: () => null, setItem: () => {} };
+global.requestAnimationFrame = () => 1;
+global.cancelAnimationFrame = () => {};
+global.matchMedia = () => ({ matches: false });
+global.Image = function() {};
+global.setInterval = () => 1;
+global.setTimeout = (fn) => { global._scheduledTimers.push(fn); return global._scheduledTimers.length; };
+global._scheduledTimers = [];
+global.clearTimeout = () => {};
+global.clearInterval = () => {};
+"""
+        test_code = """
+const plainLyrics = [
+  { time: 1.0, text: 'Hello world', translation: '你好世界' },
+  { time: 5.0, text: 'Second line', translation: '第二行' }
+];
+const trk = [{ track_number: 1, title: 'Song 1', artist: 'Artist', duration_sec: 200 }];
+
+// 模拟首次完整下发
+window.__onBackendStatePush({
+  discId: 'd1', currentTrackIndex: 0, tracks: trk, albumTitle: 'Album 1',
+  isPlaying: true, elapsedSec: 2.0, durationSec: 200,
+  metaVersion: 2, lyricsVersion: 2, lyrics: plainLyrics.map(x => ({ ...x }))
+});
+
+// 模拟空载荷高版本号推送：不得提前吞掉 localMetaVer / localLyricsVer
+window.__onBackendStatePush({
+  isPlaying: true, elapsedSec: 2.5, durationSec: 200,
+  metaVersion: 3, lyricsVersion: 3
+});
+if (localMetaVer !== 2 || localLyricsVer !== 2) {
+  throw new Error('Empty payload must not advance local versions: ' + localMetaVer + ',' + localLyricsVer);
+}
+
+// 模拟相同纯 LRC 歌词二次下发（如批量任务结束 _bump_lyrics）：appState.lyrics 必须依然保有 words
+window.__onBackendStatePush({
+  discId: 'd1', currentTrackIndex: 0, tracks: trk, albumTitle: 'Album 1',
+  isPlaying: true, elapsedSec: 2.6, durationSec: 200,
+  metaVersion: 3, lyricsVersion: 4, lyrics: plainLyrics.map(x => ({ ...x }))
+});
+
+if (!Array.isArray(appState.lyrics[0].words) || appState.lyrics[0].words.length === 0) {
+  throw new Error('words missing on appState.lyrics after duplicate push');
+}
+renderKaraokeWords(0, 2.8);
+const wordEls = getEl('lyricsViewport').querySelectorAll('.lyric-word');
+if (!wordEls.length) throw new Error('no .lyric-word elements in DOM');
+const wps = wordEls.map(w => parseFloat(w._styles['--wp'] || '0'));
+if (!wps.some(v => v > 0)) {
+  throw new Error('Expected non-zero --wp scan progress, got: ' + JSON.stringify(wps));
+}
+"""
+        path = os.path.join(tempfile.gettempdir(), "discflow_karaoke_sync_test.js")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(harness + "\n" + "\n".join(scripts) + "\n" + test_code)
+        try:
+            proc = subprocess.run([node, path], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, f"前端卡拉OK与版本同步校验失败：{proc.stderr[:800]}")
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def test_enrich_lyrics_with_word_timings_upgrades_qq_lrc(self):
+        base = [
+            {"time": 1.0, "text": "Hello", "translation": "你好"},
+            {"time": 3.0, "text": "World", "translation": "世界"},
+        ]
+        ne_yrc = [
+            {"time": 1.0, "text": "Hello", "translation": "", "words": [{"t": 1.0, "d": 0.5, "w": "Hello"}]},
+            {"time": 3.0, "text": "World", "translation": "", "words": [{"t": 3.0, "d": 0.6, "w": "World"}]},
+        ]
+        ne_search = MagicMock()
+        ne_search.status_code = 200
+        ne_search.json.return_value = {
+            "result": {"songs": [{"id": 12345, "name": "Hello Song", "duration": 200000}]}
+        }
+        with patch("metadata_service.requests.post", return_value=ne_search), \
+             patch("metadata_service._fetch_netease_song_lyrics", return_value=ne_yrc):
+            enriched = metadata_service.enrich_lyrics_with_word_timings("Hello Song", "Artist", 200.0, base)
+        self.assertEqual(len(enriched), 2)
+        self.assertTrue(all(ln.get("words") for ln in enriched))
+        self.assertEqual(enriched[0]["translation"], "你好")
+        self.assertEqual(enriched[1]["translation"], "世界")
 
 
 class TestDockTranslationIconRedraw(unittest.TestCase):

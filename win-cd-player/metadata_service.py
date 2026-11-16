@@ -1374,6 +1374,65 @@ def fetch_lyrics_for_candidate(candidate: dict) -> List[dict]:
     return []
 
 
+def enrich_lyrics_with_word_timings(
+    track_title: str,
+    artist: str,
+    duration_sec: float,
+    base_lines: List[dict],
+) -> List[dict]:
+    """当候选歌词（如 QQ/LRCLIB）缺少逐字时间轴时，尝试从网易云匹配同曲 YRC 逐字轴并保留原有译文。"""
+    if not base_lines or any(isinstance(ln, dict) and ln.get("words") for ln in base_lines):
+        return base_lines
+    title = (track_title or "").strip()
+    if not title:
+        return base_lines
+
+    clean_artist = _primary_artist((artist or "").strip())
+    if clean_artist.lower() in ("various artists", "various", "未知艺术家", "群星", "audio cd") or clean_artist.startswith("DiscID"):
+        clean_artist = ""
+
+    target_ms = float(duration_sec or 0.0) * 1000.0
+    queries = list(dict.fromkeys(q for q in (f"{clean_artist} {title}".strip(), title) if q))
+    try:
+        candidates = []
+        seen_ids = set()
+        for q_idx, q_str in enumerate(queries):
+            resp = requests.post(
+                "https://music.163.com/api/search/get",
+                data={"s": q_str, "type": 1, "limit": 6},
+                headers=NETEASE_HEADERS,
+                timeout=REQ_TIMEOUT,
+            )
+            if resp.status_code != 200:
+                continue
+            songs = resp.json().get("result", {}).get("songs", []) or []
+            for s in songs:
+                sid = s.get("id")
+                if not sid or sid in seen_ids:
+                    continue
+                s_name = (s.get("name") or "").strip()
+                sim = _title_similarity(s_name, title)
+                dur_ms = float(s.get("duration") or 0.0)
+                dur_diff = abs(dur_ms - target_ms) if (dur_ms > 0 and target_ms > 0) else 5000.0
+                if sim < 0.6 or (dur_ms > 0 and target_ms > 0 and dur_diff > 6000.0):
+                    continue
+                seen_ids.add(sid)
+                candidates.append((dur_diff + (1.0 - sim) * 20000.0, sid))
+            if candidates:
+                break
+
+        candidates.sort(key=lambda x: x[0])
+        for _sc, sid in candidates[:2]:
+            ne_lines = _fetch_netease_song_lyrics(sid)
+            if ne_lines and any(ln.get("words") for ln in ne_lines):
+                merged = merge_word_lyrics(ne_lines, base_lines)
+                if any(ln.get("words") for ln in merged):
+                    return merged
+    except Exception:
+        pass
+    return base_lines
+
+
 def _candidate_summary(cand: dict) -> dict:
     """补齐候选的「有无翻译 / 有无逐字 / 首行预览」信息"""
     lines = fetch_lyrics_for_candidate(cand)

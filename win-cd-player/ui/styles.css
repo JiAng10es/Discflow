@@ -15,7 +15,7 @@
     --lyrics-margin-bottom: 12px;
     /* 逐字歌词卡拉 OK 高亮：已唱部分与未唱部分 */
     --karaoke-fill: var(--text-primary);
-    --karaoke-idle: rgba(255, 255, 255, 0.58);
+    --karaoke-idle: rgba(255, 255, 255, 0.65);
     --dock-custom-width: 720px;
     --dock-custom-opacity: 0.05;
     --topbar-icon-opacity: 0.05;
@@ -110,7 +110,7 @@
       --text-tertiary: rgba(60, 60, 67, 0.38);
       --track-bar-bg: rgba(0, 0, 0, 0.14);
       --track-bar-fill: rgba(0, 0, 0, 0.84);
-      --karaoke-idle: rgba(0, 0, 0, 0.48);
+      --karaoke-idle: rgba(0, 0, 0, 0.56);
       --lyric-glow: rgba(0, 0, 0, 0.08);
       /* 极简黑白 App Icon 语义色 (浅色模式下黑线白底) */
       --app-icon-bg: #FFFFFF;
@@ -132,7 +132,7 @@
     --text-primary: #1D1D1F;
     --text-secondary: #515154;
     --text-tertiary: #86868B;
-    --karaoke-idle: rgba(0, 0, 0, 0.48);
+    --karaoke-idle: rgba(0, 0, 0, 0.56);
     --track-bar-bg: rgba(0, 0, 0, 0.12);
     --track-bar-fill: rgba(0, 0, 0, 0.85);
     --lyric-glow: rgba(0, 0, 0, 0.06);
@@ -1146,7 +1146,7 @@
     cursor: pointer;
     transform-origin: left center;
     transform: scale(0.95);
-    opacity: 0.32;
+    opacity: 0.28;
     filter: blur(1.35px);
     transition:
       transform 0.42s var(--spring-fluid),
@@ -1156,7 +1156,7 @@
   }
 
   .lyric-item.near {
-    opacity: 0.46;
+    opacity: 0.44;
     filter: blur(0.75px);
     transform: scale(0.97);
   }
@@ -1165,6 +1165,7 @@
     opacity: 1.0;
     filter: blur(0px);
     transform: scale(1.03) translateX(4px);
+    background: var(--bg-pill);
     text-shadow: 0 4px 26px var(--lyric-glow);
   }
 

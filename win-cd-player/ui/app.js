@@ -1096,10 +1096,13 @@ function toggleDiscflowMenu(event) {
     });
 
     applyTranslationVisibility(appState.showTranslation !== false);
-    syncKaraokeAnchor();
+    syncKaraokeAnchor(true);
     const curSec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
     updateActiveLyric(curSec, true);
     renderKaraokeWords(appState.activeLyricIndex, curSec - (Number(currentTrackLyricOffset) || 0.0));
+    if (appState.isPlaying && !document.hidden) {
+      startKaraokeLoop();
+    }
   }
 
   let currentTrackLyricOffset = 0.0;
@@ -1157,6 +1160,8 @@ function toggleDiscflowMenu(event) {
 
     if (!forceUpdate && activeIdx === appState.activeLyricIndex) return;
     appState.activeLyricIndex = activeIdx;
+    _activeKaraokeIndex = -1;
+    _activeKaraokeWords = [];
 
     const viewports = [
       document.getElementById("lyricsViewport"),
@@ -1189,6 +1194,8 @@ function toggleDiscflowMenu(event) {
         }
       }
     });
+
+    renderKaraokeWords(activeIdx, effectiveProbe);
   }
 
   const _vpScrollAnim = new WeakMap();
@@ -1229,7 +1236,11 @@ function toggleDiscflowMenu(event) {
     const lyrics = appState.lyrics;
     if (!lyrics || !lyrics.length) return;
     const line = lyrics[idx];
-    if (!line || !Array.isArray(line.words) || !line.words.length) return;
+    if (!line) return;
+    if (!Array.isArray(line.words) || !line.words.length) {
+      ensureWordTimings(lyrics);
+    }
+    if (!Array.isArray(line.words) || !line.words.length) return;
     if (_activeKaraokeIndex !== idx || !_activeKaraokeWords.length) {
       _activeKaraokeIndex = idx;
       const nodes = [];
@@ -1246,7 +1257,7 @@ function toggleDiscflowMenu(event) {
     }
     for (let i = 0; i < _activeKaraokeWords.length; i++) {
       const item = _activeKaraokeWords[i];
-      const p = Math.max(0, Math.min(1, (sec - item.t) / item.d));
+      const p = sec >= (item.t + item.d) ? 1 : (sec <= item.t ? 0 : Math.max(0, Math.min(1, (sec - item.t) / item.d)));
       const wpStr = (p * 100).toFixed(1) + "%";
       if (item.el._lastWp !== wpStr) {
         item.el._lastWp = wpStr;
@@ -1255,7 +1266,7 @@ function toggleDiscflowMenu(event) {
     }
   }
 
-  function syncKaraokeAnchor() {
+  function syncKaraokeAnchor(forceSnap = false) {
     const backend = Number(appState.elapsedSec) || 0;
     const key = `${appState.discId || ""}#${appState.currentTrackIndex || 0}`;
 
@@ -1270,6 +1281,12 @@ function toggleDiscflowMenu(event) {
     if (!appState.isPlaying) {
       karaokeClock = backend;
       karaokeLastTs = 0;
+      karaokeRate = 1.0;
+      return;
+    }
+
+    if (forceSnap && Math.abs(backend - karaokeClock) > 0.25) {
+      karaokeClock = backend;
       karaokeRate = 1.0;
       return;
     }
@@ -2230,6 +2247,8 @@ function toggleDiscflowMenu(event) {
   let localMetaVer = -1;
   let localLyricsVer = -1;
   let pollInFlight = false;
+  let pollPending = false;
+  let lastCoverRecoveryKey = "";
 
   window.applyBackendState = function(payload) {
     if (!payload) return;
@@ -2237,6 +2256,11 @@ function toggleDiscflowMenu(event) {
     const prevDiscId = appState.discId;
     const hasMetaUpdate = ("tracks" in payload) || ("albumTitle" in payload);
     const hasLyricsUpdate = ("lyrics" in payload);
+
+    // 关键：合并到 appState 前先为歌词行合成 words 时间轴，防止二次下发同歌词覆盖掉已有 words
+    if (hasLyricsUpdate) {
+      payload.lyrics = ensureWordTimings(Array.isArray(payload.lyrics) ? payload.lyrics : []);
+    }
 
     Object.assign(appState, payload);
     if (typeof payload.lyricOffset === "number") {
@@ -2316,18 +2340,23 @@ function toggleDiscflowMenu(event) {
         (appState.lyrics || [])
           .map(l => `${l.time}|${l.text}|${l.translation || ""}`)
           .join("\n");
-      if (window._lastLyricsSig !== sig) {
+      const missingWordDom = Boolean(
+        appState.lyrics &&
+        appState.lyrics.length > 0 &&
+        !document.querySelector("#lyricsViewport .lyric-word")
+      );
+      if (window._lastLyricsSig !== sig || missingWordDom) {
         window._lastLyricsSig = sig;
         renderLyricsList(appState.lyrics || []);
         lyricsRendered = true;
       }
     }
-    syncKaraokeAnchor();
+    syncKaraokeAnchor(lyricsRendered);
     updateActiveLyric(appState.isPlaying ? karaokeClock : (appState.elapsedSec || 0), lyricsRendered);
-    if (!appState.isPlaying) {
+    if (!appState.isPlaying || lyricsRendered) {
       renderKaraokeWords(
         appState.activeLyricIndex,
-        (Number(appState.elapsedSec) || 0) - (Number(currentTrackLyricOffset) || 0.0)
+        (appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0)) - (Number(currentTrackLyricOffset) || 0.0)
       );
     }
 
@@ -2393,8 +2422,13 @@ function toggleDiscflowMenu(event) {
 
   window.__onBackendStatePush = function(res) {
     if (!res) return;
-    // 防乱序覆盖：忽略或剥离版本号低于本地已应用版本的过时元数据/歌词快照
+    // 防乱序覆盖：忽略或剥离版本号低于本地已应用版本的过时元数据/歌词快照；
+    // 仅当包内确实携带 tracks/albumTitle 或 lyrics 载荷时才确认推进对应版本号，避免空包提前确认丢数据。
     const patch = { ...res };
+    const hasMetaPayload = ("tracks" in patch) || ("albumTitle" in patch);
+    const hasLyricsPayload = ("lyrics" in patch);
+    let needFollowUpPull = false;
+
     if (typeof patch.metaVersion === "number") {
       if (patch.metaVersion < localMetaVer) {
         delete patch.albumTitle;
@@ -2408,34 +2442,58 @@ function toggleDiscflowMenu(event) {
         delete patch.discId;
         delete patch.freedbId;
         patch.metaVersion = localMetaVer;
-      } else {
+      } else if (hasMetaPayload) {
         localMetaVer = patch.metaVersion;
+      } else if (patch.metaVersion > localMetaVer) {
+        needFollowUpPull = true;
       }
     }
     if (typeof patch.lyricsVersion === "number") {
       if (patch.lyricsVersion < localLyricsVer) {
         delete patch.lyrics;
         patch.lyricsVersion = localLyricsVer;
-      } else {
+      } else if (hasLyricsPayload) {
         localLyricsVer = patch.lyricsVersion;
+      } else if (patch.lyricsVersion > localLyricsVer) {
+        needFollowUpPull = true;
       }
     }
     window.applyBackendState(patch);
     syncKaraokeAnchor();
+    if (needFollowUpPull) {
+      triggerImmediatePoll();
+    }
   };
 
   async function pollBackendState() {
-    if (pollInFlight || document.hidden || !window.pywebview || !window.pywebview.api) return;
+    if (document.hidden || !window.pywebview || !window.pywebview.api) return;
+    if (pollInFlight) {
+      pollPending = true;
+      return;
+    }
     pollInFlight = true;
     try {
-      // 自愈兜底：当前有唱片但前端尚未拿到歌词时，强制将 client_lyrics_ver 传为 -1 请求补发
+      // 自愈兜底：当前有唱片但前端尚未拿到歌词/封面时，请求后端补发最新完整状态
       const needLyricsRecovery = Boolean(
         appState.discId &&
         (appState.tracks || []).length > 0 &&
         (!appState.lyrics || appState.lyrics.length === 0)
       );
+      const coverKey = `${appState.discId || ""}#${appState.albumTitle || ""}`;
+      const needCoverRecovery = Boolean(
+        appState.discId &&
+        (appState.tracks || []).length > 0 &&
+        !appState.coverDataUrl &&
+        appState.albumTitle &&
+        appState.albumTitle !== "Audio CD" &&
+        !String(appState.albumTitle).startsWith("等待") &&
+        lastCoverRecoveryKey !== coverKey
+      );
+      if (needCoverRecovery) {
+        lastCoverRecoveryKey = coverKey;
+      }
       const res = await window.pywebview.api.poll_state(
-        localMetaVer,
+        needCoverRecovery ? -1 : localMetaVer,
         needLyricsRecovery ? -1 : localLyricsVer,
         (typeof appState.currentTrackIndex === "number" ? appState.currentTrackIndex : -1)
       );
@@ -2446,10 +2504,18 @@ function toggleDiscflowMenu(event) {
       // 忽略窗口关闭瞬间的桥接异常
     } finally {
       pollInFlight = false;
+      if (pollPending) {
+        pollPending = false;
+        setTimeout(pollBackendState, 0);
+      }
     }
   }
 
   function triggerImmediatePoll() {
+    if (pollInFlight) {
+      pollPending = true;
+      return;
+    }
     setTimeout(pollBackendState, 0);
   }
 
