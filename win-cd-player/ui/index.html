@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>__APP_NAME__</title>
+<!-- 内联 SVG Data-URI Favicon (纯黑白极简 CD 播放器图标) -->
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5.5" fill="%23000000" stroke="%23FFFFFF" stroke-width="1.8"/><circle cx="11.2" cy="12" r="5.6"/><circle cx="11.2" cy="12" r="1.6"/><circle cx="17.8" cy="6.8" r="1.05" fill="%23FFFFFF" stroke="none"/><path d="M17.8 6.8v4.8l-2.5 2.2"/></svg>' />
+<style>/* __INLINE_STYLES__ */</style>
+</head>
+<body class="is-playing">
+
+  <!-- 无边框窗口 8 向边缘缩放热区 -->
+  <div class="win-resize-edge n" data-edge="3"></div>
+  <div class="win-resize-edge s" data-edge="6"></div>
+  <div class="win-resize-edge w" data-edge="1"></div>
+  <div class="win-resize-edge e" data-edge="2"></div>
+  <div class="win-resize-edge nw" data-edge="4"></div>
+  <div class="win-resize-edge ne" data-edge="5"></div>
+  <div class="win-resize-edge sw" data-edge="7"></div>
+  <div class="win-resize-edge se" data-edge="8"></div>
+
+  <!-- 原生 Liquid Glass (液态玻璃) 光学折射 SVG 滤镜定义 (无任何外部依赖，GPU 加速) -->
+  <svg width="0" height="0" style="position: absolute; width: 0; height: 0; pointer-events: none;" aria-hidden="true">
+    <defs>
+      <!-- 大组件轻量微距折射滤镜 (适用于 Dock 栏、音量弹窗、模态对话框) -->
+      <filter id="discflow-liquid-lens" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+        <feTurbulence type="fractalNoise" baseFrequency="0.015 0.015" numOctaves="2" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+      <!-- 小图标晶莹液滴折射滤镜 (适用于顶部圆形悬浮按钮) -->
+      <filter id="discflow-liquid-droplet" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035 0.035" numOctaves="2" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.2" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- 1. 动态专辑流体背景层 (Mesh Gradient + 54px 磨砂遮罩) -->
+  <div class="ambient-stage">
+    <!-- Apple Music 风格环境底色：当前封面整页高斯模糊铺底 -->
+    <div id="artBackdrop" class="art-backdrop"></div>
+    <div id="meshCanvas" class="mesh-canvas">
+      <div class="mesh-blob blob-1"></div>
+      <div class="mesh-blob blob-2"></div>
+      <div class="mesh-blob blob-3"></div>
+    </div>
+    <div class="ambient-vignette"></div>
+    <div class="frosted-scrim"></div>
+  </div>
+
+  <!-- 2. 主应用界面容器 -->
+  <div class="app-shell">
+
+    <!-- 1. 顶部统一精简状态栏 -->
+    <header class="top-bar">
+      <!-- 悬浮控件组：4个纯图标 + 状态指示灯（悬浮于界面上方，消除生硬底栏边框） -->
+      <div class="top-floating-left">
+        <!-- 图标 1: Discflow 软件图标 (点击展开专属菜单：资料库、搜索、设置) -->
+        <button id="discflowAppBtn" class="top-icon-btn discflow-app-btn" onclick="toggleDiscflowMenu(event)" title="Discflow 菜单">
+          <span class="discflow-app-icon-badge">
+            __DISCFLOW_ICON_SVG_24__
+          </span>
+        </button>
+
+        <!-- 图标 2: 读盘纯图标 (Apple SF 风格双流线旋光 CD 图标) -->
+        <button id="topRescanBtn" class="top-icon-btn" onclick="rescanDrive()" title="读取 / 扫描光驱">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 3a9 9 0 0 1 8.5 6"></path>
+            <polyline points="16 9 20.5 9 20.5 4.5"></polyline>
+            <path d="M12 21a9 9 0 0 1-8.5-6"></path>
+            <polyline points="8 15 3.5 15 3.5 19.5"></polyline>
+          </svg>
+        </button>
+
+        <!-- 图标 3: 弹出纯图标 -->
+        <button id="topEjectBtn" class="top-icon-btn" onclick="ejectDrive()" title="弹出光驱托盘">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 4.4a1.2 1.2 0 0 0-1.02.58l-6.4 10.2A1.2 1.2 0 0 0 5.6 17h12.8a1.2 1.2 0 0 0 1.02-1.82L13.02 5a1.2 1.2 0 0 0-1.02-.6z"></path>
+            <rect x="4.5" y="19" width="15" height="2.2" rx="1.1"></rect>
+          </svg>
+        </button>
+
+        <!-- 绿灯/黄灯状态标识 (空闲绿灯 / 读盘与忙碌黄灯呼吸微光) -->
+        <span id="statusDot" class="status-dot idle" title="光驱状态指示灯"></span>
+
+        <!-- 保持隐藏以向下兼容事件绑定 -->
+        <select id="driveSelect" class="drive-select" style="display:none;"></select>
+        <span id="statusText" class="status-text" style="display:none;"></span>
+      </div>
+
+      <!-- 中间可拖拽移动窗口区域（双击切换最大化/还原） -->
+      <div class="top-drag-spacer pywebview-drag-region" ondblclick="toggleMaximizeWindow()" title="拖拽移动窗口 · 双击最大化/还原"></div>
+
+      <!-- 右侧悬浮图标 4: 更新提醒 + 外观模式切换按钮 + 极简无框窗口控制 -->
+      <div class="top-floating-right">
+        <div id="updateNoticePill" class="update-notice-pill" onclick="openSettingsUpdate()" title="点击查看新版本详情与下载">
+          <span class="update-notice-dot"></span>
+          <span id="updateNoticeText">新版本</span>
+          <button class="update-notice-close" onclick="dismissUpdateNotice(event)" title="忽略此版本提醒">✕</button>
+        </div>
+
+        <button id="topThemeBtn" class="top-icon-btn" onclick="cycleTheme()" title="切换外观模式 (浅色 / 深色)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" fill-opacity="0.15"></path>
+          </svg>
+        </button>
+
+        <div class="win-controls-bare" aria-label="窗口控制">
+          <button class="win-ctrl-btn" onclick="minimizeWindow()" title="最小化">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+          <button id="winMaxBtn" class="win-ctrl-btn" onclick="toggleMaximizeWindow()" title="最大化 / 还原">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="2" y="2" width="8" height="8" rx="1.6" stroke="currentColor" stroke-width="1.25"/></svg>
+          </button>
+          <button class="win-ctrl-btn close" onclick="closeWindow()" title="关闭">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Discflow 图标点击弹出的悬浮 Popover 菜单 -->
+      <div id="discflowAppMenu" class="discflow-popover-menu" onclick="event.stopPropagation()">
+        <!-- 第一个：资料库 (抓轨过的专辑) -->
+        <div class="discflow-menu-item" onclick="selectDiscflowMenu('library')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.5" y="3.5" width="7" height="7" rx="2.5"></rect>
+            <rect x="13.5" y="3.5" width="7" height="7" rx="2.5"></rect>
+            <rect x="3.5" y="13.5" width="7" height="7" rx="2.5"></rect>
+            <rect x="13.5" y="13.5" width="7" height="7" rx="2.5"></rect>
+          </svg>
+          <span>资料库</span>
+        </div>
+
+        <!-- 第二个：搜索 (搜索资料库中的专辑、歌名、包括歌手) -->
+        <div class="discflow-menu-item" onclick="selectDiscflowMenu('search')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="10.5" cy="10.5" r="7"></circle>
+            <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
+          </svg>
+          <span>搜索</span>
+        </div>
+
+        <div class="discflow-menu-divider"></div>
+
+        <!-- 最下面：设置按钮 -->
+        <div class="discflow-menu-item" onclick="selectDiscflowMenu('settings')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3.2"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>设置</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. 极简单栏主体区 -->
+    <div class="app-body">
+      <!-- 主视口区域：多视图瞬时平滑切换 -->
+      <main class="app-viewport">
+        <!-- 视图 1：实体 CD 播放主舞台 -->
+        <section id="viewCd" class="view-page active">
+          <div id="mainStage" class="main-stage">
+            <!-- 左侧：Apple Music 播放卡片列 -->
+            <section class="player-column">
+              <!-- 左侧界面只保留大尺寸专辑封面与弥散光影 -->
+              <div class="artwork-stage">
+                <div id="ambientShadow" class="artwork-ambient-shadow"></div>
+                <div class="artwork-card" onclick="toggleLyricsAndTracklist(event)" style="cursor: pointer;" title="点击切换歌词 / 曲目列表">
+                  <div id="discPlaceholder" class="disc-placeholder">
+                    __DISCFLOW_ICON_SVG_512__
+                  </div>
+                  <img id="artworkImg" class="artwork-img" alt="Album Cover" />
+                </div>
+              </div>
+
+              <!-- 隐藏占位 ID 确保底层所有 JS 状态联动与测试完全兼容 -->
+              <div style="display:none;">
+                <span id="trackTitle"></span>
+                <span id="trackSubtitle"></span>
+                <div id="scrubberHit"><div id="scrubberFill"></div></div>
+                <span id="elapsedTime"></span>
+                <span id="remainingTime"></span>
+                <button id="playPauseBtn"></button>
+                <div id="playIcon"></div>
+                <div id="pauseIcon"></div>
+                <div id="volHit"><div id="volFill"></div></div>
+                <button id="lyricsTabBtn"></button>
+                <button id="queueTabBtn"></button>
+                <span id="queueCountText"></span>
+              </div>
+            </section>
+
+            <!-- 右侧：柔焦滚动歌词 + CD 音轨队列舞台 -->
+            <section class="right-stage">
+              <div id="lyricsViewport" class="lyrics-viewport"></div>
+              <div id="queueViewport" class="queue-viewport"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- 视图 2：本地黑胶资料库视图 (极简无框画廊陈列) -->
+        <section id="viewLibrary" class="view-page">
+          <div class="library-top-bar" style="background: transparent; border-bottom: none; display: flex; justify-content: space-between; align-items: center; padding: 14px clamp(24px, 3.2vw, 44px) 6px;">
+            <div class="library-title-group" style="white-space: nowrap;">
+              <h1 class="library-title" style="font-size: 24px; letter-spacing: -0.02em;">资源库</h1>
+              <span id="libraryAlbumCount" class="library-subtitle" style="opacity: 0.55;"></span>
+            </div>
+            <div class="library-top-actions" style="display: flex; align-items: center; gap: 10px;">
+              <!-- 极简搜索框 -->
+              <div class="library-search-box-wrap" id="librarySearchBoxWrap" style="display: flex; align-items: center; background: var(--bg-pill); border: 1px solid transparent; border-radius: 999px; padding: 5px 12px; gap: 6px;">
+                <button id="librarySearchSubmitBtn" onclick="submitLibrarySearch()" title="点击搜索" style="background: transparent; border: none; outline: none; cursor: pointer; display: flex; align-items: center; color: var(--text-secondary); padding: 0;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="10.5" cy="10.5" r="7"></circle>
+                    <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
+                  </svg>
+                </button>
+                <input type="text" id="librarySearchInput" class="library-search-input" placeholder="搜索..." oninput="filterLibraryCards(this.value)" onkeydown="if(event.key==='Enter') submitLibrarySearch()" style="background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 13px; width: 150px;" />
+                <button id="librarySearchClearBtn" class="library-search-clear-btn" onclick="clearLibrarySearch()" title="清空搜索" style="background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; padding: 2px;">✕</button>
+              </div>
+              <!-- 打开本地目录（极简图标圆钮） -->
+              <button id="openLibraryFolderBtn" class="pill-btn" onclick="openLibraryFolder()" title="打开资源库存储目录" style="width: 34px; height: 34px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h3.5a2 2 0 0 1 1.4.6L12.5 6H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-11z"/></svg>
+              </button>
+              <!-- 返回播放（极简图标圆钮） -->
+              <button class="pill-btn" onclick="switchMainView('cd')" title="返回播放界面" style="width: 34px; height: 34px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg>
+              </button>
+              <!-- 抓轨当前光盘 -->
+              <button class="pill-btn active" onclick="startRippingCurrentCd()" title="转录放入的光盘" style="padding: 6px 14px; font-size: 12.5px;">
+                <span>抓轨</span>
+              </button>
+            </div>
+          </div>
+          <div class="library-scroll-area">
+            <div id="libraryGrid" class="library-grid">
+              <!-- 动态渲染谜底黑胶卡片 -->
+            </div>
+            <!-- 手动更换专辑封面的隐藏文件选择器 -->
+            <input type="file" id="coverFileInput" accept="image/*" style="display:none;" onchange="handleCoverFileSelected(event)" />
+          </div>
+        </section>
+
+        <!-- 视图 3：纯享双语歌词全屏视口 -->
+        <section id="viewLyrics" class="view-page">
+          <div class="standalone-lyrics-container">
+            <div id="standaloneLyricsViewport" class="lyrics-viewport" style="width: 100%; max-width: 640px; height: 100%;"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- 3. Apple Music 底部常驻微播控 Dock 栏 -->
+    <!-- 重构底部悬浮控制栏：纯图标收拢（抓轨、曲目、音量、沉浸黑胶） + 半透明毛玻璃微光边框 -->
+    <!-- 居中悬浮长条播控栏 (固定比例防重叠，毛玻璃胶囊浮动质感) -->
+    <footer class="bottom-dock-player" id="bottomDockPlayer">
+      <!-- 1. 左侧：专辑图 + 歌名/歌手 (固定宽度 170px，点击切换歌词/曲目列表) -->
+      <div class="dock-album-cluster" onclick="toggleRightPanelFromDock()" title="切换歌词 / 曲目列表">
+        <img id="dockArtworkImg" class="dock-artwork-thumb" src="" alt="Album Cover" />
+        <div class="dock-track-meta">
+          <span id="dockTrackTitle" class="dock-track-title">等待播放</span>
+          <span id="dockArtist" class="dock-artist">--</span>
+        </div>
+      </div>
+
+      <!-- 2. 中间：播放控制 + 歌曲进程进度条 (固定比例绝对居中) -->
+      <div class="dock-center-cluster">
+        <div class="dock-center-controls">
+          <button class="dock-ctrl-btn" onclick="prevTrack()" title="上一曲">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="4" y="5" width="2" height="14" rx="1"></rect>
+              <path d="M19 5.8a1 1 0 0 0-1.55-.84l-9.5 6.2a1 1 0 0 0 0 1.68l9.5 6.2A1 1 0 0 0 19 18.2V5.8z"></path>
+            </svg>
+          </button>
+          <button id="dockPlayPauseBtn" class="dock-play-pause-btn" onclick="togglePlayPause()" title="播放 / 暂停">
+            <svg id="dockPlayIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+              <path d="M7.8 4.6a1.2 1.2 0 0 0-1.8 1.05v12.7a1.2 1.2 0 0 0 1.8 1.05l11-6.35a1.2 1.2 0 0 0 0-2.1l-11-6.35z"></path>
+            </svg>
+            <svg id="dockPauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="5" width="3.5" height="14" rx="1.75"></rect>
+              <rect x="14.5" y="5" width="3.5" height="14" rx="1.75"></rect>
+            </svg>
+          </button>
+          <button class="dock-ctrl-btn" onclick="nextTrack()" title="下一曲">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M5 5.8a1 1 0 0 1 1.55-.84l9.5 6.2a1 1 0 0 1 0 1.68l-9.5 6.2A1 1 0 0 1 5 18.2V5.8z"></path>
+              <rect x="18" y="5" width="2" height="14" rx="1"></rect>
+            </svg>
+          </button>
+        </div>
+        <div class="dock-progress-row">
+          <span id="dockElapsedTime" class="dock-time-text">0:00</span>
+          <div id="dockScrubberHit" class="dock-scrubber-hit" title="拖动调整播放进度">
+            <div class="dock-scrubber-track">
+              <div id="dockScrubberFill" class="dock-scrubber-fill"></div>
+            </div>
+          </div>
+          <span id="dockRemainingTime" class="dock-time-text">0:00</span>
+        </div>
+      </div>
+
+      <!-- 3. 右侧：声音控制 (固定宽度 170px，点击展开浮动音量条，位置比例固定) -->
+      <div class="dock-right-actions">
+        <!-- 双语翻译开关：随时切换歌词译文显示 -->
+        <button id="dockTransBtn" class="dock-action-btn dock-trans-btn" onclick="toggleBilingualLyrics()" title="双语翻译：已开启（点击关闭）" aria-pressed="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"></path>
+            <path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"></path>
+          </svg>
+        </button>
+        <div class="dock-volume-wrap" id="dockVolumeWrap">
+          <button id="dockVolBtn" class="dock-action-btn" onclick="toggleDockVolumeSlider(event)" title="音量调节（滚轮可微调）">
+            <svg id="dockVolBtnIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4.5L6.5 8H3.5a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 3.5 16h3L11 19.5a1 1 0 0 0 1.6-.8V5.3a1 1 0 0 0-1.6-.8z" fill="currentColor"></path>
+              <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+              <path d="M18.8 5.2a9 9 0 0 1 0 13.6"></path>
+            </svg>
+          </button>
+          <!-- 悬浮竖向音量调节卡片 (气泡置于按钮上方，竖向排布，不改变底栏宽度比例) -->
+          <div id="dockVolSliderBox" class="dock-volume-popover vertical" onclick="event.stopPropagation()">
+            <span id="dockVolValText" class="dock-vol-val-text">80%</span>
+            <div id="dockVolHit" class="dock-vol-hit vertical" title="点击或上下拖动调节音量">
+              <div class="dock-vol-track vertical">
+                <div id="dockVolFill" class="dock-vol-fill vertical"></div>
+                <div id="dockVolKnob" class="dock-vol-knob"></div>
+              </div>
+            </div>
+            <button id="dockVolPopoverIcon" class="dock-vol-popover-icon" onclick="toggleMute()" title="静音 / 取消静音">
+              <svg id="dockVolPopoverSvg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- 隐藏兼容属性 (保留给旧测试用例或备用) -->
+      <div style="display:none;">
+        <button id="dockImmersiveBtn" title="已禁用黑胶"></button>
+        <button id="dockRipBtn"></button>
+        <button id="dockQueueBtn"></button>
+        <div id="dockModeIcon"></div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- 3. 菜单弹窗 (毛玻璃浮层) -->
+  <!-- Discflow 专属综合系统设置偏好中心 (macOS 左导航右内容分栏 + 拖动滑块自动半隐透视) -->
+    <div id="settingsModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'settingsModal')">
+      <div class="modal-dialog settings-modal-dialog">
+        <!-- 左侧导航栏 -->
+        <aside class="settings-sidebar">
+          <div class="settings-header-brand">
+            <span class="discflow-app-icon-badge" style="width: 24px; height: 24px; border-radius: 6px;">
+              __DISCFLOW_ICON_SVG_24__
+            </span>
+            <h2 class="modal-title" style="font-size: 14.5px; font-weight: 700;">系统设置</h2>
+          </div>
+
+          <div class="settings-tabs-bar" role="tablist">
+            <button class="settings-tab-btn active" data-tab="appearance" onclick="switchSettingsTab('appearance')" role="tab">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+              <span>外观与歌词</span>
+            </button>
+            <button class="settings-tab-btn" data-tab="playback" onclick="switchSettingsTab('playback')" role="tab">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span>播放与硬件</span>
+            </button>
+            <button class="settings-tab-btn" data-tab="storage" onclick="switchSettingsTab('storage')" role="tab">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h3.5a2 2 0 0 1 1.4.6L12.5 6H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-11z"/></svg>
+              <span>存储与数据</span>
+            </button>
+            <button class="settings-tab-btn" data-tab="about" onclick="switchSettingsTab('about')" role="tab">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span>关于 Discflow</span>
+            </button>
+          </div>
+
+          <div class="settings-sidebar-footer">
+            <span style="font-size: 11px; color: var(--text-tertiary); padding: 0 4px;">全部修改实时保存</span>
+            <button class="pill-btn" onclick="resetCustomSettings()" style="font-size: 12px; padding: 6px 12px; width: 100%; justify-content: center;">恢复默认</button>
+          </div>
+        </aside>
+
+        <!-- 右侧主内容区 -->
+        <div class="settings-main-col">
+          <div class="modal-header settings-modal-header">
+            <h2 id="settingsPaneTitle" class="modal-title" style="font-size: 16px; font-weight: 700;">外观与歌词</h2>
+            <button class="modal-close-btn" onclick="closeModal('settingsModal')">✕</button>
+          </div>
+
+        <!-- 模态框主体内容区 -->
+        <div class="settings-modal-body">
+          <!-- 选项卡 1: 外观与界面 -->
+          <div id="customSettingsModal" class="settings-tab-pane active" data-tab-pane="appearance">
+            <!-- 顶部栏与底部导航栏统一自定义 -->
+            <div class="settings-card-group" style="padding: 12px 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><rect x="2.5" y="14" width="19" height="7" rx="3.5"/><circle cx="7" cy="7" r="2.5"/><circle cx="12" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/></svg>
+                  <div>
+                    <div class="settings-item-title">顶部栏与底部导航栏 (Top Bar &amp; Dock)</div>
+                    <div class="settings-item-sub">拖动滑块时弹窗自动半透明，可直接看到背后真实界面变化</div>
+                  </div>
+                </div>
+              </div>
+              <div class="custom-control-row" style="margin-bottom: 8px;">
+                <div class="custom-label-wrap">
+                  <label for="dockOpacityInput">背景透明度</label>
+                  <span id="dockOpacityVal" class="custom-val-badge">5%</span>
+                </div>
+                <input type="range" id="dockOpacityInput" min="0" max="100" step="1" value="5" oninput="onDockOpacityChange(this.value)" />
+              </div>
+              <div class="custom-control-row" style="margin-bottom: 8px;">
+                <div class="custom-label-wrap">
+                  <label for="dockBlurInput">毛玻璃模糊度</label>
+                  <span id="dockBlurVal" class="custom-val-badge">2px</span>
+                </div>
+                <input type="range" id="dockBlurInput" min="0" max="60" step="1" value="2" oninput="onDockBlurChange(this.value)" />
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="dockWidthInput">底部栏长短（宽度）</label>
+                  <span id="dockWidthVal" class="custom-val-badge">720px</span>
+                </div>
+                <input type="range" id="dockWidthInput" min="480" max="1080" step="20" value="720" oninput="onDockWidthChange(this.value)" />
+              </div>
+            </div>
+
+            <!-- 桌面歌词排版自定义 -->
+            <div class="settings-card-group" style="padding: 12px 16px;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                <div>
+                  <div class="settings-item-title">桌面歌词排版 (Typography)</div>
+                  <div class="settings-item-sub">调整歌词文本行间距与字间距渲染尺度</div>
+                </div>
+              </div>
+              <div class="custom-control-row" style="margin-bottom: 8px;">
+                <div class="custom-label-wrap">
+                  <label for="lyricLineHeightInput">行间距</label>
+                  <span id="lyricLineHeightVal" class="custom-val-badge">1.4</span>
+                </div>
+                <input type="range" id="lyricLineHeightInput" min="1.0" max="2.6" step="0.1" value="1.4" oninput="onLyricLineHeightChange(this.value)" />
+              </div>
+              <div class="custom-control-row">
+                <div class="custom-label-wrap">
+                  <label for="lyricLetterSpacingInput">字间距</label>
+                  <span id="lyricLetterSpacingVal" class="custom-val-badge">0px</span>
+                </div>
+                <input type="range" id="lyricLetterSpacingInput" min="-1" max="10" step="0.5" value="0" oninput="onLyricLetterSpacingChange(this.value)" />
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 选项卡 2: 播放与硬件 -->
+          <div class="settings-tab-pane" data-tab-pane="playback">
+            <div class="settings-card-group">
+              <!-- 自动播放 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                    <span>放入光盘时自动播放</span>
+                  </div>
+                  <div class="settings-item-sub">检测到光驱放入光盘读取成功后，自动解析 TOC 并从音轨 1 自动起播</div>
+                </div>
+                <label class="ios-switch">
+                  <input type="checkbox" id="autoPlaySwitch" onchange="toggleAutoPlay()" />
+                  <span class="ios-slider"></span>
+                </label>
+                <!-- 兼容隐藏 label 用于现有断言 -->
+                <span id="autoPlayLabel" style="display:none;">已开启</span>
+              </div>
+
+              <!-- 最小化到系统托盘开关 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
+                    <span>关闭窗口时最小化到系统托盘</span>
+                  </div>
+                  <div class="settings-item-sub">点击右上角关闭后退驻任务栏托盘，音乐继续播放不中断</div>
+                </div>
+                <label class="ios-switch">
+                  <input type="checkbox" id="closeToTraySwitch" checked onchange="toggleCloseToTray()" />
+                  <span class="ios-slider"></span>
+                </label>
+              </div>
+
+              <!-- 双语歌词开关 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"/><path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"/></svg>
+                    <span>默认开启双语歌词翻译</span>
+                  </div>
+                  <div class="settings-item-sub">播放包含双语翻译的曲目时自动展现中文对照</div>
+                </div>
+                <label class="ios-switch">
+                  <input type="checkbox" id="prefTransSwitch" checked onchange="toggleBilingualLyrics()" />
+                  <span class="ios-slider"></span>
+                </label>
+              </div>
+
+              <!-- CD-DA 硬件引擎状态 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span>CD-DA 原生无损音频直读</span>
+                  </div>
+                  <div class="settings-item-sub">Win32 IOCTL RAW_READ & waveOut 零损双缓冲，标准 44.1kHz / 16-Bit</div>
+                </div>
+                <span style="font-size: 12px; color: #30d158; font-weight: 600;">硬件就绪</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 12px; padding: 12px 14px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-tertiary); line-height: 1.5;">
+              💡 纯粹聆听提示：若遇到部分老旧或磨损光盘读取缓慢，可在顶部操作栏点击「读盘」按钮触发多重扇区安全重试。
+            </div>
+          </div>
+
+          <!-- 选项卡 3: 存储与数据 -->
+          <div class="settings-tab-pane" data-tab-pane="storage">
+            <div class="settings-card-group">
+              <!-- 资源库存储文件夹 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h3.5a2 2 0 0 1 1.4.6L12.5 6H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-11z"/></svg>
+                    <span>资源库存储目录</span>
+                  </div>
+                  <div class="settings-item-sub" id="libraryPathSub">存储于：程序同级的 library 目录 (离线无损免光驱畅播)</div>
+                </div>
+                <button class="pill-btn" onclick="openLibraryFolder()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span>在管理器中打开</span>
+                </button>
+              </div>
+
+              <!-- 清空歌词缓存 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12A9 9 0 0 0 6 5.3L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg>
+                    <span>清空歌词缓存</span>
+                  </div>
+                  <div class="settings-item-sub">重置已缓存的在线双语歌词与时间轴，切歌时重新从云端精准拉取</div>
+                </div>
+                <button class="pill-btn" onclick="confirmClearLyricsCache()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap;">
+                  <span>清空歌词缓存</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 独立危险操作隔离区 (Danger Zone) -->
+            <div class="settings-card-group settings-danger-card" style="margin-top: 12px; padding: 14px 18px; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.22); border-radius: 14px;">
+              <div class="settings-row-item" style="padding: 0; border: none;">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>清空资料库数据</span>
+                  </div>
+                  <div class="settings-item-sub" style="color: #fca5a5;">删除所有本地已转录抓轨的专辑、封面及音频，操作不可撤销</div>
+                </div>
+                <button class="pill-btn" onclick="confirmClearAllData()" style="background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.4); color: #f87171; font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                  <span>清空资料库数据</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 选项卡 4: 关于 Discflow -->
+          <div class="settings-tab-pane" data-tab-pane="about">
+            <div style="text-align: center; padding: 14px 0 16px 0;">
+              <div class="discflow-brand" style="display: inline-flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                <span class="discflow-app-icon-badge" style="width: 34px; height: 34px; border-radius: 8px;">
+                  __DISCFLOW_ICON_SVG_24__
+                </span>
+                <span class="discflow-wordmark" style="font-size: 20px; font-weight: 700; color: var(--text-primary);">__APP_NAME__</span>
+              </div>
+              <div style="font-size: 12px; color: #30d158; font-weight: 600; font-family: 'SF Mono', monospace;">v__APP_VERSION__ · Windows x64 Native</div>
+            </div>
+
+            <div id="aboutUpdateBanner" class="about-update-banner">
+              <div style="min-width: 0;">
+                <div id="aboutUpdateTitle" style="font-size: 13px; font-weight: 700; color: #4ade80;">发现新版本</div>
+                <div id="aboutUpdateSub" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+              </div>
+              <button id="aboutUpdateDownloadBtn" class="pill-btn active" onclick="openUpdateDownload()" style="font-size: 12px; padding: 5px 12px; white-space: nowrap; display: none;">前往下载</button>
+            </div>
+
+            <div class="settings-card-group">
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span>软件更新</span>
+                  </div>
+                  <div class="settings-item-sub" id="aboutCheckUpdateSub">检查 GitHub Releases 最新版本</div>
+                </div>
+                <button id="checkUpdateBtn" class="pill-btn" onclick="checkForUpdates(true)" style="font-size: 12px; padding: 5px 13px; white-space: nowrap;">检查更新</button>
+              </div>
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <span>关于 Discflow</span>
+                  </div>
+                  <div class="settings-item-sub">原生无损 CD 音乐播放器 · 16-Bit / 44.1kHz 标准</div>
+                </div>
+                <span style="font-size: 12px; color: var(--text-tertiary);">Hi-Fi Native</span>
+              </div>
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span>音频引擎</span>
+                  </div>
+                  <div class="settings-item-sub">CD-DA Win32 IOCTL 零损直读 & 双缓冲环形渲染</div>
+                </div>
+                <span style="font-size: 12px; color: #30d158; font-weight: 600;">Direct PCM</span>
+              </div>
+              <div class="settings-row-item">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"/><path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"/></svg>
+                    <span>元数据与歌词</span>
+                  </div>
+                  <div class="settings-item-sub">MusicBrainz / FreeDB 匹配 · 双语卡拉 OK 逐字滚动</div>
+                </div>
+                <span style="font-size: 12px; color: var(--text-tertiary);">Sync Engine</span>
+              </div>
+            </div>
+
+            <!-- 支持作者 独立卡片入口 -->
+            <div class="settings-card-group">
+              <div class="settings-row-item" onclick="openModal('supportAuthorModal')" style="cursor: pointer;" title="点击支持作者与赞赏二维码">
+                <div class="settings-item-col">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px; color: #ff375f; font-weight: 600;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+                    <span>支持作者</span>
+                  </div>
+                  <div class="settings-item-sub">给开发者买杯咖啡，支持 Discflow 持续开发</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px; color: var(--text-tertiary); font-size: 13px;">
+                  <span style="font-size: 12px; color: #ff375f; font-weight: 500;">买杯咖啡</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- 快捷键速查表 -->
+            <div class="settings-card-group" style="padding: 12px 16px;">
+              <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">常用快捷键速查</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 12px; color: var(--text-secondary);">
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>播放 / 暂停</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">Space</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>上一曲 / 下一曲</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">← / →</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>调节音量</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">↑ / ↓</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>双语歌词切换</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">T</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词延后 / 提前</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">[ / ]</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词时间轴归零</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">\</kbd></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 支持作者弹窗 (Apple 极简磨砂卡片) -->
+    <div id="supportAuthorModal" class="popup-modal-overlay" style="z-index: 120;" onclick="closeModalOnBackdrop(event, 'supportAuthorModal')">
+      <div class="modal-dialog" style="max-width: 420px; align-items: center; text-align: center; border-radius: 20px; padding: 22px 24px 26px;">
+        <div class="modal-header" style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff375f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+            <h2 class="modal-title" style="font-size: 16px; font-weight: 700; color: var(--text-primary);">支持作者</h2>
+          </div>
+          <button class="modal-close-btn" onclick="closeModal('supportAuthorModal')">✕</button>
+        </div>
+        <div class="modal-body" style="width: 100%; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0;">
+          <p style="font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); text-align: center; margin: 0 4px;">
+            Discflow 永久免费，制作不易，如果您实在想支持本项目，就在此处给开发者买杯咖啡吧
+          </p>
+          <div style="width: 220px; height: 220px; background: #ffffff; padding: 10px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
+            <img src="__ALIPAY_QR_BASE64__" style="width: 100%; height: 100%; display: block; border-radius: 8px; object-fit: contain;" alt="支付宝收款码" />
+          </div>
+          <div style="font-size: 12px; color: var(--text-tertiary); letter-spacing: 0.02em;">
+            打开手机支付宝扫一扫
+          </div>
+          <div style="margin-top: 4px; width: 100%; display: flex; justify-content: center;">
+            <button class="pill-btn active" onclick="openAlipayPayment()" style="padding: 10px 32px; font-size: 14.5px; font-weight: 600; background: #1677ff; color: #ffffff; border: none; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 4px 20px rgba(22, 119, 255, 0.4); transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);">
+              <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor">
+                <path d="M1024 768c0 141.385-114.615 256-256 256H256C114.615 1024 0 909.385 0 768V256C0 114.615 114.615 0 256 0h512c141.385 0 256 114.615 256 256v512z" fill="#1677FF"/>
+                <path d="M828.4 693.8c-26.4-12.8-60-31.2-99.2-54.8 28-54.4 49.6-116.8 62.4-184.8H628V374h198.4c17.6 0 32-14.4 32-32s-14.4-32-32-32H628v-96c0-17.6-14.4-32-32-32s-32 14.4-32 32v96H320c-17.6 0-32 14.4-32 32s14.4 32 32 32h244v80.2H320c-17.6 0-32 14.4-32 32s14.4 32 32 32h398.4c-11.2 52.8-28.8 102.4-52 145.6-70.4-36.8-142.4-65.6-213.6-78.4-16.8-3.2-35.2-4.8-54.4-4.8-132 0-234.4 87.2-234.4 199.2 0 104.8 92.8 186.4 219.2 186.4 116 0 220-64 284-166.4 79.2 49.6 156 89.6 225.6 114.4 8 3.2 16.8 4.8 24.8 4.8 12.8 0 25.6-4.8 35.2-13.6 16.8-16 19.2-41.6 4-60.8l-40.4-32.8z m-448 184.8c-90.4 0-155.2-56-155.2-128 0-77.6 69.6-136.8 165.6-136.8 12.8 0 25.6 0.8 37.6 3.2 56 10.4 113.6 33.6 170.4 63.2-49.6 118.4-128.8 198.4-218.4 198.4z" fill="#FFFFFF"/>
+              </svg>
+              <span>前往支付宝</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 逐轨手动匹配歌词弹窗 -->
+    <div id="lyricMatchModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'lyricMatchModal')">
+      <div class="modal-dialog" style="max-width: 560px;">
+        <div class="modal-header">
+          <h2 class="modal-title">手动匹配歌词</h2>
+          <button class="modal-close-btn" onclick="closeModal('lyricMatchModal')">✕</button>
+        </div>
+        <div class="modal-body" style="padding: 16px 22px; display: flex; flex-direction: column; gap: 12px;">
+          <div id="lyricMatchTrackInfo" class="modal-item-sub"></div>
+          <div style="display: flex; gap: 8px;">
+            <input id="lyricMatchTitle" class="match-meta-input" style="flex: 1.4;" placeholder="歌名" />
+            <input id="lyricMatchArtist" class="match-meta-input" style="flex: 1;" placeholder="艺术家" />
+            <button id="lyricMatchSearchBtn" class="pill-btn active" onclick="searchLyricCandidates()" style="white-space: nowrap;">搜索</button>
+          </div>
+          <div id="lyricMatchHint" class="modal-item-sub" style="line-height: 1.6;">点击「搜索」从网易云 / QQ 音乐 / LRCLIB 同时检索。</div>
+          <div id="lyricMatchResults" class="lyric-candidate-list"></div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button class="pill-btn" onclick="clearTrackLyrics()">清除歌词</button>
+            <button class="pill-btn" onclick="autoMatchTrackLyrics()">重新自动匹配</button>
+            <button class="pill-btn" onclick="closeModal('lyricMatchModal')">关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 手动匹配专辑信息弹窗 -->
+    <div id="matchMetadataModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'matchMetadataModal')">
+      <div class="modal-dialog" style="max-width: 440px;">
+        <div class="modal-header">
+          <h2 class="modal-title" style="display: flex; align-items: center; gap: 8px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="7"></circle><path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path></svg><span>手动匹配专辑信息</span></h2>
+          <button class="modal-close-btn" onclick="closeModal('matchMetadataModal')">✕</button>
+        </div>
+        <div class="modal-body" style="padding: 18px 24px; display: flex; flex-direction: column; gap: 14px;">
+          <div id="matchMetaHint" class="modal-item-sub" style="line-height: 1.65;">
+            填写专辑名后点「搜索」，从 QQ 音乐 / iTunes / 网易云 三源并发检索，选中一条即可整张套用。
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input id="matchAlbumTitle" class="match-meta-input" style="flex: 1.4;" placeholder="专辑名称（必填）" />
+            <input id="matchAlbumArtist" class="match-meta-input" style="flex: 1;" placeholder="艺术家（可选）" />
+            <button id="matchMetaSubmitBtn" class="pill-btn active" onclick="submitMatchMetadata()" style="white-space: nowrap;">搜索</button>
+          </div>
+          <div id="matchAlbumResults" class="album-cand-list"></div>
+          <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px;">
+            <button class="pill-btn" onclick="closeModal('matchMetadataModal')">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 本地资源库专辑与曲目编辑弹窗 -->
+    <div id="editLocalAlbumModal" class="popup-modal-overlay" onclick="closeModalOnBackdrop(event, 'editLocalAlbumModal')">
+      <div class="modal-dialog" style="max-width: 520px; max-height: 84vh; display: flex; flex-direction: column;">
+        <div class="modal-header">
+          <h2 class="modal-title">编辑本地专辑信息</h2>
+          <button class="modal-close-btn" onclick="closeModal('editLocalAlbumModal')">✕</button>
+        </div>
+        <div class="modal-body" style="padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex: 1;">
+          <input type="hidden" id="editLocalDiscId" />
+          <div style="display: grid; grid-template-columns: 1.5fr 1.2fr 0.7fr; gap: 8px;">
+            <input id="editLocalTitle" class="match-meta-input" placeholder="专辑名称" />
+            <input id="editLocalArtist" class="match-meta-input" placeholder="艺术家" />
+            <input id="editLocalYear" class="match-meta-input" placeholder="年份" />
+          </div>
+          <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">逐轨曲目名称</div>
+          <div id="editLocalTracksList" style="display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
+          <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px;">
+            <button class="pill-btn" onclick="closeModal('editLocalAlbumModal')">取消</button>
+            <button class="pill-btn active" onclick="saveLocalAlbumEdit()">保存修改</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  <!-- 旧独立弹窗已一体化合并至 #settingsModal（保留占位以兼容历史脚本与测试） -->
+  <div id="aboutModal" style="display:none;"></div>
+
+  <!-- 6. 抓轨归档进度弹窗 (#ripModal) -->
+  <div id="ripModal" class="popup-modal-overlay">
+    <div class="modal-dialog" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2 class="modal-title">CD 无损抓轨归档</h2>
+        <button id="ripModalCloseBtn" class="modal-close-btn" onclick="cancelRippingAndClose()">✕</button>
+      </div>
+      <div style="padding: 10px 0 6px 0; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; gap: 14px; align-items: center;">
+          <img id="ripCoverImg" src="" style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover; background: #222;" />
+          <div style="flex: 1; min-width: 0;">
+            <div id="ripAlbumTitle" style="font-weight: 700; font-size: 14.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</div>
+            <div id="ripArtist" style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</div>
+          </div>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;">
+            <span id="ripStatusText">正在准备抓轨...</span>
+            <span id="ripOverallPctText" style="font-family: var(--font-mono); font-weight: 600;">0%</span>
+          </div>
+          <div style="width: 100%; height: 7px; background: var(--track-bar-bg); border-radius: 999px; overflow: hidden;">
+            <div id="ripOverallBar" style="height: 100%; width: 0%; background: #30D158; border-radius: 999px; transition: width 0.2s ease;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); margin-bottom: 4px;">
+            <span id="ripTrackTitle">等待音轨...</span>
+            <span id="ripTrackPctText" style="font-family: var(--font-mono);">0%</span>
+          </div>
+          <div style="width: 100%; height: 4px; background: var(--track-bar-bg); border-radius: 999px; overflow: hidden;">
+            <div id="ripTrackBar" style="height: 100%; width: 0%; background: var(--track-bar-fill); border-radius: 999px; transition: width 0.2s ease;"></div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px;">
+          <button id="ripCancelBtn" class="pill-btn" onclick="cancelRippingAndClose()">取消抓轨</button>
+          <button id="ripDoneBtn" class="pill-btn active" style="display: none;" onclick="finishRippingAndShowLibrary()">确认 (回到资源库)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. 全局搜索弹窗 (#searchModal) -->
+  <div id="searchModal" class="popup-modal-overlay">
+    <div class="modal-dialog" style="max-width: 540px; border-radius: 18px; padding: 22px 24px;">
+      <div class="modal-header" style="margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;">
+            <circle cx="10.5" cy="10.5" r="7"></circle>
+            <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
+          </svg>
+          <h2 class="modal-title" style="font-size: 17px; font-weight: 700;">搜索资源库</h2>
+        </div>
+        <button class="modal-close-btn" onclick="closeModal('searchModal')">✕</button>
+      </div>
+
+      <!-- 搜索输入条 -->
+      <div style="display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-hairline); border-radius: 12px; padding: 8px 14px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;">
+          <circle cx="10.5" cy="10.5" r="7"></circle>
+          <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
+        </svg>
+        <input type="text" id="modalSearchInput" placeholder="搜索已抓轨专辑、歌名或歌手..."
+               oninput="onModalSearchInput(this.value)"
+               onkeydown="if(event.key==='Enter') executeModalSearch()"
+               style="flex: 1; background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 14px;" />
+        <button id="modalSearchClearBtn" onclick="clearModalSearch()" style="background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; padding: 2px 6px; font-size: 13px; display: none;">✕</button>
+        <button class="pill-btn active" onclick="executeModalSearch()" style="padding: 4px 14px; font-size: 12px;">搜索</button>
+      </div>
+
+      <!-- 搜索结果列表容器 -->
+      <div id="modalSearchResults" style="max-height: 280px; overflow-y: auto; margin-top: 14px; display: flex; flex-direction: column; gap: 8px; min-height: 100px;">
+        <div style="text-align: center; color: var(--text-tertiary); padding: 32px 12px; font-size: 13px;">
+          输入专辑、歌名或歌手关键词进行搜索
+        </div>
+      </div>
+
+      <!-- 底部跳转按钮 -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; border-top: 1px solid var(--border-hairline); padding-top: 12px;">
+        <span id="modalSearchCountText" style="font-size: 12px; color: var(--text-tertiary);">准备就绪</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="pill-btn" onclick="jumpToLibraryFromSearch()">在资源库中浏览</button>
+          <button class="pill-btn active" onclick="closeModal('searchModal')">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. 谜底黑胶 (MD Vinyl) 1:1 实机像素级全屏沉浸播放舞台 (#immersiveVinylStage) -->
+  <div id="immersiveVinylStage" class="immersive-vinyl-stage">
+    <!-- 自适应动态柔焦环境光漫射层 -->
+    <div id="mdAmbientBg" class="md-ambient-bg"></div>
+
+    <!-- 顶部极简状态栏：左侧时钟，右侧设置与退出 -->
+    <!-- 沉浸黑胶模式：移除顶部干扰项（时间、设置与关闭叉号），界面极致沉浸纯粹 -->
+
+    <!-- 主舞台中央区：左侧大封面封套 + 右侧半露琥珀黑胶 + 右上角悬浮机械金属唱臂 -->
+    <div class="md-centerpiece">
+      <div class="md-stage-wrapper">
+        <!-- 左侧：拟物大封面封套 (Jacket Sleeve) -->
+        <div class="md-sleeve-jacket" id="mdSleeveJacket" onclick="toggleMdLyricsSheet()" title="点击切换歌词与唱片详情">
+          <div class="md-sleeve-spine"></div>
+          <img id="immersiveCoverImg" class="md-sleeve-artwork" src="" alt="Album Cover" />
+        </div>
+
+        <!-- 右侧：固定比例黑胶唱机组件 (黑胶盘 + 唱臂基准绝对锁定，杜绝任何缩放下的位移漂移) -->
+        <div class="md-vinyl-rig" id="mdVinylRig">
+          <!-- 旋转彩胶唱片 -->
+          <div id="immersiveVinylDisc" class="md-vinyl-disc">
+            <div class="md-vinyl-grooves"></div>
+            <div class="md-vinyl-specular"></div>
+            <div class="md-vinyl-label">
+              <img id="immersiveLabelImg" class="md-vinyl-label-art" src="" alt="Label" />
+              <div class="md-label-text-box">
+                <span id="mdLabelTrackTitle" class="md-label-track-title">__APP_NAME__</span>
+                <span id="mdLabelArtist" class="md-label-artist">Hi-Fi</span>
+              </div>
+              <div class="center-spindle-hole"></div>
+            </div>
+          </div>
+
+          <!-- 机械金属唱臂：直接相对于 .md-vinyl-rig 锚定，针尖无论缩放到何种尺寸均恒定在黑胶音轨上 -->
+          <div id="immersiveTonearm" class="md-tonearm-assembly">
+            <div class="md-tonearm-glass-plate"></div>
+            <div class="md-tonearm-pivot">
+              <div class="md-tonearm-pivot-cap"></div>
+            </div>
+            <div class="md-tonearm-wand"></div>
+            <div class="md-tonearm-headshell">
+              <div class="md-tonearm-cartridge"></div>
+              <div class="md-tonearm-stylus"></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- 悬浮双语歌词浮动层 -->
+    <div id="mdLyricsSheet" class="md-lyrics-sheet">
+      <div id="mdLyricsActiveLine" class="md-lyric-main">纯享 CD 无损音轨</div>
+      <div id="mdLyricsActiveSub" class="md-lyric-sub"></div>
+    </div>
+
+    <!-- 底栏「播放列表与控制面板」iOS 液态玻璃弹性阻尼流体浮动卡片 -->
+    <div id="mdFluidMorphOverlay" class="md-fluid-morph-backdrop" onclick="closeFluidPlaylistMorph(event)">
+      <div id="mdFluidMorphCard" class="md-fluid-morph-card" onclick="event.stopPropagation()">
+        <!-- 顶部控制行：三态播放模式切换 + 紧凑音量滑块 -->
+        <div class="fluid-card-header">
+          <div class="fluid-mode-group">
+            <button id="fluidModeRepeatAll" class="fluid-mode-btn active" onclick="setFluidPlayMode('repeat_all')" title="列表循环">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+              </svg>
+            </button>
+            <button id="fluidModeShuffle" class="fluid-mode-btn" onclick="setFluidPlayMode('shuffle')" title="随机播放">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 3h5v5"/><path d="M4 20l6.2-6.2M21 3l-7.8 7.8"/><path d="M21 21h-5v-5"/><path d="M15.2 15.2l5.8 5.8M4 4l9.6 9.6"/>
+              </svg>
+            </button>
+            <button id="fluidModeRepeatOne" class="fluid-mode-btn" onclick="setFluidPlayMode('repeat_one')" title="单曲循环">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><path d="M11.2 10.5l1.6-1.1v5.2m-1.2 0h2.4" stroke-width="1.8"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="fluid-volume-group">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.8">
+              <path d="M11 4.5L6.5 8H3.5a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 3.5 16h3L11 19.5a1 1 0 0 0 1.6-.8V5.3a1 1 0 0 0-1.6-.8z" fill="currentColor"></path>
+              <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+            </svg>
+            <div id="fluidVolHit" class="fluid-vol-hit" title="滑动调节音量">
+              <div class="fluid-vol-track">
+                <div id="fluidVolFill" class="fluid-vol-fill"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 曲目列表区：垂直展示当前专辑曲目（音轨号、歌名、时长、正在播放高亮、快速切歌） -->
+        <div id="fluidTrackList" class="fluid-track-list"></div>
+      </div>
+    </div>
+
+    <!-- 底部悬浮控制药丸胶囊 (MD Vinyl Floating Pill Dock) -->
+    <div class="md-dock-container">
+      <!-- 居中主药丸胶囊 (去除左下角/右下角按钮及播放键旁的循环播放键) -->
+      <div class="md-player-dock">
+        <!-- 播放列表与控制面板触发锚点 (液态玻璃弹性形变) -->
+        <button id="mdPlaylistMorphBtn" class="md-dock-icon-btn" onclick="toggleFluidPlaylistMorph(event)" title="播放列表与控制面板">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3.5" y1="6" x2="14" y2="6"></line>
+            <line x1="3.5" y1="12" x2="11.5" y2="12"></line>
+            <line x1="3.5" y1="18" x2="9.5" y2="18"></line>
+            <path d="M18 16a2 2 0 1 1-2-2c.6 0 1.2.2 1.6.6V7.5l4-1.2v6.2a2 2 0 1 1-2-2c.6 0 1.2.2 1.6.6" fill="currentColor"></path>
+          </svg>
+        </button>
+
+        <!-- 中间：微缩唱片圆标 + 歌曲/歌手信息 -->
+        <div class="md-dock-track-info" onclick="toggleMdLyricsSheet()" title="点击切换歌词">
+          <img id="mdDockMiniLabel" class="md-dock-mini-label" src="" alt="Track Art" />
+          <div class="md-dock-text-col">
+            <span id="immersiveTrackTitle" class="md-dock-title">等待播放</span>
+            <span id="immersiveArtistName" class="md-dock-artist">--</span>
+          </div>
+        </div>
+
+        <!-- 右侧：播放/暂停按钮 -->
+        <div class="md-dock-controls">
+          <button id="mdDockPlayPauseBtn" class="md-dock-icon-btn play-pause-btn" onclick="togglePlayPause()" title="播放 / 暂停">
+            <svg id="mdDockPlayIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:none;">
+              <path d="M7.8 4.6a1.2 1.2 0 0 0-1.8 1.05v12.7a1.2 1.2 0 0 0 1.8 1.05l11-6.35a1.2 1.2 0 0 0 0-2.1l-11-6.35z"></path>
+            </svg>
+            <svg id="mdDockPauseIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <rect x="6" y="5" width="3.5" height="14" rx="1.75"></rect>
+              <rect x="14.5" y="5" width="3.5" height="14" rx="1.75"></rect>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 隐藏占位以向下兼容旧测试及脚本引用 -->
+      <div style="display:none;">
+        <img id="mdDockThumbImg" src="" alt="" />
+        <button id="mdDockMoreBtn"></button>
+        <button id="mdDockModeBtn"></button>
+      </div>
+    </div>
+  </div>
+
+<script>/* __INLINE_SCRIPTS__ */</script>
+</body>
+</html>

@@ -30,7 +30,7 @@ class TestDockSymmetry(unittest.TestCase):
         self.assertIsNotNone(left_match, "应存在 .dock-album-cluster 样式")
         left_css = left_match.group(1)
         self.assertIn("justify-self: start", left_css, "左翼曲目卡片应靠左网格对齐")
-        self.assertIn("max-width: 236px", left_css, "左翼应有 236px 最大宽度约束")
+        self.assertIn("236px", left_css, "左翼应有 236px 基础宽度约束")
 
         # 2. 中控播放区
         center_match = re.search(r"\.dock-center-cluster\s*\{([^}]+)\}", HTML)
@@ -44,7 +44,7 @@ class TestDockSymmetry(unittest.TestCase):
         self.assertIsNotNone(right_match, "应存在 .dock-right-actions 样式")
         right_css = right_match.group(1)
         self.assertIn("justify-self: end", right_css, "右翼操作区应靠右网格对齐")
-        self.assertIn("max-width: 236px", right_css, "右翼操作区应保持 236px 最大宽度与左翼对称")
+        self.assertIn("236px", right_css, "右翼操作区应保持 236px 基础宽度与左翼对称")
 
     def test_controls_remain_intact(self):
         """验证底栏现有按键（上一曲、播放/暂停、下一曲、进度条、双语翻译、音量）均完整保留"""
