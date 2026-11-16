@@ -169,15 +169,21 @@ class TestV1111LyricFixes(unittest.TestCase):
         self.assertIn("lyrics = ensureWordTimings(lyrics);", APPLE_MUSIC_HTML)
 
     def test_karaoke_clock_is_continuous(self):
-        # 高亮必须由自走时钟推进 + 柔性纠偏，而不是每次轮询硬重置锚点
+        # 高亮必须由自走时钟推进 + 单向弹性追帧，而不是每次轮询硬重置锚点
         self.assertIn("karaokeClock", APPLE_MUSIC_HTML)
         self.assertIn("karaokeLastTs", APPLE_MUSIC_HTML)
-        self.assertIn("Math.abs(drift) > 0.45", APPLE_MUSIC_HTML)
-        self.assertIn("karaokeClock += drift * 0.12", APPLE_MUSIC_HTML)
+        self.assertIn("karaokeRate", APPLE_MUSIC_HTML)
+        self.assertIn("Math.abs(drift) > 0.65", APPLE_MUSIC_HTML)
+        self.assertIn("karaokeRate = Math.min(1.22, 1.0 + drift * 0.65)", APPLE_MUSIC_HTML)
+        self.assertIn("karaokeRate = Math.max(0.72, 1.0 + drift * 0.90)", APPLE_MUSIC_HTML)
         self.assertNotIn("karaokeAnchorSec", APPLE_MUSIC_HTML)
 
     def test_active_line_has_hysteresis(self):
-        self.assertIn("const probe = (Number(elapsedSec) || 0) + 0.06;", APPLE_MUSIC_HTML)
+        self.assertIn(
+            "const effectiveProbe = (Number(elapsedSec) || 0) - (Number(currentTrackLyricOffset) || 0.0);",
+            APPLE_MUSIC_HTML,
+        )
+        self.assertIn("if (effectiveProbe >= lyrics[i].time)", APPLE_MUSIC_HTML)
 
     def test_update_track_lyrics_persists(self):
         tmp = tempfile.mkdtemp(prefix="discflow_lyr_probe_")
@@ -265,6 +271,7 @@ class TestV114FirstTrackLyrics(unittest.TestCase):
 
     def test_inline_script_parses(self):
         """整段前端脚本必须能被 JS 引擎解析（曾因 f-string 里写 \\n 导致全站脚本崩溃）"""
+        import re
         import shutil
         import subprocess
 
@@ -272,15 +279,15 @@ class TestV114FirstTrackLyrics(unittest.TestCase):
         if not node:
             self.skipTest("node 不可用，跳过 JS 语法校验")
         html = APPLE_MUSIC_HTML
-        start = html.index("<script>")
-        end = html.rindex("</script>")
-        js = html[start + len("<script>"):end]
+        scripts = re.findall(r"<script(?:\s[^>]*)?>([\s\S]*?)</script>", html)
+        self.assertGreaterEqual(len(scripts), 1)
         path = os.path.join(tempfile.gettempdir(), "discflow_inline_check.js")
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(js)
         try:
-            proc = subprocess.run([node, "--check", path], capture_output=True, text=True)
-            self.assertEqual(proc.returncode, 0, f"前端脚本语法错误：{proc.stderr[:600]}")
+            for idx, js in enumerate(scripts):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(js)
+                proc = subprocess.run([node, "--check", path], capture_output=True, text=True)
+                self.assertEqual(proc.returncode, 0, f"前端第 {idx + 1} 段脚本语法错误：{proc.stderr[:600]}")
         finally:
             try:
                 os.remove(path)
@@ -378,7 +385,7 @@ class TestV117ManualAlbumMatch(unittest.TestCase):
 
     def test_library_click_switches_to_queue_panel(self):
         self.assertIn("function applyRightPanelMode(mode)", APPLE_MUSIC_HTML)
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py"), encoding="utf-8") as f:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.js"), encoding="utf-8") as f:
             src = f.read()
         body = src[src.index("async function playLocalAlbumWithAnimation"):src.index("async function playLocalAlbum(")]
         self.assertIn('applyRightPanelMode("queue")', body, "从资料库点开专辑后应自动切到曲目栏")

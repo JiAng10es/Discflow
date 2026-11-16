@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="__INIT_THEME__" class="is-booting">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5.5" fill="%23000000" stroke="%23FFFFFF" stroke-width="1.8"/><circle cx="11.2" cy="12" r="5.6"/><circle cx="11.2" cy="12" r="1.6"/><circle cx="17.8" cy="6.8" r="1.05" fill="%23FFFFFF" stroke="none"/><path d="M17.8 6.8v4.8l-2.5 2.2"/></svg>' />
 <style>/* __INLINE_STYLES__ */</style>
 </head>
-<body class="is-playing">
+<body>
 
   <!-- 无边框窗口 8 向边缘缩放热区 -->
   <div class="win-resize-edge n" data-edge="3"></div>
@@ -304,9 +304,11 @@
       <div class="dock-right-actions">
         <!-- 双语翻译开关：随时切换歌词译文显示 -->
         <button id="dockTransBtn" class="dock-action-btn dock-trans-btn" onclick="toggleBilingualLyrics()" title="双语翻译：已开启（点击关闭）" aria-pressed="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"></path>
-            <path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"></path>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7.4 3.2v2.1M3.2 5.3h8.4"></path>
+            <path d="M9.5 5.3c-.5 3.6-2.6 6.4-6.1 8.3"></path>
+            <path d="M5.0 7.3c1.6 2.5 3.7 4.6 6.3 6.1"></path>
+            <path d="M13.2 20.2l3.8-9.2 3.8 9.2M14.5 17.2h5.2"></path>
           </svg>
         </button>
         <div class="dock-volume-wrap" id="dockVolumeWrap">
@@ -473,26 +475,11 @@
                 <span id="autoPlayLabel" style="display:none;">已开启</span>
               </div>
 
-              <!-- 最小化到系统托盘开关 -->
-              <div class="settings-row-item">
-                <div class="settings-item-col">
-                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
-                    <span>关闭窗口时最小化到系统托盘</span>
-                  </div>
-                  <div class="settings-item-sub">点击右上角关闭后退驻任务栏托盘，音乐继续播放不中断</div>
-                </div>
-                <label class="ios-switch">
-                  <input type="checkbox" id="closeToTraySwitch" checked onchange="toggleCloseToTray()" />
-                  <span class="ios-slider"></span>
-                </label>
-              </div>
-
               <!-- 双语歌词开关 -->
               <div class="settings-row-item">
                 <div class="settings-item-col">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"/><path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M7.4 3.2v2.1M3.2 5.3h8.4"/><path d="M9.5 5.3c-.5 3.6-2.6 6.4-6.1 8.3"/><path d="M5.0 7.3c1.6 2.5 3.7 4.6 6.3 6.1"/><path d="M13.2 20.2l3.8-9.2 3.8 9.2M14.5 17.2h5.2"/></svg>
                     <span>默认开启双语歌词翻译</span>
                   </div>
                   <div class="settings-item-sub">播放包含双语翻译的曲目时自动展现中文对照</div>
@@ -585,11 +572,16 @@
             </div>
 
             <div id="aboutUpdateBanner" class="about-update-banner">
-              <div style="min-width: 0;">
-                <div id="aboutUpdateTitle" style="font-size: 13px; font-weight: 700; color: #4ade80;">发现新版本</div>
-                <div id="aboutUpdateSub" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;">
+                <div style="min-width: 0; flex: 1;">
+                  <div id="aboutUpdateTitle" style="font-size: 13px; font-weight: 700; color: #4ade80;">发现新版本</div>
+                  <div id="aboutUpdateSub" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+                </div>
+                <button id="aboutUpdateDownloadBtn" class="pill-btn active" onclick="openUpdateDownload()" style="font-size: 12px; padding: 5px 12px; white-space: nowrap; display: none;">立即更新</button>
               </div>
-              <button id="aboutUpdateDownloadBtn" class="pill-btn active" onclick="openUpdateDownload()" style="font-size: 12px; padding: 5px 12px; white-space: nowrap; display: none;">前往下载</button>
+              <div id="aboutUpdateProgressWrap" style="display: none; width: 100%; height: 4px; border-radius: 999px; background: var(--track-bar-bg); overflow: hidden; margin-top: 8px;">
+                <div id="aboutUpdateProgressBar" style="width: 0%; height: 100%; border-radius: 999px; background: #30d158; transition: width 0.15s ease;"></div>
+              </div>
             </div>
 
             <div class="settings-card-group">
@@ -626,7 +618,7 @@
               <div class="settings-row-item">
                 <div class="settings-item-col">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5h7M7.5 4v2.5M6 13c1.6-1.9 3-3.6 4.8-4.5M8.8 6.5c0 3.6-1.9 6.8-4.8 8.4"/><path d="M13.5 19.5l3.8-9 3.8 9M15 16h4.6"/></svg>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M7.4 3.2v2.1M3.2 5.3h8.4"/><path d="M9.5 5.3c-.5 3.6-2.6 6.4-6.1 8.3"/><path d="M5.0 7.3c1.6 2.5 3.7 4.6 6.3 6.1"/><path d="M13.2 20.2l3.8-9.2 3.8 9.2M14.5 17.2h5.2"/></svg>
                     <span>元数据与歌词</span>
                   </div>
                   <div class="settings-item-sub">MusicBrainz / FreeDB 匹配 · 双语卡拉 OK 逐字滚动</div>
@@ -1011,6 +1003,10 @@
     </div>
   </div>
 
+<script>
+  window.__INITIAL_PREFS__ = __INITIAL_PREFS_JSON__;
+  window.__INITIAL_STATE__ = __INITIAL_STATE_JSON__;
+</script>
 <script>/* __INLINE_SCRIPTS__ */</script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # Discflow 产品需求文档 (PRD)
 
-**当前基线版本**：`v2.2.0` (commit `0809b5c`)  
+**当前基线版本**：`v2.2.0` (`APP_VERSION = "2.2.0"`，含 2026-11-17 专项修复与体验升级)  
 **更新日期**：2026-11-17  
 **目标平台**：Windows 10 / Windows 11 (x64, PyWebView EdgeChromium)
 
@@ -19,20 +19,20 @@
 
 ```text
 win-cd-player/
-├── main.py              # DiscflowController / DiscflowJsApi / 全局多媒体按键 / 托盘 / 更新检查 / 窗口记忆
+├── main.py              # DiscflowController / DiscflowJsApi / 全局多媒体按键 / 应用内自更新 / DPI 逻辑窗口记忆
 ├── cd_engine.py         # Win32 光驱 TOC/CD-TEXT 直读 + 双缓冲内存预读与硬件时钟位置同步
 ├── library_service.py   # 便携资料库管理、自适应抓轨、偏好持久化 (preferences.json) 与测试沙箱隔离
 ├── metadata_service.py  # MusicBrainz / GNUDb / QQ音乐 / iTunes / 网易云 / LRCLIB 多源元数据与歌词服务
 ├── Discflow.spec        # PyInstaller 单文件打包配置 (内嵌 ui/ 与 discflow.ico)
 └── ui/
-    ├── index.html       # 视图骨架与内联 SF Symbols SVG 图标
-    ├── styles.css       # 双主题样式tokens、Liquid Glass 滤镜、响应式布局与分栏设置
-    └── app.js           # 状态同步、自走卡拉 OK 时钟、媒体检索弹窗与交互逻辑
+    ├── index.html       # 视图骨架（含 SSR 主题/状态占位注入）与内联 SF Symbols / 重绘双语翻译 SVG 图标
+    ├── styles.css       # 双主题样式 tokens、Liquid Glass 滤镜、防启动闪烁 (is-booting) 与分栏设置
+    └── app.js           # 首帧水合、单调版本状态同步、自走卡拉 OK 时钟、媒体检索弹窗与交互逻辑
 ```
 
 ### 2.1 状态同步机制
-- 后端通过 `poll_state(client_meta_ver, client_lyrics_ver, client_track_index)` 按版本号增量返回曲目、封面与歌词；
-- 关键状态变更（切歌、元数据就绪、抓轨进度、托盘操作）通过 `_ui_push_worker()` 经 `window.__onBackendStatePush` 主动推送到前端，前端保留 500ms 兜底轮询。
+- **首帧 SSR 水合**：`render_frontend_html(init_prefs, init_state)` 在窗口创建前直接将 `data-theme`、背景底色与 `window.__INITIAL_PREFS__` / `window.__INITIAL_STATE__` 注入 HTML，配合 `html.is-booting` 抑制首帧过渡动画，消除启动主题与渲染闪变；
+- **增量同步与自愈**：后端通过 `poll_state(client_meta_ver, client_lyrics_ver, client_track_index)` 按版本号增量返回曲目、封面与歌词；关键状态变更通过 `_ui_push_worker()` 主动推送到 `window.__onBackendStatePush`，前端通过 `metaVersion`/`lyricsVersion` 单调守卫防止乱序回退，并在有碟无歌词时以 `client_lyrics_ver = -1` 触发自动补发。
 
 ---
 
@@ -48,6 +48,7 @@ win-cd-player/
 - **右侧双语歌词 / 队列**：
   - 支持网易云 `yrc` 逐字时间轴，普通 LRC 由前端按行时长自动合成逐字高亮；
   - 由硬件声卡播放位置 (`waveOutGetPosition`) + 前端 `requestAnimationFrame` 自走时钟柔和纠偏驱动；
+  - 读盘后优先高优抓取当前音轨（如第 1 首）歌词，支持多歌手清洗 (`_primary_artist`) 与合辑逐轨艺人识别、网易云 → QQ 音乐 → LRCLIB 多源回退，以及空结果不覆盖已有有效缓存；
   - 队列页支持顺序/随机/单曲模式切换、手动「专辑匹配」与逐轨「词」手动锁定匹配（标记未命中曲目 `.needs-lyric`）。
 - **背景渲染**：4 层 `.ambient-stage`（`#artBackdrop` 模糊铺底 + `#meshCanvas` 三团取色流体光斑 + `.ambient-vignette` + `.frosted-scrim`）。
 
@@ -59,19 +60,18 @@ win-cd-player/
 - 采用三列对称 CSS Grid 布局（宽度 `480px ~ 1080px` 可调，`<= 580px` 自动启用紧凑模式 `.is-compact`）：
   - **左区**：专辑缩略图、曲名与艺术家（点击切换歌词/队列）；
   - **中区**：上一曲、播放/暂停、下一曲及可拖拽寻道进度条；
-  - **右区**：双语译文开关 (`#dockTransBtn`，根节点 `.no-translation` 控制) 与竖向悬浮音量胶囊。
+  - **右区**：重绘清晰「文 / A」双语译文开关 (`#dockTransBtn`，以根节点 `.no-translation` 与透明度状态区分开关，并与设置中心 `#prefTransSwitch` 同步) 及竖向悬浮音量胶囊。
 
 ### 3.5 macOS 分栏式偏好设置 (`.settings-modal-dialog`)
 - 固定 `700px × 540px` 左侧边栏分栏导航，划分为 **外观与界面 / 播放与硬件 / 存储与数据 / 关于与更新** 四个面板，支持深浅模式统一毛玻璃质感及滑块拖拽透明预览 (`is-peeking`)：
-  - **外观**：浅色/深色主题切换、歌词行间距/字间距、底栏宽度/透明度 (`0%~100%`) /模糊度；
-  - **播放**：放入光盘自动播放开关、关闭窗口最小化到系统托盘开关 (`closeToTray`)、全局多媒体按键 (`WH_KEYBOARD_LL`) 与键盘快捷键（`Space`、`←/→`、`↑/↓`、`T`、`[/]`、`\`、`Ctrl+F`、`Esc`）；
+  - **外观**：浅色/深色主题切换（`set_theme_mode` 同步刷新原生窗体 DWM 属性与底色）、歌词行间距/字间距、底栏宽度/透明度 (`0%~100%`) /模糊度；
+  - **播放**：放入光盘自动播放开关、双语译文同步开关、全局多媒体按键 (`WH_KEYBOARD_LL`) 与键盘快捷键（`Space`、`←/→`、`↑/↓`、`T`、`[/]`、`\`、`Ctrl+F`、`Esc`）；点击关闭按钮直接退出并持久化状态（已移除系统托盘常驻）；
   - **存储**：动态显示便携资料库路径并一键打开目录、清空歌词缓存、红区二次确认清空资料库、ZIP 备份/恢复；
-  - **关于与更新**：当前版本与硬件引擎信息、手动/启动自动检查 GitHub Releases 更新（支持忽略指定版本与跳转下载页）、快捷键速查与「支持作者」赞赏弹窗。
+  - **关于与更新**：当前版本与硬件引擎信息、手动/启动自动检查 GitHub Releases 更新（支持点击「立即更新」在软件内流式下载 `Discflow.exe` 实时进度条展示、PE `MZ` 校验与静默批处理脚本覆盖重启，不再仅跳转浏览器）、忽略指定版本、快捷键速查与「支持作者」赞赏弹窗。
 
-### 3.6 系统托盘与会话记忆
-- **WinForms 托盘 (`NotifyIcon`)**：支持关闭窗口驻留托盘后台播放，右键菜单显示当前曲目与播放/暂停/切歌/退出控制。
-- **启动现场恢复 (`lastSession`)**：无物理光盘时自动静默恢复上次播放的本地专辑、曲目索引与音量，按空格即可起播。
-- **窗口几何记忆 (`windowBounds`)**：持久化并恢复窗口位置、宽高与最大化状态。
+### 3.6 会话恢复与 DPI 逻辑窗口记忆
+- **启动现场恢复 (`lastSession`)**：构造控制器阶段及无物理光盘时自动静默恢复上次播放的本地专辑、曲目索引与音量，按空格即可起播。
+- **DPI 逻辑窗口几何记忆 (`windowBounds`)**：基于 `_enable_dpi_awareness()` 与 `_get_dpi_scale()` 以 96-DPI 逻辑像素（含 `"logical": true` 标记）记录并恢复窗口坐标、宽高与最大化状态，自动兼容迁移旧版物理像素坐标并钳制在虚拟桌面可见范围内，彻底解决高 DPI 缩放下的窗口逐次膨胀与坐标错位问题。
 
 ---
 
@@ -79,7 +79,7 @@ win-cd-player/
 
 1. **便携优先路径 (`resolve_library_dir`)**：
    - 优先顺序：`DISCFLOW_LIBRARY` 环境变量 > 测试运行器沙箱 (`tempfile.mkdtemp`) > 可执行文件/工程根目录下的 `library/` > `E:\Discflow\library` > `~/.discflow/library`。
-2. **配置文件 (`preferences.json`)**：与生效的 `library/` 同级存放，持久化外观偏好、音量、播放现场、歌词偏移量、托盘设置、窗口位置及已忽略更新版本号。
+2. **配置文件 (`preferences.json`)**：与生效的 `library/` 同级存放，持久化外观偏好、音量、播放现场、歌词偏移量、窗口逻辑边界及已忽略更新版本号（并自动清理历史 `closeToTray` 废弃键）。
 3. **测试防误删护栏**：`is_under_test_runner()` 命中 `unittest` / `pytest` 时强制重定向到临时沙箱目录，严禁测试改动真实用户资料库。
 
 ---
@@ -88,11 +88,13 @@ win-cd-player/
 
 - **语法校验**：`python -m py_compile` 与 `node --check win-cd-player/ui/app.js`
 - **自动化测试套件 (`win-cd-player/`)**：
+  - `test_v230_fixes.py`：DPI 逻辑窗口记忆与迁移、启动主题 SSR 水合、系统托盘彻底移除、应用内更新流式下载与 PE 校验/自更新脚本、读盘首曲优先抓词与 QQ 回退、底栏翻译图标重绘；
   - `test_all_stages.py`：音频引擎扇区安全线、布局、元信息编辑、ZIP 备份恢复；
   - `test_ambient_and_opacity.py`：浅色模式氛围与底栏 0% 透明度；
   - `test_apple_music_layout.py`：核心视图与交互函数完整性；
   - `test_boost_features.py`：Seek 代数防竞争、CD-TEXT 双字节解码、全局媒体键、会话恢复与偏移继承；
-  - `test_dock_symmetry.py`：底栏三段式对称布局与窄屏适配。
+  - `test_dock_symmetry.py`：底栏三段式对称布局与窄屏适配；
+  - `test_v111_features.py` / `test_v1112_clean_titles.py` / `test_portable_library_path.py`：逐字卡拉 OK 时钟、翻译开关、手动匹配、标题清洗与便携路径优先级。
 - **打包同步**：在 `win-cd-player/` 执行 `pyinstaller --noconfirm Discflow.spec`，并将 `dist\Discflow.exe` 同步至 `F:\Discflow1.0\Discflow.exe` 与 `E:\Discflow\Discflow.exe`。
 
 ---
@@ -106,4 +108,5 @@ win-cd-player/
 | `v1.11.x` | 实现自适应多扇区抓轨提速、测试沙箱防误删护栏、`yrc` 逐字卡拉 OK 歌词、三源专辑/曲目手动匹配与乱码治理、Apple Music 四层环境背景 |
 | `v2.0.x` | 清理历史冗余文件与死代码、三段式对称 Dock、SF Symbols 矢量图标重绘、一体化设置中心与「支持作者」弹窗 |
 | `v2.1.0` | 内存预读无缝跨轨播放、CD-TEXT 硬件直读、Win32 全局多媒体按键、声卡硬件位置歌词精准同步、快捷键微调歌词时间轴与会话静默恢复 |
-| `v2.2.0` | 前端 `ui/` 拆分独立、无边框 DWM 圆角窗体、macOS 分栏设置与滑块透视预览、浅色模式全弹窗磨砂统一、WinForms 系统托盘、窗口状态记忆、GitHub 更新检查与后端事件推送 |
+| `v2.2.0` | 前端 `ui/` 拆分独立、无边框 DWM 圆角窗体、macOS 分栏设置与滑块透视预览、浅色模式全弹窗磨砂统一、窗口状态记忆、GitHub 更新检查与后端事件推送 |
+| `v2.2.0+ (2026-11-17 修复增强)` | 修复高 DPI 窗口坐标记忆膨胀、启动主题与背景闪烁、移除系统托盘、实现应用内流式下载与 PE 校验覆盖重启更新、修复读盘首曲漏词并新增 QQ 音乐兜底、重绘底栏「文 / A」翻译图标 |

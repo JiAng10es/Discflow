@@ -245,14 +245,15 @@ def load_user_preferences() -> dict:
         "lyricLineHeight": 1.4,
         "lyricLetterSpacing": 0,
         "dockWidth": 720,
-        "dockOpacity": 75,
-        "dockBlur": 40,
+        "dockOpacity": 5,
+        "dockBlur": 2,
+        "topbarOpacity": 5,
+        "topbarBlur": 2,
         "themeMode": "dark",
         "volume": 80,
         "playMode": "loop",
         "showTranslation": True,
         "autoPlay": True,
-        "closeToTray": True,
         "windowBounds": {},
         "ignoredUpdateVersion": "",
         "lastSession": {},
@@ -267,6 +268,7 @@ def load_user_preferences() -> dict:
                     defaults.update(data)
         except Exception:
             pass
+    defaults.pop("closeToTray", None)
     return defaults
 
 
@@ -278,6 +280,7 @@ def save_user_preferences(prefs: dict) -> bool:
     try:
         current = load_user_preferences()
         current.update(prefs)
+        current.pop("closeToTray", None)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(current, f, ensure_ascii=False, indent=2)

@@ -492,7 +492,18 @@ def lookup_album_metadata(
                     t_title = trk_obj.get("title") or (trk_obj.get("recording") or {}).get("title")
                     if t_title:
                         result.track_titles[trk_num] = t_title
-                    result.track_artists[trk_num] = result.artist
+                    t_credits = (
+                        trk_obj.get("artist-credit")
+                        or (trk_obj.get("recording") or {}).get("artist-credit")
+                        or []
+                    )
+                    t_artists = []
+                    for c in t_credits:
+                        if isinstance(c, dict):
+                            name = (c.get("artist") or {}).get("name") or c.get("name")
+                            if name:
+                                t_artists.append(name)
+                    result.track_artists[trk_num] = " / ".join(t_artists) if t_artists else result.artist
 
                 # 先回调通知文字元数据已就绪，让歌名、歌手和歌词立即显示
                 if on_partial:
@@ -711,85 +722,130 @@ def lookup_track_lyrics(
     duration_sec: float,
     builtin_lrc: str = "",
 ) -> List[dict]:
-    """查询指定音轨的双语结构化同步歌词列表（含逐字时间轴，带内存缓存）"""
+    """查询指定音轨的双语结构化同步歌词列表（含逐字时间轴，带内存缓存，多源自适应）"""
     if builtin_lrc:
         return build_structured_bilingual_lyrics(builtin_lrc)
 
     # 元数据尚未匹配时的占位标题（Track 01 / DiscID xxxx）不得去查歌词：
     # 否则会把完全不相干的歌曲歌词缓存下来，导致首曲长期显示错误或空白歌词。
-    placeholder_artist = (not artist) or artist in ("未知艺术家", "Audio CD") or artist.startswith("DiscID")
+    raw_artist = (artist or "").strip()
+    placeholder_artist = (not raw_artist) or raw_artist in ("未知艺术家", "Audio CD") or raw_artist.startswith("DiscID")
     if re.match(r"^Track\s*\d+$", track_title or "") and placeholder_artist:
         return []
 
-    cache_key = _lyrics_cache_key(track_title, artist, duration_sec)
+    clean_artist = _primary_artist(raw_artist)
+    if (
+        clean_artist.lower() in ("various artists", "various", "未知艺术家", "群星", "audio cd")
+        or clean_artist.startswith("DiscID")
+    ):
+        clean_artist = ""
+
+    cache_key = _lyrics_cache_key(track_title, clean_artist or raw_artist, duration_sec)
     with _LYRICS_CACHE_LOCK:
         cached = _LYRICS_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
-    lower_title = track_title.lower()
+    lower_title = (track_title or "").lower()
     is_inst_query = "instrumental" in lower_title or "伴奏" in lower_title or "カラオケ" in lower_title
+    target_ms = float(duration_sec or 0) * 1000.0
 
-    # 1. 优先查询网易云：先按「歌名相似度 + 时长接近度」给候选排序，再对前几个候选实际拉取歌词，
-    #    择优取「翻译最全 / 逐字最全」的那一份。避免同名不同版本（Original / A-capella / Remix）
-    #    选错，导致整首歌只剩零星几句翻译。
+    best_lines: List[dict] = []
+    best_rank: Tuple[int, int, int] = (0, 0, 0)
+
+    # 1. 优先查询网易云：支持多艺术家清洗，若带艺术家检索无理想命中自动回退纯歌名检索
+    ne_queries = list(dict.fromkeys(
+        q for q in (f"{clean_artist} {track_title}".strip(), (track_title or "").strip()) if q
+    ))
     try:
-        resp = requests.post(
-            "https://music.163.com/api/search/get",
-            data={"s": f"{artist} {track_title}".strip(), "type": 1, "limit": 10},
-            headers=NETEASE_HEADERS,
-            timeout=REQ_TIMEOUT,
-        )
-        if resp.status_code == 200:
-            songs = resp.json().get("result", {}).get("songs", [])
-            target_ms = duration_sec * 1000.0
-            candidates = []
-
+        candidates = []
+        seen_ne_ids = set()
+        for q_idx, q_str in enumerate(ne_queries):
+            resp = requests.post(
+                "https://music.163.com/api/search/get",
+                data={"s": q_str, "type": 1, "limit": 10},
+                headers=NETEASE_HEADERS,
+                timeout=REQ_TIMEOUT,
+            )
+            if resp.status_code != 200:
+                continue
+            songs = resp.json().get("result", {}).get("songs", []) or []
             for s in songs:
+                sid = s.get("id")
+                if not sid or sid in seen_ne_ids:
+                    continue
                 s_name = (s.get("name") or "").strip()
                 s_lower = s_name.lower()
                 s_is_inst = "instrumental" in s_lower or "伴奏" in s_lower or "off vocal" in s_lower
                 if is_inst_query != s_is_inst:
                     continue
-
                 dur_ms = float(s.get("duration") or 0)
-                dur_diff = abs(dur_ms - target_ms) if dur_ms > 0 else 20000.0
+                dur_diff = abs(dur_ms - target_ms) if (dur_ms > 0 and target_ms > 0) else 20000.0
                 sim = _title_similarity(s_name, track_title)
-                score = dur_diff + (1.0 - sim) * 30000.0
-                candidates.append((score, s.get("id"), s_name))
-
-            if not candidates:
-                candidates = [(20000.0, s.get("id"), (s.get("name") or "")) for s in songs[:2]]
-
-            candidates.sort(key=lambda item: item[0])
-
-            best_lines: List[dict] = []
-            best_rank: Tuple[int, int, int] = (0, 0, 0)
-            for score, song_id, _name in candidates[:3]:
-                lines = _fetch_netease_song_lyrics(song_id)
-                if not lines:
+                if q_idx > 0 and sim < 0.55:
                     continue
-                rank = _lyrics_rank(lines)
-                if rank > best_rank:
-                    best_rank, best_lines = rank, lines
-                # 翻译覆盖率已达 90% 以上，无需再试其他候选
-                if rank[0] >= len(lines) * 0.9:
-                    break
+                seen_ne_ids.add(sid)
+                score = dur_diff + (1.0 - sim) * 30000.0
+                candidates.append((score, sid, s_name, sim))
 
-            if best_lines:
-                _lyrics_cache_put(cache_key, best_lines)
-                return best_lines
+            # 带艺术家搜索已找到高相似度候选时无需多余查询
+            if candidates and max(c[3] for c in candidates) >= 0.72:
+                break
+
+        candidates.sort(key=lambda item: item[0])
+        for _score, song_id, _name, _sim in candidates[:3]:
+            lines = _fetch_netease_song_lyrics(song_id)
+            if not lines:
+                continue
+            rank = _lyrics_rank(lines)
+            if rank > best_rank:
+                best_rank, best_lines = rank, lines
+            if rank[0] >= len(lines) * 0.9:
+                break
     except Exception:
         pass
 
-    # 2. 备选查询 LRCLIB
+    # 2. 若网易云未命中，或仅命中纯原文而缺乏翻译，尝试 QQ 音乐补齐双语歌词
+    if not best_lines or (best_rank[0] == 0 and not is_inst_query):
+        try:
+            qq_songs = _qq_search_songs(track_title, clean_artist, limit=6)
+            qq_cands = []
+            for item in qq_songs:
+                q_name = (item.get("title") or "").strip()
+                sim = _title_similarity(q_name, track_title)
+                dur = float(item.get("duration_sec") or 0)
+                dur_diff = abs(dur - float(duration_sec or 0)) if (dur > 0 and duration_sec > 0) else 10.0
+                if sim < 0.45 and dur_diff > 3.0:
+                    continue
+                if duration_sec > 0 and dur > 0 and dur_diff > 15.0:
+                    continue
+                qq_cands.append((dur_diff + (1.0 - sim) * 30.0, item.get("song_id")))
+            qq_cands.sort(key=lambda x: x[0])
+            for _sc, mid in qq_cands[:2]:
+                if not mid:
+                    continue
+                qq_lines = _qq_lyrics_by_mid(mid)
+                if qq_lines:
+                    q_rank = _lyrics_rank(qq_lines)
+                    if q_rank > best_rank:
+                        best_rank, best_lines = q_rank, qq_lines
+                    if q_rank[0] >= len(qq_lines) * 0.9:
+                        break
+        except Exception:
+            pass
+
+    if best_lines:
+        _lyrics_cache_put(cache_key, best_lines)
+        return best_lines
+
+    # 3. 备选查询 LRCLIB
     headers = {"User-Agent": USER_AGENT}
     try:
         resp = requests.get(
             "https://lrclib.net/api/get",
             params={
                 "track_name": track_title,
-                "artist_name": artist,
+                "artist_name": clean_artist,
                 "duration": round(duration_sec),
             },
             headers=headers,
@@ -805,7 +861,7 @@ def lookup_track_lyrics(
 
         search_resp = requests.get(
             "https://lrclib.net/api/search",
-            params={"q": f"{track_title} {artist}"},
+            params={"q": f"{track_title} {clean_artist}".strip()},
             headers=headers,
             timeout=REQ_TIMEOUT,
         )

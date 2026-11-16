@@ -170,6 +170,13 @@
     transition: background-color 0.6s var(--spring-fluid), color 0.4s ease;
   }
 
+  /* 启动首帧水合期间禁用过渡动画，防止深浅主题与背景渲染闪烁 */
+  html.is-booting *,
+  html.is-booting *::before,
+  html.is-booting *::after {
+    transition: none !important;
+  }
+
   /* ==========================================================================
      1. Discflow 独立极简黑白 App Icon 组件样式 (支持导航栏、Dock 与空状态复用)
      ========================================================================== */
@@ -535,9 +542,9 @@
   /* 关于页版本更新横幅 */
   .about-update-banner {
     display: none;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
     margin-bottom: 12px;
     padding: 12px 14px;
     border-radius: 13px;
@@ -2882,26 +2889,13 @@
     max-width: 236px;
   }
 
-  /* 底栏双语翻译开关：关闭态变暗并叠加斜杠，状态一眼可辨 */
+  /* 底栏双语翻译开关：关闭态整体淡化（移除破坏字形的斜杠线，保持图标笔画清晰） */
   .dock-trans-btn {
     position: relative;
   }
 
   .dock-trans-btn.is-off {
     opacity: 0.38;
-  }
-
-  .dock-trans-btn.is-off::after {
-    content: "";
-    position: absolute;
-    left: 6px;
-    right: 6px;
-    top: 50%;
-    height: 1.6px;
-    border-radius: 2px;
-    background: currentColor;
-    transform: rotate(-45deg);
-    pointer-events: none;
   }
 
   /* 翻译关闭时全局隐藏译文行，且不受歌词重新渲染影响 */

@@ -11,7 +11,6 @@
     topbarBlur: 2,
     themeMode: "dark",
     autoPlay: true,
-    closeToTray: true,
     showTranslation: true
   };
 
@@ -24,18 +23,37 @@
         currentCustomPrefs = { ...DEFAULT_CUSTOM_PREFS, ...JSON.parse(saved) };
       }
     } catch (e) {}
-    applyCustomPrefs(currentCustomPrefs);
+    if (window.__INITIAL_PREFS__ && typeof window.__INITIAL_PREFS__ === "object") {
+      currentCustomPrefs = { ...currentCustomPrefs, ...window.__INITIAL_PREFS__ };
+    }
+    delete currentCustomPrefs.closeToTray;
 
+    let initTheme = "";
     try {
+      const bootAttr = document.documentElement.getAttribute("data-theme");
+      const injectedTheme = (window.__INITIAL_PREFS__ && window.__INITIAL_PREFS__.themeMode) || "";
       const savedTheme = localStorage.getItem("discflow_theme");
       const fallbackTheme = currentCustomPrefs.themeMode ||
         (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      const initTheme = (savedTheme === "light" || savedTheme === "dark") ? savedTheme : fallbackTheme;
-      applyTheme(initTheme, false);
-    } catch (e) {}
+      if (injectedTheme === "light" || injectedTheme === "dark") {
+        initTheme = injectedTheme;
+      } else if (bootAttr === "light" || bootAttr === "dark") {
+        initTheme = bootAttr;
+      } else if (savedTheme === "light" || savedTheme === "dark") {
+        initTheme = savedTheme;
+      } else {
+        initTheme = fallbackTheme;
+      }
+    } catch (e) {
+      initTheme = currentCustomPrefs.themeMode === "light" ? "light" : "dark";
+    }
+    // 必须先确立主题再应用控件与预览，避免首次渲染与主题不匹配
+    applyTheme(initTheme, false);
+    applyCustomPrefs(currentCustomPrefs);
   }
 
   function saveCustomPrefs() {
+    delete currentCustomPrefs.closeToTray;
     try {
       localStorage.setItem("discflow_custom_prefs", JSON.stringify(currentCustomPrefs));
     } catch (e) {}
@@ -50,17 +68,17 @@
       const prefs = await window.pywebview.api.get_preferences();
       if (prefs && typeof prefs === "object") {
         currentCustomPrefs = { ...DEFAULT_CUSTOM_PREFS, ...currentCustomPrefs, ...prefs };
-        applyCustomPrefs(currentCustomPrefs);
+        delete currentCustomPrefs.closeToTray;
         if (prefs.themeMode === "light" || prefs.themeMode === "dark") {
           applyTheme(prefs.themeMode, false);
         }
+        applyCustomPrefs(currentCustomPrefs);
         if (typeof prefs.autoPlay === "boolean") {
           if (typeof appState !== "undefined") appState.autoPlayDisc = prefs.autoPlay;
           const label = document.getElementById("autoPlayLabel");
           if (label) label.textContent = prefs.autoPlay ? "已开启" : "已关闭";
           const apSwitch = document.getElementById("autoPlaySwitch");
           if (apSwitch) apSwitch.checked = prefs.autoPlay;
-          if (label) label.textContent = prefs.autoPlay ? "已开启" : "已关闭";
         }
       }
     } catch (e) {
@@ -134,11 +152,6 @@
             ? appState.autoPlayDisc
             : true);
       apSwitch.checked = isAuto;
-    }
-
-    const traySwitch = document.getElementById("closeToTraySwitch");
-    if (traySwitch) {
-      traySwitch.checked = (prefs && typeof prefs.closeToTray === "boolean") ? prefs.closeToTray : true;
     }
 
     if (typeof recenterActiveLyric === "function") {
@@ -800,6 +813,10 @@ function toggleDiscflowMenu(event) {
       btn.setAttribute("aria-pressed", show ? "true" : "false");
       btn.title = show ? "双语翻译：已开启（点击关闭）" : "双语翻译：已关闭（点击开启）";
     }
+    const prefSwitch = document.getElementById("prefTransSwitch");
+    if (prefSwitch) {
+      prefSwitch.checked = !!show;
+    }
     document.querySelectorAll(".lyric-trans").forEach(el => {
       el.style.display = show ? "" : "none";
     });
@@ -830,21 +847,6 @@ function toggleDiscflowMenu(event) {
         window.pywebview.api.save_preferences({ autoPlay: !!isAuto }).catch(() => {});
       }
     }
-  }
-
-  function toggleCloseToTray() {
-    const sw = document.getElementById("closeToTraySwitch");
-    const next = sw ? !!sw.checked : true;
-    currentCustomPrefs.closeToTray = next;
-    saveCustomPrefs();
-    if (window.pywebview && window.pywebview.api) {
-      if (window.pywebview.api.set_close_to_tray) {
-        window.pywebview.api.set_close_to_tray(next).catch(() => {});
-      } else if (window.pywebview.api.save_preferences) {
-        window.pywebview.api.save_preferences({ closeToTray: next }).catch(() => {});
-      }
-    }
-    showToast(next ? "已开启：关闭窗口时最小化到托盘" : "已关闭：点击关闭直接退出程序");
   }
 
   let isDraggingScrubber = false;
@@ -889,16 +891,17 @@ function toggleDiscflowMenu(event) {
       return;
     }
 
+    // 同步立即挂载封面与模糊环境层，确保首帧呈现无延迟闪烁
+    imgEl.src = dataUrl;
+    imgEl.classList.add("loaded");
+    placeholderEl.style.display = "none";
+    ambientEl.style.backgroundImage = `url("${dataUrl}")`;
+    if (backdropEl) backdropEl.style.backgroundImage = `url("${dataUrl}")`;
+    document.body.classList.add("has-artwork");
+    meshEl.classList.add("has-cover");
+
     const tempImg = new Image();
     tempImg.onload = () => {
-      imgEl.src = dataUrl;
-      imgEl.classList.add("loaded");
-      placeholderEl.style.display = "none";
-      ambientEl.style.backgroundImage = `url("${dataUrl}")`;
-      if (backdropEl) backdropEl.style.backgroundImage = `url("${dataUrl}")`;
-      document.body.classList.add("has-artwork");
-      meshEl.classList.add("has-cover");
-
       try {
         const canvas = document.createElement("canvas");
         const size = 48;
@@ -2362,9 +2365,34 @@ function toggleDiscflowMenu(event) {
 
   window.__onBackendStatePush = function(res) {
     if (!res) return;
-    if (typeof res.metaVersion === "number") localMetaVer = res.metaVersion;
-    if (typeof res.lyricsVersion === "number") localLyricsVer = res.lyricsVersion;
-    window.applyBackendState(res);
+    // 防乱序覆盖：忽略或剥离版本号低于本地已应用版本的过时元数据/歌词快照
+    const patch = { ...res };
+    if (typeof patch.metaVersion === "number") {
+      if (patch.metaVersion < localMetaVer) {
+        delete patch.albumTitle;
+        delete patch.artist;
+        delete patch.year;
+        delete patch.source;
+        delete patch.coverDataUrl;
+        delete patch.tracks;
+        delete patch.drive;
+        delete patch.drives;
+        delete patch.discId;
+        delete patch.freedbId;
+        patch.metaVersion = localMetaVer;
+      } else {
+        localMetaVer = patch.metaVersion;
+      }
+    }
+    if (typeof patch.lyricsVersion === "number") {
+      if (patch.lyricsVersion < localLyricsVer) {
+        delete patch.lyrics;
+        patch.lyricsVersion = localLyricsVer;
+      } else {
+        localLyricsVer = patch.lyricsVersion;
+      }
+    }
+    window.applyBackendState(patch);
     syncKaraokeAnchor();
   };
 
@@ -2372,9 +2400,15 @@ function toggleDiscflowMenu(event) {
     if (pollInFlight || document.hidden || !window.pywebview || !window.pywebview.api) return;
     pollInFlight = true;
     try {
+      // 自愈兜底：当前有唱片但前端尚未拿到歌词时，强制将 client_lyrics_ver 传为 -1 请求补发
+      const needLyricsRecovery = Boolean(
+        appState.discId &&
+        (appState.tracks || []).length > 0 &&
+        (!appState.lyrics || appState.lyrics.length === 0)
+      );
       const res = await window.pywebview.api.poll_state(
         localMetaVer,
-        localLyricsVer,
+        needLyricsRecovery ? -1 : localLyricsVer,
         (typeof appState.currentTrackIndex === "number" ? appState.currentTrackIndex : -1)
       );
       if (res) {
@@ -2643,12 +2677,27 @@ function toggleDiscflowMenu(event) {
     if (mode !== "light" && mode !== "dark") {
       mode = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
     }
-    appState.themeMode = mode;
+    if (typeof appState !== "undefined") {
+      appState.themeMode = mode;
+    }
     currentCustomPrefs.themeMode = mode;
     document.documentElement.setAttribute("data-theme", mode);
     try {
       localStorage.setItem("discflow_theme", mode);
     } catch (e) {}
+
+    // 同步顶部主题按钮图标与提示（浅色模式展示太阳图标，深色模式展示月亮图标）
+    const themeBtn = document.getElementById("topThemeBtn");
+    if (themeBtn) {
+      if (mode === "light") {
+        themeBtn.title = "当前：浅色模式（点击切换深色）";
+        themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><line x1="12" y1="2.5" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="21.5"></line><line x1="4.93" y1="4.93" x2="6.7" y2="6.7"></line><line x1="17.3" y1="17.3" x2="19.07" y2="19.07"></line><line x1="2.5" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="21.5" y2="12"></line><line x1="4.93" y1="19.07" x2="6.7" y2="17.3"></line><line x1="17.3" y1="6.7" x2="19.07" y2="4.93"></line></svg>`;
+      } else {
+        themeBtn.title = "当前：深色模式（点击切换浅色）";
+        themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" fill-opacity="0.15"></path></svg>`;
+      }
+    }
+
     const sub = document.getElementById("settingsThemeSub");
     if (sub) {
       sub.textContent = mode === "light" ? "当前：浅色模式 (点击切换深色)" : "当前：深色模式 (点击切换浅色)";
@@ -2658,12 +2707,17 @@ function toggleDiscflowMenu(event) {
     }
     if (persist) {
       saveCustomPrefs();
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.set_theme_mode) {
+        window.pywebview.api.set_theme_mode(mode).catch(() => {});
+      }
     }
   }
 
   function cycleTheme() {
-    appState.themeMode = appState.themeMode === "light" ? "dark" : "light";
-    applyTheme(appState.themeMode);
+    const cur = document.documentElement.getAttribute("data-theme") ||
+      (typeof appState !== "undefined" ? appState.themeMode : currentCustomPrefs.themeMode) || "dark";
+    const next = cur === "light" ? "dark" : "light";
+    applyTheme(next, true);
   }
 
   function minimizeWindow() {
@@ -2703,8 +2757,15 @@ function toggleDiscflowMenu(event) {
     });
   });
 
-  // ================= 版本检查与新版本提醒 =================
+  // ================= 版本检查与软件内直接下载覆盖更新 =================
   let latestUpdateMeta = null;
+  let updateDownloadTimer = null;
+  let isUpdateDownloading = false;
+
+  function _notifyToast(msg) {
+    if (typeof showToast === "function") showToast(msg);
+    else if (typeof alertToast === "function") alertToast(msg);
+  }
 
   function renderUpdateNotice(info) {
     const pill = document.getElementById("updateNoticePill");
@@ -2732,6 +2793,10 @@ function toggleDiscflowMenu(event) {
     if (!banner || !info) return;
 
     banner.classList.add("visible");
+    if (isUpdateDownloading) {
+      return;
+    }
+
     if (!info.ok) {
       banner.classList.add("is-latest");
       if (title) {
@@ -2749,9 +2814,13 @@ function toggleDiscflowMenu(event) {
         title.textContent = `发现新版本 v${info.latestVersion}`;
         title.style.color = "#4ade80";
       }
-      const noteLine = (info.notes || "").split(/\r?\n/).find(l => l.trim()) || "点击右侧前往 GitHub Releases 下载最新版本";
+      const noteLine = (info.notes || "").split(/\r?\n/).find(l => l.trim()) || "点击右侧直接在软件内下载并覆盖安装最新版本";
       if (sub) sub.textContent = noteLine.replace(/^#+\s*/, "");
-      if (dlBtn) dlBtn.style.display = "inline-flex";
+      if (dlBtn) {
+        dlBtn.style.display = "inline-flex";
+        dlBtn.disabled = false;
+        dlBtn.textContent = "立即更新";
+      }
       if (rowSub) rowSub.textContent = `当前 v${info.currentVersion} · 最新 v${info.latestVersion}`;
     } else {
       banner.classList.add("is-latest");
@@ -2780,17 +2849,17 @@ function toggleDiscflowMenu(event) {
           renderUpdateNotice(res);
           if (manual) {
             if (!res.ok) {
-              showToast("检查更新失败，请检查网络");
+              _notifyToast("检查更新失败，请检查网络");
             } else if (res.hasUpdate) {
-              showToast(`发现新版本 v${res.latestVersion}`);
+              _notifyToast(`发现新版本 v${res.latestVersion}`);
             } else {
-              showToast(`已是最新版本 v${res.currentVersion}`);
+              _notifyToast(`已是最新版本 v${res.currentVersion}`);
             }
           }
         }
       }
     } catch (e) {
-      if (manual) showToast("检查更新失败");
+      if (manual) _notifyToast("检查更新失败");
     } finally {
       if (btn && manual) {
         btn.disabled = false;
@@ -2819,12 +2888,127 @@ function toggleDiscflowMenu(event) {
     }
   }
 
-  function openUpdateDownload() {
-    const url = (latestUpdateMeta && latestUpdateMeta.releaseUrl) || "https://github.com/JiAng10es/Discflow/releases";
-    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external_url) {
-      window.pywebview.api.open_external_url(url).catch(() => {});
-    } else {
+  function updateDownloadProgressUI(prog) {
+    if (!prog) return;
+    const banner = document.getElementById("aboutUpdateBanner");
+    const title = document.getElementById("aboutUpdateTitle");
+    const sub = document.getElementById("aboutUpdateSub");
+    const dlBtn = document.getElementById("aboutUpdateDownloadBtn");
+    const pWrap = document.getElementById("aboutUpdateProgressWrap");
+    const pBar = document.getElementById("aboutUpdateProgressBar");
+    if (banner) banner.classList.add("visible");
+
+    const pct = Math.min(100, Math.max(0, Number(prog.progressPct || 0)));
+    if (pWrap) {
+      pWrap.style.display = (prog.status === "downloading" || prog.status === "installing" || prog.status === "completed") ? "block" : "none";
+    }
+    if (pBar) pBar.style.width = `${pct}%`;
+
+    if (prog.status === "downloading") {
+      isUpdateDownloading = true;
+      if (title) {
+        title.textContent = `正在下载新版本 (${Math.round(pct)}%)`;
+        title.style.color = "#4ade80";
+      }
+      if (sub) sub.textContent = prog.statusText || "正在从发布服务器流式拉取安装包...";
+      if (dlBtn) {
+        dlBtn.disabled = true;
+        dlBtn.textContent = "下载中...";
+      }
+    } else if (prog.status === "installing") {
+      isUpdateDownloading = true;
+      if (pBar) pBar.style.width = "100%";
+      if (title) {
+        title.textContent = "正在覆盖安装并重启...";
+        title.style.color = "#4ade80";
+      }
+      if (sub) sub.textContent = prog.statusText || "下载完成，即将自动替换旧版本并重启 Discflow";
+      if (dlBtn) {
+        dlBtn.disabled = true;
+        dlBtn.textContent = "安装中...";
+      }
+    } else if (prog.status === "completed") {
+      isUpdateDownloading = false;
+      if (updateDownloadTimer) {
+        clearInterval(updateDownloadTimer);
+        updateDownloadTimer = null;
+      }
+      if (pBar) pBar.style.width = "100%";
+      if (title) {
+        title.textContent = "更新包下载并覆盖完成";
+        title.style.color = "#4ade80";
+      }
+      if (sub) sub.textContent = prog.statusText || "已完成覆盖安装";
+      if (dlBtn) {
+        dlBtn.disabled = true;
+        dlBtn.textContent = "已更新";
+      }
+    } else if (prog.status === "error" || prog.status === "cancelled") {
+      isUpdateDownloading = false;
+      if (updateDownloadTimer) {
+        clearInterval(updateDownloadTimer);
+        updateDownloadTimer = null;
+      }
+      if (title) {
+        title.textContent = prog.status === "error" ? "更新下载失败" : "更新已取消";
+        title.style.color = "#f87171";
+      }
+      if (sub) sub.textContent = prog.error || prog.statusText || "请检查网络连接后重试";
+      if (dlBtn) {
+        dlBtn.disabled = false;
+        dlBtn.textContent = "重试更新";
+      }
+    }
+  }
+
+  async function pollUpdateDownloadProgress() {
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_update_download_progress) return;
+    try {
+      const prog = await window.pywebview.api.get_update_download_progress();
+      updateDownloadProgressUI(prog);
+    } catch (e) {}
+  }
+
+  async function openUpdateDownload() {
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.start_update_download) {
+      const url = (latestUpdateMeta && latestUpdateMeta.releaseUrl) || "https://github.com/JiAng10es/Discflow/releases";
       window.open(url, "_blank");
+      return;
+    }
+    const dlBtn = document.getElementById("aboutUpdateDownloadBtn");
+    const sub = document.getElementById("aboutUpdateSub");
+    const pWrap = document.getElementById("aboutUpdateProgressWrap");
+    if (isUpdateDownloading) return;
+
+    isUpdateDownloading = true;
+    if (dlBtn) {
+      dlBtn.disabled = true;
+      dlBtn.textContent = "准备下载...";
+    }
+    if (pWrap) pWrap.style.display = "block";
+    if (sub) sub.textContent = "正在连接发布服务器准备下载安装包...";
+
+    try {
+      const res = await window.pywebview.api.start_update_download();
+      if (!res || !res.ok) {
+        isUpdateDownloading = false;
+        if (dlBtn) {
+          dlBtn.disabled = false;
+          dlBtn.textContent = "重试更新";
+        }
+        if (sub) sub.textContent = (res && res.reason) || "启动更新下载失败";
+        return;
+      }
+      if (updateDownloadTimer) clearInterval(updateDownloadTimer);
+      updateDownloadTimer = setInterval(pollUpdateDownloadProgress, 250);
+      pollUpdateDownloadProgress();
+    } catch (e) {
+      isUpdateDownloading = false;
+      if (dlBtn) {
+        dlBtn.disabled = false;
+        dlBtn.textContent = "重试更新";
+      }
+      if (sub) sub.textContent = "更新请求异常: " + e;
     }
   }
 
@@ -2973,4 +3157,16 @@ function toggleDiscflowMenu(event) {
     const pct = ratio * 100;
     setVolumePercent(pct);
   }
+
+  // 首帧水合：立即应用后端注入的初始状态，并在两帧绘制后解除 transition 抑制
+  if (window.__INITIAL_STATE__) {
+    try {
+      window.__onBackendStatePush(window.__INITIAL_STATE__);
+    } catch (e) {}
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.documentElement.classList.remove("is-booting");
+    });
+  });
 
