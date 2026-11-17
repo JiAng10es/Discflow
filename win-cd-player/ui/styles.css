@@ -1225,6 +1225,38 @@
     color: var(--text-secondary);
   }
 
+  /* 片头作词/作曲/编曲等元信息行：降噪克制展示，不做逐字跳变 */
+  .lyric-item.is-credit-line {
+    opacity: 0.44;
+    filter: blur(0px);
+    padding-top: 4px;
+    padding-bottom: 4px;
+    margin-bottom: clamp(2px, 0.5vh, 6px) !important;
+  }
+
+  .lyric-item.is-credit-line .lyric-orig {
+    font-size: calc(var(--lyric-orig-size) * 0.66);
+    font-weight: 500;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+    color: var(--text-secondary);
+  }
+
+  .lyric-item.is-credit-line.active {
+    opacity: 0.76;
+    transform: none;
+    background: transparent;
+    text-shadow: none;
+  }
+
+  .lyric-item.is-credit-line.active .lyric-word {
+    color: var(--text-secondary);
+  }
+
+  .lyric-item.is-credit-line.active .lyric-word::after {
+    display: none;
+  }
+
   .lyrics-empty {
     height: 100%;
     display: flex;
@@ -1259,8 +1291,10 @@
   .queue-header {
     padding: 8px 14px 12px 14px;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .queue-header-title {
@@ -1425,6 +1459,15 @@
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  .match-meta-btn.is-busy svg {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
   .match-meta-input {

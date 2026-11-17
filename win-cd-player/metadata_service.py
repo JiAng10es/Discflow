@@ -1654,14 +1654,54 @@ def _itunes_album_search_lite(query: str, country: str, limit: int = 6) -> List[
     return out
 
 
+def _netease_album_detail(album_id: str) -> List[dict]:
+    """网易云专辑详情：尝试拉取曲目表 [{title, duration_sec, song_id, source}]，若被风控返回空表"""
+    aid = (album_id or "").strip()
+    if not aid:
+        return []
+    try:
+        resp = requests.get(
+            f"https://music.163.com/api/album/{aid}",
+            headers=NETEASE_HEADERS,
+            timeout=REQ_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json() or {}
+        if data.get("code") not in (None, 200):
+            return []
+        songs = ((data.get("album") or {}).get("songs")) or data.get("songs") or []
+        tracks: List[dict] = []
+        for song in songs:
+            nm = _sanitize_title(song.get("name"))
+            if not nm:
+                continue
+            sid = str(song.get("id") or "").strip()
+            dur_ms = float(song.get("duration") or song.get("dt") or 0)
+            tracks.append(
+                {
+                    "title": nm,
+                    "duration_sec": round(dur_ms / 1000.0, 2) if dur_ms > 0 else 0.0,
+                    "song_id": sid,
+                    "source": "netease",
+                }
+            )
+        return tracks
+    except Exception:
+        return []
+
+
 def _fill_album_tracks(cand: dict) -> dict:
     """按来源补齐候选的曲目表（含每轨可用于直取歌词的 song_id）"""
     source = cand.get("source")
     if source == "qq":
-        year, tracks = _qq_album_detail(cand.get("album_id") or "")
+        year, raw_tracks = _qq_album_detail(cand.get("album_id") or "")
         if year and not cand.get("year"):
             cand["year"] = year
-        cand["tracks"] = tracks
+        cand["tracks"] = [
+            {**t, "source": t.get("source") or "qq"}
+            for t in (raw_tracks or [])
+        ]
     elif source == "itunes":
         songs = _itunes_album_songs(cand.get("album_id"), cand.get("_country") or "JP")
         cand["tracks"] = [
@@ -1669,16 +1709,65 @@ def _fill_album_tracks(cand: dict) -> dict:
                 "title": _sanitize_title(s.get("trackName")),
                 "duration_sec": round(float(s.get("trackTimeMillis") or 0) / 1000.0, 2),
                 "song_id": "",
+                "source": "itunes",
             }
             for s in songs
         ]
-    # 网易云详情接口被风控，曲目表留空
+    elif source == "netease":
+        cand["tracks"] = _netease_album_detail(cand.get("album_id") or "")
     cand["supports_track_ids"] = any(t.get("song_id") for t in (cand.get("tracks") or []))
     cand["_cleanliness"] = _tracks_cleanliness(cand.get("tracks") or [])
     cand["_dirty_tracks"] = sum(
         1 for t in (cand.get("tracks") or []) if _looks_garbled(t.get("title") or "")
     )
     return cand
+
+
+def _backfill_empty_album_tracks(detailed: List[dict], expected_track_count: int = 0) -> None:
+    """当某些候选（如网易云风控场景）曲目表为空时，从同批次干净 donor 借用曲目表与曲目级 source"""
+    donors = [
+        d for d in detailed
+        if d.get("tracks") and int(d.get("_dirty_tracks") or 0) == 0
+    ]
+    if not donors:
+        donors = [d for d in detailed if d.get("tracks")]
+    if not donors:
+        return
+
+    for cand in detailed:
+        if cand.get("tracks"):
+            continue
+        target_count = int(cand.get("track_count") or expected_track_count or 0)
+        cand_title = cand.get("title") or ""
+        best_donor = None
+        best_key = (999.0, 999.0, 2)
+        for d in donors:
+            sim = _title_similarity(cand_title, d.get("title") or "")
+            if _has_cjk(cand_title) != _has_cjk(d.get("title") or ""):
+                sim = max(sim, 0.5)
+            if sim < 0.5:
+                continue
+            d_cnt = len(d.get("tracks") or [])
+            cnt_diff = abs(d_cnt - target_count) if target_count else 0
+            has_ids = 0 if d.get("supports_track_ids") else 1
+            rank_key = (float(cnt_diff), 1.0 - sim, has_ids)
+            if rank_key < best_key:
+                best_key = rank_key
+                best_donor = d
+        if best_donor is not None:
+            d_src = (best_donor.get("source") or "").strip()
+            borrowed = []
+            for t in (best_donor.get("tracks") or []):
+                item = dict(t)
+                if not item.get("source") and d_src:
+                    item["source"] = d_src
+                borrowed.append(item)
+            cand["tracks"] = borrowed
+            cand["supports_track_ids"] = any(t.get("song_id") for t in borrowed)
+            cand["_cleanliness"] = _tracks_cleanliness(borrowed)
+            cand["_dirty_tracks"] = sum(
+                1 for t in borrowed if _looks_garbled(t.get("title") or "")
+            )
 
 
 def search_album_candidates(
@@ -1762,6 +1851,7 @@ def search_album_candidates(
     if picked:
         with ThreadPoolExecutor(max_workers=min(3, len(picked))) as pool:
             detailed = list(pool.map(_fill_album_tracks, picked))
+        _backfill_empty_album_tracks(detailed, expected_track_count)
     else:
         detailed = []
 

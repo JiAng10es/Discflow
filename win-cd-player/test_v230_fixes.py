@@ -1,4 +1,7 @@
 import os
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +18,101 @@ from main import (
     DiscflowJsApi,
     render_frontend_html,
 )
+
+
+def _fake_dom_harness_js(default_theme: str = "light") -> str:
+    """生成前端脚本单测共用的轻量 DOM 模拟脚手架，避免重复维护。"""
+    return f"""
+function makeNode(tag) {{
+  const styles = {{}};
+  const classes = new Set();
+  const children = [];
+  const node = {{
+    tagName: tag,
+    dataset: {{}},
+    children,
+    style: {{ setProperty: (k, v) => {{ styles[k] = String(v); }}, getProperty: (k) => styles[k] }},
+    _styles: styles,
+    className: '',
+    innerHTML: '',
+    textContent: '',
+    value: '',
+    checked: false,
+    src: '',
+    scrollHeight: 200,
+    clientHeight: 200,
+    scrollTop: 0,
+    options: [],
+    classList: {{
+      add: (...xs) => xs.forEach(x => classes.add(x)),
+      remove: (...xs) => xs.forEach(x => classes.delete(x)),
+      toggle: (x, f) => {{ if (f === undefined) {{ classes.has(x) ? classes.delete(x) : classes.add(x); }} else if (f) {{ classes.add(x); }} else {{ classes.delete(x); }} }},
+      contains: (x) => classes.has(x),
+    }},
+    setAttribute: () => {{}},
+    getAttribute: () => '{default_theme}',
+    addEventListener: () => {{}},
+    appendChild: (c) => {{ children.push(c); return c; }},
+    getBoundingClientRect: () => ({{ left: 0, top: 0, width: 100, height: 40, bottom: 40 }}),
+    getContext: () => ({{ createRadialGradient: () => ({{ addColorStop: () => {{}} }}), fillRect: () => {{}}, clearRect: () => {{}} }}),
+  }};
+  node.querySelectorAll = (sel) => {{
+    const out = [];
+    const hasCls = (el, cls) => String(el.className || '').split(/\\s+/).includes(cls);
+    const match = (el) => {{
+      if (sel === '.lyric-word') return hasCls(el, 'lyric-word');
+      if (sel === '.lyric-item') return hasCls(el, 'lyric-item');
+      const m = sel.match(/^\\.lyric-item\\[data-index="(\\d+)"\\]$/);
+      if (m) return hasCls(el, 'lyric-item') && String(el.dataset.index) === m[1];
+      return false;
+    }};
+    const walk = (root) => {{
+      for (const ch of (root.children || [])) {{
+        if (match(ch)) out.push(ch);
+        walk(ch);
+      }}
+    }};
+    walk(node);
+    return out;
+  }};
+  node.querySelector = (sel) => node.querySelectorAll(sel)[0] || null;
+  return node;
+}}
+const els = {{}};
+const getEl = (id) => (els[id] || (els[id] = makeNode('DIV')));
+global.window = global;
+global.window.addEventListener = () => {{}};
+global.window.removeEventListener = () => {{}};
+global.navigator = {{ userAgent: 'test' }};
+global.document = {{
+  documentElement: makeNode('HTML'),
+  body: makeNode('BODY'),
+  hidden: false,
+  getElementById: getEl,
+  querySelectorAll: (sel) => {{
+    if (sel.startsWith('.lyric-')) {{
+      return [...getEl('lyricsViewport').querySelectorAll(sel), ...getEl('standaloneLyricsViewport').querySelectorAll(sel)];
+    }}
+    return [];
+  }},
+  querySelector: (sel) => {{
+    if (sel === '#lyricsViewport .lyric-word') return getEl('lyricsViewport').querySelector('.lyric-word');
+    return null;
+  }},
+  addEventListener: () => {{}},
+  createElement: (tag) => makeNode(tag),
+}};
+global.localStorage = {{ getItem: () => null, setItem: () => {{}} }};
+global.requestAnimationFrame = () => 1;
+global.cancelAnimationFrame = () => {{}};
+global.matchMedia = () => ({{ matches: false }});
+global.Image = function() {{}};
+global.setInterval = () => 1;
+global.setTimeout = (fn) => {{ global._scheduledTimers.push(fn); return global._scheduledTimers.length; }};
+global._scheduledTimers = [];
+global.clearTimeout = () => {{}};
+global.clearInterval = () => {{}};
+"""
 
 
 def _make_controller() -> DiscflowController:
@@ -448,10 +546,6 @@ class TestFirstTrackLyricsFix(unittest.TestCase):
 
     def test_repeated_plain_lyrics_push_keeps_words_and_karaoke_scan(self):
         """连续两次下发不含 words 的普通歌词后，仍保留逐字时间轴且激活行 --wp 正常推进"""
-        import re
-        import shutil
-        import subprocess
-
         node = shutil.which("node")
         if not node:
             self.skipTest("node 不可用，跳过前端卡拉 OK 状态校验")
@@ -460,99 +554,7 @@ class TestFirstTrackLyricsFix(unittest.TestCase):
             init_state={"isPlaying": False, "albumTitle": "Init", "tracks": []},
         )
         scripts = re.findall(r"<script(?:\s[^>]*)?>([\s\S]*?)</script>", html)
-        harness = """
-function makeNode(tag) {
-  const classes = new Set();
-  const children = [];
-  const styles = {};
-  const node = {
-    tagName: tag || 'DIV',
-    dataset: {},
-    children,
-    style: {
-      setProperty: (k, v) => { styles[k] = String(v); },
-      getProperty: (k) => styles[k],
-    },
-    _styles: styles,
-    className: '',
-    innerHTML: '',
-    textContent: '',
-    value: '',
-    checked: false,
-    src: '',
-    scrollHeight: 200,
-    clientHeight: 200,
-    scrollTop: 0,
-    options: [],
-    classList: {
-      add: (...xs) => xs.forEach(x => classes.add(x)),
-      remove: (...xs) => xs.forEach(x => classes.delete(x)),
-      toggle: (x, f) => { if (f === undefined) { classes.has(x) ? classes.delete(x) : classes.add(x); } else if (f) { classes.add(x); } else { classes.delete(x); } },
-      contains: (x) => classes.has(x),
-    },
-    setAttribute: () => {},
-    getAttribute: () => 'light',
-    addEventListener: () => {},
-    appendChild: (c) => { children.push(c); return c; },
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 40, bottom: 40 }),
-    getContext: () => ({ createRadialGradient: () => ({ addColorStop: () => {} }), fillRect: () => {}, clearRect: () => {} }),
-  };
-  node.querySelectorAll = (sel) => {
-    const out = [];
-    const match = (el) => {
-      if (sel === '.lyric-word') return el.className === 'lyric-word';
-      if (sel === '.lyric-item') return el.className === 'lyric-item';
-      const m = sel.match(/^\\.lyric-item\\[data-index="(\\d+)"\\]$/);
-      if (m) return el.className === 'lyric-item' && String(el.dataset.index) === m[1];
-      return false;
-    };
-    const walk = (root) => {
-      for (const ch of (root.children || [])) {
-        if (match(ch)) out.push(ch);
-        walk(ch);
-      }
-    };
-    walk(node);
-    return out;
-  };
-  node.querySelector = (sel) => node.querySelectorAll(sel)[0] || null;
-  return node;
-}
-const els = {};
-const getEl = (id) => (els[id] || (els[id] = makeNode('DIV')));
-global.window = global;
-global.window.addEventListener = () => {};
-global.window.removeEventListener = () => {};
-global.navigator = { userAgent: 'test' };
-global.document = {
-  documentElement: makeNode('HTML'),
-  body: makeNode('BODY'),
-  hidden: false,
-  getElementById: getEl,
-  querySelectorAll: (sel) => {
-    if (sel.startsWith('.lyric-')) {
-      return [...getEl('lyricsViewport').querySelectorAll(sel), ...getEl('standaloneLyricsViewport').querySelectorAll(sel)];
-    }
-    return [];
-  },
-  querySelector: (sel) => {
-    if (sel === '#lyricsViewport .lyric-word') return getEl('lyricsViewport').querySelector('.lyric-word');
-    return null;
-  },
-  addEventListener: () => {},
-  createElement: (tag) => makeNode(tag),
-};
-global.localStorage = { getItem: () => null, setItem: () => {} };
-global.requestAnimationFrame = () => 1;
-global.cancelAnimationFrame = () => {};
-global.matchMedia = () => ({ matches: false });
-global.Image = function() {};
-global.setInterval = () => 1;
-global.setTimeout = (fn) => { global._scheduledTimers.push(fn); return global._scheduledTimers.length; };
-global._scheduledTimers = [];
-global.clearTimeout = () => {};
-global.clearInterval = () => {};
-"""
+        harness = _fake_dom_harness_js("light")
         test_code = """
 const plainLyrics = [
   { time: 1.0, text: 'Hello world', translation: '你好世界' },
@@ -647,6 +649,186 @@ class TestDockTranslationIconRedraw(unittest.TestCase):
         self.assertNotIn(".dock-trans-btn.is-off::after", css)
         self.assertIn(".dock-trans-btn.is-off", css)
         self.assertIn('document.getElementById("prefTransSwitch")', js)
+
+
+class TestV231UrgentImprovements(unittest.TestCase):
+    """验证本次 3 项紧迫改进：日文音拍/片头行降噪、网易云候选借用曲目、强制重刷与旧版解锁升级。"""
+
+    def test_japanese_mora_tokenization_and_credit_line_detection(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available")
+        from main import render_frontend_html
+
+        html = render_frontend_html(
+            init_prefs={"themeMode": "dark"},
+            init_state={"albumTitle": "Test", "tracks": [], "lyrics": []},
+        )
+        scripts = re.findall(r"<script[^>]*>([\s\S]*?)</script>", html)
+        self.assertGreaterEqual(len(scripts), 2)
+
+        harness = _fake_dom_harness_js("dark")
+        test_code = """
+const jpTokens = tokenizeKaraokeLine('しゃぼん玉 ちょっとー');
+if (jpTokens.includes('ゃ') || jpTokens.includes('っ') || jpTokens.includes('ー')) {
+  throw new Error('Japanese small kana/chouonpu should not be split into standalone tokens: ' + JSON.stringify(jpTokens));
+}
+if (!jpTokens.includes('しゃ') || !jpTokens.includes('とー')) {
+  throw new Error('Expected mora tokens しゃ and とー, got: ' + JSON.stringify(jpTokens));
+}
+if (!isCreditLyricLine('作词 : 椎名林檎', 0, 0.2) || !isCreditLyricLine('作曲：林正樹', 2, 4.0)) {
+  throw new Error('Expected credit lines to be detected');
+}
+if (isCreditLyricLine('しゃぼん玉が消えた', 4, 24.0)) {
+  throw new Error('Normal vocal line must not be flagged as credit line');
+}
+
+renderLyricsList([
+  { time: 0.2, text: '作词 : 椎名林檎', translation: '' },
+  { time: 18.0, text: 'しゃぼん玉', translation: '肥皂泡' }
+]);
+const items = getEl('lyricsViewport').querySelectorAll('.lyric-item');
+if (items.length !== 2) throw new Error('Expected 2 lyric items');
+if (!String(items[0].className).includes('is-credit-line')) {
+  throw new Error('Credit line missing is-credit-line class: ' + items[0].className);
+}
+if (items[0].querySelectorAll('.lyric-word').length !== 0) {
+  throw new Error('Credit line should not create karaoke .lyric-word spans');
+}
+if (String(items[1].className).includes('is-credit-line')) {
+  throw new Error('Normal line should not have is-credit-line');
+}
+if (items[1].querySelectorAll('.lyric-word').length === 0) {
+  throw new Error('Normal line should create .lyric-word spans');
+}
+"""
+        path = os.path.join(tempfile.gettempdir(), "discflow_mora_credit_test.js")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(harness + "\n" + "\n".join(scripts) + "\n" + test_code)
+        try:
+            proc = subprocess.run([node, path], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, f"日文音拍与片头降噪测试失败：{proc.stderr[:800]}")
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def test_netease_album_candidate_backfills_tracks_from_donor(self):
+        from types import SimpleNamespace
+        from main import DiscflowController
+
+        qq_cands = [{
+            "source": "qq", "album_id": "QQ_ALB", "title": "大人",
+            "artist": "東京事変", "year": "2006", "track_count": 2,
+            "cover_url": "https://example.com/qq.jpg", "tracks": [],
+        }]
+        ne_cands = [{
+            "source": "netease", "album_id": "NE_ALB", "title": "大人 (ADULT)",
+            "artist": "東京事変", "year": "2006", "track_count": 2,
+            "cover_url": "https://example.com/ne.jpg", "tracks": [],
+        }]
+        qq_tracks = [
+            {"title": "秘密", "duration_sec": 230.0, "song_id": "QQ_S1"},
+            {"title": "喧嘩上等", "duration_sec": 143.0, "song_id": "QQ_S2"},
+        ]
+
+        orig = (
+            metadata_service._qq_album_search,
+            metadata_service._itunes_album_search_lite,
+            metadata_service._netease_album_search,
+            metadata_service._qq_album_detail,
+            metadata_service._netease_album_detail,
+        )
+        try:
+            metadata_service._qq_album_search = lambda q, limit=6: [dict(x) for x in qq_cands]
+            metadata_service._itunes_album_search_lite = lambda q, c, limit=6: []
+            metadata_service._netease_album_search = lambda q, limit=6: [dict(x) for x in ne_cands]
+            metadata_service._qq_album_detail = lambda mid: ("2006", [dict(t) for t in qq_tracks])
+            metadata_service._netease_album_detail = lambda aid: []
+
+            cands = metadata_service.search_album_candidates("大人", "東京事変", expected_track_count=2)
+        finally:
+            (
+                metadata_service._qq_album_search,
+                metadata_service._itunes_album_search_lite,
+                metadata_service._netease_album_search,
+                metadata_service._qq_album_detail,
+                metadata_service._netease_album_detail,
+            ) = orig
+
+        ne_res = next((c for c in cands if c.get("source") == "netease"), None)
+        self.assertIsNotNone(ne_res)
+        self.assertEqual(len(ne_res["tracks"]), 2, "网易云候选应从同批次 QQ donor 借用完整曲目表")
+        self.assertTrue(ne_res["supports_track_ids"])
+        self.assertEqual(ne_res["tracks"][0]["source"], "qq")
+        self.assertEqual(ne_res["tracks"][0]["song_id"], "QQ_S1")
+
+        ctrl = DiscflowController()
+        ctrl.start_album_lyrics_batch = lambda *a, **kw: {"ok": False}
+        ctrl.current_toc = SimpleNamespace(
+            disc_id="probe_ne_backfill",
+            is_local=False,
+            tracks=[
+                SimpleNamespace(track_number=1, title="Track 01", artist="未知艺术家", duration_sec=230.0),
+                SimpleNamespace(track_number=2, title="Track 02", artist="未知艺术家", duration_sec=143.0),
+            ],
+        )
+        with patch("main.download_image_bytes", return_value=None):
+            res = ctrl.apply_album_candidate(ne_res)
+        self.assertTrue(res["ok"])
+        self.assertEqual(ctrl.current_toc.tracks[0].title, "秘密")
+        self.assertEqual(ctrl.track_song_ids[1], {"source": "qq", "song_id": "QQ_S1"})
+
+    def test_force_refresh_and_legacy_locked_lyrics_upgrade(self):
+        from types import SimpleNamespace
+        from main import DiscflowController
+
+        ctrl = DiscflowController()
+        toc = SimpleNamespace(
+            disc_id="probe_legacy_upgrade",
+            is_local=False,
+            tracks=[
+                SimpleNamespace(track_number=1, title="秘密", artist="東京事変", duration_sec=230.0, builtin_lrc=""),
+                SimpleNamespace(track_number=2, title="喧嘩上等", artist="東京事変", duration_sec=143.0, builtin_lrc=""),
+            ],
+        )
+        ctrl.current_toc = toc
+        ctrl.current_track_index = 0
+        # 曲1为旧版伪锁定歌词（无 words 且无翻译），曲2为已完全达标的手动锁定歌词
+        ctrl.lyrics_locked_tracks = {1, 2}
+        ctrl.lyrics_cache = {
+            1: [{"time": 1.0, "text": "旧版纯原文", "translation": ""}],
+            2: [
+                {"time": float(i + 1), "text": f"Line {i}", "translation": f"译文 {i}",
+                 "words": [{"t": float(i + 1), "d": 0.4, "w": "Line"}]}
+                for i in range(6)
+            ],
+        }
+
+        upgraded_lines = [
+            {"time": float(i + 1), "text": f"秘密 {i}", "translation": f"秘密译 {i}",
+             "words": [{"t": float(i + 1), "d": 0.5, "w": "秘密"}]}
+            for i in range(6)
+        ]
+
+        with patch("main.lookup_track_lyrics", return_value=upgraded_lines), \
+             patch("main.enrich_lyrics_with_word_timings", side_effect=lambda t, a, d, lns: lns):
+            ctrl._prefetch_lyrics_async(ctrl._load_token)
+
+        self.assertTrue(any(ln.get("words") for ln in ctrl.lyrics_cache[1]), "旧版无逐字且无翻译的锁定歌词应自动升级")
+        self.assertEqual(ctrl.lyrics_cache[2][0]["text"], "Line 0", "已达标锁定歌词在预取阶段应保持不变")
+
+        forced_lines = [
+            {"time": float(i + 1), "text": f"重刷 {i}", "translation": f"重刷译 {i}",
+             "words": [{"t": float(i + 1), "d": 0.5, "w": "重刷"}]}
+            for i in range(6)
+        ]
+        with patch("main.lookup_track_lyrics", return_value=forced_lines), \
+             patch("main.enrich_lyrics_with_word_timings", side_effect=lambda t, a, d, lns: lns):
+            ctrl._run_album_lyrics_batch(toc, toc.tracks, force_refresh=True)
+
+        self.assertEqual(ctrl.lyrics_cache[2][0]["text"], "重刷 0", "force_refresh=True 应能强制重刷已锁定音轨")
 
 
 if __name__ == "__main__":

@@ -1599,6 +1599,23 @@ class DiscflowController:
         if not title:
             return {"ok": False, "reason": "候选缺少专辑名"}
 
+        # 若选中的候选（如早先缓存或被风控的网易云候选）曲目表为空，尝试从三源检索借用干净曲目表
+        if source == "netease" and toc_ref and not tracks and title:
+            try:
+                fallback_cands = self.search_album_candidates_for_current(title, artist)
+                donor = next(
+                    (d for d in fallback_cands if d.get("tracks") and not d.get("garbled")),
+                    next((d for d in fallback_cands if d.get("tracks")), None),
+                )
+                if donor:
+                    d_src = (donor.get("source") or "").strip()
+                    tracks = [
+                        {**t, "source": (t.get("source") or d_src)}
+                        for t in (donor.get("tracks") or [])
+                    ]
+            except Exception:
+                pass
+
         disc_id = getattr(toc_ref, "disc_id", "") if toc_ref else ""
         is_local = bool(toc_ref and getattr(toc_ref, "is_local", False))
 
@@ -1644,7 +1661,8 @@ class DiscflowController:
                     track_artists[trk.track_number] = artist
                 sid = (c.get("song_id") or "").strip()
                 if sid:
-                    song_ids[trk.track_number] = {"source": source, "song_id": sid}
+                    trk_src = (c.get("source") or source or "").strip()
+                    song_ids[trk.track_number] = {"source": trk_src, "song_id": sid}
 
         cover_url_remote = (cand.get("cover_url") or "").strip()
         cover_data_url = ""
@@ -1696,15 +1714,22 @@ class DiscflowController:
                 except Exception:
                     pass
 
-        # 曲名/专辑已重新匹配：清理被新专辑覆盖曲目的歌词缓存与旧锁定，保证立即重抓当前曲目歌词
+        # 曲名/专辑已重新匹配：清理被新专辑覆盖或尚未拥有逐字时间轴的旧缓存与锁定，保证整碟刷新
         cur_tn = None
         if toc_ref and 0 <= self.current_track_index < len(toc_ref.tracks):
             cur_tn = toc_ref.tracks[self.current_track_index].track_number
+        track_nums_to_reset = set(track_titles.keys()) | set(song_ids.keys())
+        if toc_ref:
+            for t in toc_ref.tracks:
+                cached_lyr = self.lyrics_cache.get(t.track_number)
+                has_words = bool(cached_lyr and any(isinstance(ln, dict) and ln.get("words") for ln in cached_lyr))
+                if not has_words or not self._lyrics_quality_ok(cached_lyr):
+                    track_nums_to_reset.add(t.track_number)
         for tn in list(self.lyrics_cache.keys()):
-            if tn in track_titles or tn in song_ids or tn not in self.lyrics_locked_tracks:
+            if tn in track_nums_to_reset or tn not in self.lyrics_locked_tracks:
                 self.lyrics_cache.pop(tn, None)
                 self.lyrics_locked_tracks.discard(tn)
-        for tn in set(track_titles.keys()) | set(song_ids.keys()):
+        for tn in track_nums_to_reset:
             self.lyrics_locked_tracks.discard(tn)
             self.lyrics_missed_tracks.discard(tn)
         if cur_tn is not None and cur_tn not in self.lyrics_cache:
@@ -1876,8 +1901,8 @@ class DiscflowController:
     # ------------------------------------------------------------------
     # 整专辑歌词批量套用
     # ------------------------------------------------------------------
-    def start_album_lyrics_batch(self) -> dict:
-        """按当前专辑每一轨的曲名，批量检索并套用歌词（后台执行，带进度）"""
+    def start_album_lyrics_batch(self, force_refresh: bool = False) -> dict:
+        """按当前专辑每一轨的曲名，批量检索并套用歌词（后台执行，带进度；支持强制重刷）"""
         if self._lyrics_batch.get("running"):
             return {"ok": False, "reason": "已有批量任务在进行中"}
         toc_ref = self.current_toc
@@ -1889,14 +1914,19 @@ class DiscflowController:
             return {"ok": False, "reason": "当前没有音频曲目"}
 
         self._lyrics_batch = {"running": True, "done": 0, "total": len(tracks), "matched": 0, "missed": []}
-        threading.Thread(target=self._run_album_lyrics_batch, args=(toc_ref, tracks), daemon=True).start()
+        threading.Thread(
+            target=self._run_album_lyrics_batch,
+            args=(toc_ref, tracks, bool(force_refresh)),
+            daemon=True,
+        ).start()
         return {"ok": True, "total": len(tracks)}
 
-    def _run_album_lyrics_batch(self, toc_ref, tracks) -> None:
+    def _run_album_lyrics_batch(self, toc_ref, tracks, force_refresh: bool = False) -> None:
         """
         并发为每轨取词：
         - 若该轨已绑定歌曲 ID（来自专辑匹配），直接按 ID 取词，不再搜索（快且不会配错）；
-        - 否则退回三源检索，按时长差 ≤ 3 秒的可信度自动套用。
+        - 否则退回三源检索，并尽可能补齐逐字时间轴；
+        - 当 force_refresh=True 时忽略历史锁定与缓存，强制全碟升级刷新。
         """
         from concurrent.futures import ThreadPoolExecutor
 
@@ -1922,19 +1952,32 @@ class DiscflowController:
             try:
                 direct_lines = lookup_track_lyrics(trk.title, trk.artist, trk.duration_sec)
                 if direct_lines:
+                    if not any(isinstance(ln, dict) and ln.get("words") for ln in direct_lines):
+                        direct_lines = enrich_lyrics_with_word_timings(
+                            trk.title, trk.artist, trk.duration_sec, direct_lines
+                        )
                     return direct_lines, {}
             except Exception:
                 pass
             return [], {}
 
         def _work(trk):
-            if trk.track_number in self.lyrics_locked_tracks:
-                return (trk, [], {}, "locked")
             existing = self.lyrics_cache.get(trk.track_number)
-            if existing and self._lyrics_quality_ok(existing):
-                return (trk, [], {}, "ok")
+            if not force_refresh:
+                if trk.track_number in self.lyrics_locked_tracks:
+                    has_words = bool(existing and any(isinstance(ln, dict) and ln.get("words") for ln in existing))
+                    if existing and (has_words or self._lyrics_quality_ok(existing)):
+                        return (trk, [], {}, "locked")
+                if existing and self._lyrics_quality_ok(existing):
+                    has_words = bool(any(isinstance(ln, dict) and ln.get("words") for ln in existing))
+                    if has_words:
+                        return (trk, [], {}, "ok")
             lines, info = _fetch_lines(trk)
-            return (trk, lines, info, "hit" if lines else "miss")
+            if lines:
+                return (trk, lines, info, "hit")
+            if existing:
+                return (trk, [], {}, "ok")
+            return (trk, [], {}, "miss")
 
         ordered_tracks = sorted(
             tracks,
@@ -2564,12 +2607,15 @@ class DiscflowController:
         for trk in toc_ref.tracks:
             if getattr(trk, "is_data_track", False):
                 continue
+            existing = self.lyrics_cache.get(trk.track_number)
+            has_words = bool(existing and any(isinstance(ln, dict) and ln.get("words") for ln in existing))
             if trk.track_number in self.lyrics_locked_tracks:
-                continue
+                # 尊重手动锁定（含逐字或双语达标）；但旧版归档的无逐字、无翻译“伪锁定”轨道允许升级
+                if existing and (has_words or self._lyrics_quality_ok(existing)):
+                    continue
             if (my_token, trk.track_number, trk.title, trk.artist) in self._lyrics_fetching_keys:
                 continue
-            existing = self.lyrics_cache.get(trk.track_number)
-            if existing and self._lyrics_quality_ok(existing):
+            if existing and self._lyrics_quality_ok(existing) and has_words:
                 continue
             pending.append(
                 {
@@ -2591,14 +2637,28 @@ class DiscflowController:
         is_local = bool(getattr(toc_ref, "is_local", False))
         disc_id = getattr(toc_ref, "disc_id", "")
 
+        def _lyr_rank(lns):
+            if not lns:
+                return (0, 0, 0)
+            tr = sum(1 for ln in lns if isinstance(ln, dict) and ln.get("translation"))
+            wd = sum(1 for ln in lns if isinstance(ln, dict) and ln.get("words"))
+            return (tr, wd, len(lns))
+
         def _fetch_one(item: dict):
             try:
-                return int(item["track_number"]), lookup_track_lyrics(
+                tn = int(item["track_number"])
+                dur = float(item["duration_sec"] or 0.0)
+                lines = lookup_track_lyrics(
                     item["title"],
                     item["artist"],
-                    float(item["duration_sec"] or 0.0),
+                    dur,
                     item["builtin_lrc"],
                 )
+                if lines and not any(isinstance(ln, dict) and ln.get("words") for ln in lines):
+                    lines = enrich_lyrics_with_word_timings(
+                        item["title"], item["artist"], dur, lines
+                    )
+                return tn, lines
             except Exception:
                 return int(item["track_number"]), []
 
@@ -2615,7 +2675,9 @@ class DiscflowController:
                 if not lines:
                     continue
                 current = self.lyrics_cache.get(tn)
-                if current is None or not self._lyrics_quality_ok(current):
+                if current is None or _lyr_rank(lines) > _lyr_rank(current) or not self._lyrics_quality_ok(current):
+                    if current is not None and _lyr_rank(lines) < _lyr_rank(current):
+                        continue
                     self.lyrics_cache[tn] = lines
                     improved[tn] = lines
                     if (
@@ -2817,8 +2879,8 @@ class DiscflowJsApi:
     def auto_match_track_lyrics(self, track_number: int) -> dict:
         return self._ctrl.auto_match_track_lyrics(track_number)
 
-    def start_album_lyrics_batch(self) -> dict:
-        return self._ctrl.start_album_lyrics_batch()
+    def start_album_lyrics_batch(self, force_refresh: bool = False) -> dict:
+        return self._ctrl.start_album_lyrics_batch(bool(force_refresh))
 
     def search_album_candidates_for_current(self, title: str = "", artist: str = "") -> list:
         return self._ctrl.search_album_candidates_for_current(title, artist)

@@ -229,6 +229,46 @@
     setTimeout(() => { if (t) { t.focus(); t.select(); } }, 120);
   }
 
+  let _albumRefreshRunning = false;
+  async function refreshCurrentAlbumLyrics() {
+    if (_albumRefreshRunning) {
+      alertToast("正在重刷整张专辑歌词，请稍候…");
+      return;
+    }
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.start_album_lyrics_batch) return;
+    if (!appState.tracks || !appState.tracks.length) {
+      alertToast("当前没有可重刷歌词的曲目");
+      return;
+    }
+    _albumRefreshRunning = true;
+    const btn = document.getElementById("refreshAlbumLyricsBtn");
+    if (btn) btn.classList.add("is-busy");
+    try {
+      const res = await window.pywebview.api.start_album_lyrics_batch(true);
+      if (!res || !res.ok) {
+        alertToast((res && res.reason) || "已有歌词刷新任务正在进行");
+        return;
+      }
+      alertToast(`开始重刷整张专辑 ${res.total || ""} 首曲目歌词…`);
+      const b = await waitForLyricsBatch();
+      triggerImmediatePoll();
+      renderQueueList();
+      const miss = (b && b.missed ? b.missed.length : 0);
+      alertToast(
+        miss
+          ? `歌词重刷完成：${b.matched || 0}/${b.total || 0} 首已更新，${miss} 首未命中`
+          : `歌词重刷完成：${(b && b.matched) || 0}/${(b && b.total) || 0} 首已升级`
+      );
+    } catch (e) {
+      console.error("refreshCurrentAlbumLyrics error:", e);
+      alertToast("重刷歌词失败：" + e);
+    } finally {
+      _albumRefreshRunning = false;
+      const bEl = document.getElementById("refreshAlbumLyricsBtn");
+      if (bEl) bEl.classList.remove("is-busy");
+    }
+  }
+
   // 等待后端整专辑歌词批量任务完成，期间把进度写进提示文案
   async function waitForLyricsBatch(maxMs = 180000) {
     const hint = document.getElementById("matchMetaHint");
@@ -297,7 +337,7 @@
       const metaParts = [];
       metaParts.push(trackCount ? `<b>${trackCount}</b> 首` : "曲目数未知");
       if (canDirect) metaParts.push(`<b>${ids}</b> 首可直取歌词`);
-      else if (c.source === "netease") metaParts.push("仅封面与专辑信息");
+      else if (c.source === "netease" && !(c.tracks && c.tracks.length)) metaParts.push("仅封面与专辑信息");
       else metaParts.push("歌词需按曲名搜索");
       // 曲库里有不少 Shift-JIS 误解码的残次条目，标出来避免用户选中后把乱码写进曲名
       if (c.garbled) metaParts.push(`<span class="album-cand-warn">⚠ ${c.dirtyTracks || 0} 首曲名疑似乱码</span>`);
@@ -958,8 +998,22 @@ function toggleDiscflowMenu(event) {
     tempImg.src = dataUrl;
   }
 
-  // 逐字歌词分词：中文按单字、英文数字按整词（含尾随空格），标点单独成词
-  const KARAOKE_TOKEN_RE = /[A-Za-z0-9'’\-]+\s*|[\u4e00-\u9fff]|[^\sA-Za-z0-9\u4e00-\u9fff]/g;
+  // 逐字歌词分词：英文数字按整词（含尾随空格）、日文假名按音拍(Mora)合并拗音/促音/长音符、汉字单字、标点单独成词
+  const KARAOKE_TOKEN_RE = /[A-Za-z0-9'’\-]+\s*|[\u3040-\u309f\u30a0-\u30ff][ぁぃぅぇぉゃゅょゎっァィゥェォャュョヮッー・]*|[\u4e00-\u9fff]|[^\sA-Za-z0-9\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]/g;
+
+  function isCreditLyricLine(text, idx, timeSec) {
+    const s = String(text || "").trim();
+    if (!s) return false;
+    if (idx < 8 || (Number(timeSec) || 0) < 20) {
+      if (/^\s*(?:作词|作曲|编曲|制作人?|词|曲|录音|混音|母带|吉他|贝斯|鼓|弦乐|和声|监制|统筹|出品|OP|SP|作詞|編曲|唄|歌|Lyricist|Composer|Arranger|Produced\s+by|Written\s+by)\s*[:：]/i.test(s)) {
+        return true;
+      }
+      if (idx === 0 && (Number(timeSec) || 0) <= 1.5 && /\s+-\s+/.test(s)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   function tokenizeKaraokeLine(text) {
     const tokens = [];
@@ -1003,7 +1057,10 @@ function toggleDiscflowMenu(event) {
       const estimatedSungDur = Math.max(1.4, tokens.length * 0.36);
       const dur = Math.min(effectiveGap, estimatedSungDur);
 
-      const weights = tokens.map(tk => Math.max(1, (tk.trim() || tk).length));
+      const weights = tokens.map(tk => {
+        const core = tk.replace(/[ぁぃぅぇぉゃゅょゎァィゥェォャュョヮ]/g, "").trim();
+        return Math.max(1, (core || tk.trim() || tk).length);
+      });
       const totalW = weights.reduce((a, b) => a + b, 0) || 1;
 
       let cursor = start;
@@ -1054,13 +1111,14 @@ function toggleDiscflowMenu(event) {
       }
 
       lyrics.forEach((line, idx) => {
+        const isCredit = isCreditLyricLine(line.text, idx, line.time);
         const div = document.createElement("div");
-        div.className = "lyric-item";
+        div.className = "lyric-item" + (isCredit ? " is-credit-line" : "");
         div.dataset.index = idx;
 
         const orig = document.createElement("div");
         orig.className = "lyric-orig";
-        if (Array.isArray(line.words) && line.words.length) {
+        if (!isCredit && Array.isArray(line.words) && line.words.length) {
           line.words.forEach(w => {
             const span = document.createElement("span");
             span.className = "lyric-word";
@@ -1372,10 +1430,16 @@ function toggleDiscflowMenu(event) {
             <span>单曲</span>
           </button>
         </div>
-        <button class="mode-pill-btn match-meta-btn" onclick="openMatchMetadataModal()" title="手动匹配专辑信息（封面 / 曲名 / 歌词）">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-          <span>匹配</span>
-        </button>
+        <div class="queue-actions" style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
+          <button id="refreshAlbumLyricsBtn" class="mode-pill-btn match-meta-btn" onclick="refreshCurrentAlbumLyrics()" title="强制重新匹配整张专辑全部曲目的逐字与双语歌词">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            <span>重刷歌词</span>
+          </button>
+          <button class="mode-pill-btn match-meta-btn" onclick="openMatchMetadataModal()" title="手动匹配专辑信息（封面 / 曲名 / 歌词）">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+            <span>匹配</span>
+          </button>
+        </div>
       </div>
     `;
 
