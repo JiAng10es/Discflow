@@ -264,20 +264,23 @@ if (!window._discflowAppReady || typeof togglePlayPause !== 'function' || typeof
                 pass
 
     def test_prefs_defaults_match_frontend_and_set_theme_mode(self):
-        prefs = library_service.load_user_preferences()
-        self.assertEqual(prefs.get("dockOpacity"), 5)
-        self.assertEqual(prefs.get("dockBlur"), 2)
-        self.assertEqual(prefs.get("topbarOpacity"), 5)
-        self.assertEqual(prefs.get("topbarBlur"), 2)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pref_file = os.path.join(tmpdir, "preferences.json")
+            with patch.object(library_service, "get_preferences_file_path", return_value=pref_file):
+                prefs = library_service.load_user_preferences()
+                self.assertEqual(prefs.get("dockOpacity"), 5)
+                self.assertEqual(prefs.get("dockBlur"), 2)
+                self.assertEqual(prefs.get("topbarOpacity"), 5)
+                self.assertEqual(prefs.get("topbarBlur"), 2)
 
-        ctrl = _make_controller()
-        try:
-            self.assertTrue(ctrl.set_theme_mode("light"))
-            self.assertEqual(library_service.load_user_preferences().get("themeMode"), "light")
-            self.assertTrue(ctrl.set_theme_mode("dark"))
-            self.assertEqual(library_service.load_user_preferences().get("themeMode"), "dark")
-        finally:
-            ctrl.shutdown()
+                ctrl = _make_controller()
+                try:
+                    self.assertTrue(ctrl.set_theme_mode("light"))
+                    self.assertEqual(library_service.load_user_preferences().get("themeMode"), "light")
+                    self.assertTrue(ctrl.set_theme_mode("dark"))
+                    self.assertEqual(library_service.load_user_preferences().get("themeMode"), "dark")
+                finally:
+                    ctrl.shutdown()
 
 
 class TestSystemTrayRemoved(unittest.TestCase):
@@ -980,6 +983,136 @@ class TestCdRippingSpeedAndReliability(unittest.TestCase):
         self.assertEqual(info["latestVersion"], "9.9.9")
         self.assertEqual(info["downloadUrl"], "https://github.com/JiAng10es/Discflow/releases/download/v9.9.9/Discflow.exe")
         self.assertEqual(info["assetSize"], 15260569)
+
+
+class TestRealEnvSmokeAndLogging(unittest.TestCase):
+    """v2.3.2 真实环境回归链路：轻量运行日志 + 无头 Edge 真机 DOM/JS 冒烟测试"""
+
+    def test_runtime_logger_writes_in_sandbox_and_avoids_real_root(self):
+        from library_service import get_runtime_log_path, log_runtime_event
+
+        log_path = get_runtime_log_path()
+        self.assertFalse(
+            os.path.normcase(log_path).startswith(os.path.normcase(r"F:\Discflow1.0\discflow.log")),
+            f"测试模式下日志必须隔离在临时沙盒，不能污染真实根目录: {log_path}",
+        )
+        marker = f"smoke-marker-{os.getpid()}"
+        log_runtime_event("SMOKE", marker)
+        self.assertTrue(os.path.isfile(log_path), f"日志文件未生成: {log_path}")
+        with open(log_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("[INFO] [SMOKE]", content)
+        self.assertIn(marker, content)
+
+    def test_headless_edge_ui_smoke_zero_errors(self):
+        import main as app_main
+        import shutil
+        import subprocess
+        import tempfile
+
+        edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        if not os.path.isfile(edge_exe):
+            self.skipTest("未安装 Microsoft Edge，跳过无头浏览器冒烟测试")
+
+        init_prefs = {
+            "themeMode": "dark",
+            "dockOpacity": 5,
+            "dockBlur": 2,
+            "topbarOpacity": 5,
+            "topbarBlur": 2,
+            "dockWidth": 720,
+            "lyricLineHeight": 1.4,
+            "lyricLetterSpacing": 0,
+            "showTranslation": True,
+        }
+        init_state = {
+            "mode": "library",
+            "albumTitle": "Smoke Test Album",
+            "artist": "Test Artist",
+            "tracks": [{"trackNumber": 1, "title": "Track 01", "durationSec": 210, "durationFormatted": "03:30"}],
+            "currentTrackIndex": 0,
+            "lyrics": [{"time": 0.0, "text": "Hello Discflow", "trans": "你好", "words": []}],
+            "libraryAlbums": [],
+        }
+        html = app_main.render_frontend_html(init_prefs, init_state)
+        probe_head = """<script>
+window.__smokeErrors = [];
+window.addEventListener('error', function (e) {
+  window.__smokeErrors.push(String(e && (e.message || e.error) || 'error'));
+});
+window.addEventListener('unhandledrejection', function (e) {
+  window.__smokeErrors.push('rejection:' + String(e && e.reason || 'unknown'));
+});
+window.pywebview = {
+  api: new Proxy({}, {
+    get: function (_t, prop) {
+      return function () {
+        if (prop === 'get_state') return Promise.resolve({ mode: 'library', tracks: [], lyrics: [] });
+        if (prop === 'check_for_updates') return Promise.resolve({ ok: true, hasUpdate: false, latestVersion: '2.3.1' });
+        if (prop === 'get_library_albums') return Promise.resolve({ albums: [] });
+        return Promise.resolve({ ok: true });
+      };
+    }
+  })
+};
+</script>"""
+        probe_body = """<div id="__smoke_report" data-ready="0"></div>
+<script>
+setTimeout(function () {
+  try {
+    var settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) settingsBtn.click();
+    var closeSettings = document.getElementById('closeSettingsBtn');
+    if (closeSettings) closeSettings.click();
+    var libTab = document.getElementById('navLibraryBtn');
+    if (libTab) libTab.click();
+    var playerTab = document.getElementById('navPlayerBtn');
+    if (playerTab) playerTab.click();
+  } catch (err) {
+    window.__smokeErrors.push('interact:' + String(err));
+  }
+  var rep = document.getElementById('__smoke_report');
+  if (rep) {
+    rep.setAttribute('data-ready', '1');
+    rep.setAttribute('data-errors', String(window.__smokeErrors.length));
+    rep.setAttribute('data-error-detail', window.__smokeErrors.join(' | '));
+    rep.setAttribute('data-has-dock', document.getElementById('bottomDockPlayer') ? '1' : '0');
+  }
+}, 400);
+</script>"""
+        patched_html = html.replace("<head>", "<head>\n" + probe_head, 1).replace("</body>", probe_body + "\n</body>", 1)
+
+        tmp_dir = tempfile.mkdtemp(prefix="discflow_edge_smoke_")
+        try:
+            html_path = os.path.join(tmp_dir, "smoke.html")
+            profile_dir = os.path.join(tmp_dir, "profile")
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(patched_html)
+            file_uri = "file:///" + html_path.replace("\\", "/")
+            proc = subprocess.run(
+                [
+                    edge_exe,
+                    "--headless",
+                    "--disable-gpu",
+                    f"--user-data-dir={profile_dir}",
+                    "--virtual-time-budget=2500",
+                    "--dump-dom",
+                    file_uri,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+            self.assertEqual(proc.returncode, 0, f"Edge headless 执行失败: {proc.stderr}")
+            dom = proc.stdout
+            self.assertIn('id="__smoke_report"', dom)
+            self.assertIn('data-ready="1"', dom)
+            self.assertIn('data-has-dock="1"', dom)
+            self.assertIn('data-errors="0"', dom, f"无头 Edge 检测到前端运行时报错:\n{dom[-1200:]}")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

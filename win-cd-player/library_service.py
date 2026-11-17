@@ -9,6 +9,8 @@ Discflow 离线黑胶资料库与零损 CD-DA 抓轨归档系统：
 
 import base64
 import json
+import logging
+import logging.handlers
 import os
 import shutil
 import sys
@@ -235,6 +237,55 @@ def get_preferences_file_path() -> str:
     lib_dir = resolve_library_dir()
     parent_dir = os.path.dirname(lib_dir)
     return os.path.join(parent_dir, "preferences.json")
+
+
+_RUNTIME_LOG_LOCK = threading.Lock()
+_RUNTIME_LOG_CACHE: Dict[str, logging.Logger] = {}
+
+
+def get_runtime_log_path() -> str:
+    """获取轻量级本地运行诊断日志路径（与 preferences.json 同级，测试模式下自动隔离在沙盒目录）"""
+    pref_path = get_preferences_file_path()
+    return os.path.join(os.path.dirname(pref_path), "discflow.log")
+
+
+def log_runtime_event(category: str, message: str, level: str = "INFO") -> None:
+    """写入单行本地运行诊断日志（单文件上限 512KB 自动轮转，仅记录光驱/抓轨/更新等关键节点）"""
+    try:
+        log_path = get_runtime_log_path()
+        log_dir = os.path.dirname(log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        with _RUNTIME_LOG_LOCK:
+            logger = _RUNTIME_LOG_CACHE.get(log_path)
+            if logger is None:
+                logger = logging.getLogger(f"discflow.runtime.{abs(hash(log_path))}")
+                logger.setLevel(logging.INFO)
+                logger.propagate = False
+                for existing in list(logger.handlers):
+                    logger.removeHandler(existing)
+                    try:
+                        existing.close()
+                    except Exception:
+                        pass
+                handler = logging.handlers.RotatingFileHandler(
+                    log_path,
+                    maxBytes=512 * 1024,
+                    backupCount=1,
+                    encoding="utf-8",
+                )
+                handler.setFormatter(
+                    logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+                )
+                logger.addHandler(handler)
+                _RUNTIME_LOG_CACHE[log_path] = logger
+
+            lvl_name = str(level or "INFO").upper()
+            log_fn = getattr(logger, lvl_name.lower(), logger.info)
+            clean_msg = str(message or "").replace("\r", " ").replace("\n", " ").strip()
+            log_fn("[%s] %s", str(category or "APP"), clean_msg)
+    except Exception:
+        pass
 
 
 def load_user_preferences() -> dict:
@@ -800,12 +851,18 @@ class CdRipperTask:
 
         h_drive = WindowsCdDriveManager.open_drive_handle(self.toc.drive_letter, read_access=True)
         if h_drive is None:
+            log_runtime_event("RIP", f"无法以读取权限打开光驱 {self.toc.drive_letter}", level="ERROR")
             self._progress.is_ripping = False
             self._progress.error_message = f"无法以读取权限打开光驱 {self.toc.drive_letter}"
             self._progress.status_text = "抓轨失败：无法访问光驱硬件"
             if self.on_progress:
                 self.on_progress(self._progress)
             return
+
+        log_runtime_event(
+            "RIP",
+            f"开始抓轨 drive={self.toc.drive_letter} disc_id={self.toc.disc_id} album=《{self.album_title}》 tracks={len(audio_tracks)}",
+        )
 
         # 自适应批次读取（v1.11 提速 + 零拷贝/流式写入优化）：
         # 优先以 64 扇区（约 147KB）大批量传输，显著减少 DeviceIoControl 往返次数；
@@ -982,6 +1039,13 @@ class CdRipperTask:
 
                 self.library_mgr.list_albums(force_refresh=True)
                 rip_succeeded = True
+                total_rip_sec = max(0.05, time.perf_counter() - rip_start_ts)
+                avg_speed_x = (sectors_ripped_so_far / 75.0) / total_rip_sec
+                avg_mb_s = (sectors_ripped_so_far * CD_SECTOR_RAW_BYTES) / (1024.0 * 1024.0 * total_rip_sec)
+                log_runtime_event(
+                    "RIP",
+                    f"抓轨完成 album=《{self.album_title}》 tracks={len(saved_tracks)} batch={sectors_per_batch} elapsed={total_rip_sec:.1f}s speed={avg_speed_x:.1f}x ({avg_mb_s:.2f} MB/s)",
+                )
 
                 self._progress.is_ripping = False
                 self._progress.is_completed = True
@@ -990,6 +1054,7 @@ class CdRipperTask:
                 if self.on_progress:
                     self.on_progress(self._progress)
         except Exception as e:
+            log_runtime_event("RIP", f"抓轨异常 album=《{self.album_title}》 err={e}", level="ERROR")
             self._progress.is_ripping = False
             self._progress.error_message = str(e)
             self._progress.status_text = f"抓轨失败: {e}"
@@ -1004,6 +1069,7 @@ class CdRipperTask:
                 except Exception:
                     pass
             if self._cancelled:
+                log_runtime_event("RIP", f"抓轨已取消 album=《{self.album_title}》", level="WARNING")
                 self._progress.is_ripping = False
                 self._progress.status_text = "抓轨任务已取消"
                 if self.on_progress:

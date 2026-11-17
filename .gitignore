@@ -12,6 +12,8 @@ cover.jpg
 
 # ---------- 运行时生成 ----------
 preferences.json
+*.log
+discflow.log
 
 # ---------- 构建产物 ----------
 *.exe

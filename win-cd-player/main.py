@@ -40,6 +40,7 @@ from library_service import (
     RippingProgress,
     is_under_test_runner,
     load_user_preferences,
+    log_runtime_event,
     save_user_preferences,
 )
 from metadata_service import (
@@ -827,10 +828,12 @@ class DiscflowController:
                     "publishedAt": str(data.get("published_at") or ""),
                 })
                 self._update_info = res
+                log_runtime_event("UPDATE", f"API 检查成功 latest={tag or APP_VERSION} hasUpdate={has_upd}")
                 if has_upd:
                     self._bump_meta()
                 return dict(res)
 
+            log_runtime_event("UPDATE", f"GitHub API 返回 HTTP {r.status_code}，尝试网页重定向兜底", level="WARNING")
             # GitHub REST API 遭遇 403/429 限流时，自动回退网页端 releases/latest 重定向探测（无 API 配额限制）
             web_r = requests.get(
                 f"{GITHUB_RELEASES_PAGE}/latest",
@@ -843,6 +846,7 @@ class DiscflowController:
                 raw_tag = final_url.rstrip("/").rsplit("/", 1)[-1].strip()
                 tag = raw_tag.lstrip("vV").strip()
                 has_upd = bool(tag and self._parse_version_tuple(tag) > self._parse_version_tuple(APP_VERSION))
+                log_runtime_event("UPDATE", f"网页兜底检查成功 latest={tag or APP_VERSION} hasUpdate={has_upd}")
                 download_url = f"https://github.com/JiAng10es/Discflow/releases/download/{raw_tag}/Discflow.exe"
                 asset_size = 0
                 if has_upd:
@@ -987,6 +991,7 @@ class DiscflowController:
         staged_path = os.path.join(target_dir, "Discflow.exe.update.exe")
 
         try:
+            log_runtime_event("UPDATE", f"开始下载更新 v{expected_version} url={download_url}")
             with requests.get(
                 download_url,
                 stream=True,
@@ -1028,8 +1033,10 @@ class DiscflowController:
                 raise RuntimeError("下载的更新包格式校验失败（非有效 Windows 可执行文件）")
 
             os.replace(tmp_path, staged_path)
+            log_runtime_event("UPDATE", f"更新包校验通过并已暂存 size={downloaded} target={target_exe}")
             self._apply_staged_update_and_restart(staged_path, target_exe)
         except InterruptedError:
+            log_runtime_event("UPDATE", f"更新下载被取消 v{expected_version}", level="WARNING")
             try:
                 if os.path.isfile(tmp_path):
                     os.remove(tmp_path)
@@ -1037,6 +1044,7 @@ class DiscflowController:
                 pass
             self._set_update_download_state(status="cancelled", statusText="下载已取消", error="")
         except Exception as e:
+            log_runtime_event("UPDATE", f"更新下载失败 v{expected_version} err={e}", level="ERROR")
             try:
                 if os.path.isfile(tmp_path):
                     os.remove(tmp_path)
@@ -2406,6 +2414,7 @@ class DiscflowController:
                 return
 
             if not toc or not toc.tracks:
+                log_runtime_event("DRIVE", f"光驱 {drive_letter} 未检测到有效音频 TOC")
                 if WindowsCdDriveManager.is_disc_ready(drive_letter):
                     self._non_audio_drives.add(drive_letter)
                 with self._lock:
