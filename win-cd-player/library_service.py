@@ -762,13 +762,26 @@ class CdRipperTask:
         return self._progress
 
     def run(self):
+        audio_tracks = [
+            t for t in (self.toc.tracks or [])
+            if not getattr(t, "is_data_track", False) and (t.end_lba > t.start_lba)
+        ]
         self._progress.is_ripping = True
-        self._progress.total_tracks = len(self.toc.tracks)
+        self._progress.total_tracks = len(audio_tracks)
         self._progress.status_text = "正在初始化无损抓轨引擎..."
         if self.on_progress:
             self.on_progress(self._progress)
 
+        if not audio_tracks:
+            self._progress.is_ripping = False
+            self._progress.error_message = "当前光盘没有可抓取的音频音轨"
+            self._progress.status_text = "抓轨失败：未检测到音频音轨"
+            if self.on_progress:
+                self.on_progress(self._progress)
+            return
+
         target_dir = self.library_mgr.get_album_dir(self.toc.disc_id)
+        had_album_json = os.path.isfile(os.path.join(target_dir, "album.json"))
         os.makedirs(target_dir, exist_ok=True)
 
         # 保存高清封面图
@@ -794,31 +807,39 @@ class CdRipperTask:
                 self.on_progress(self._progress)
             return
 
-        # 自适应批次读取（v1.11 提速）：
+        # 自适应批次读取（v1.11 提速 + 零拷贝/流式写入优化）：
         # 优先以 64 扇区（约 147KB）大批量传输，显著减少 DeviceIoControl 往返次数；
-        # 若光驱/驱动拒绝大批量，自动逐级降档 48 → 32 → 27 → 16 扇区（16 扇区 = 37,632 字节，严守 64KB USB 安全线）；
-        # 最小批量仍失败时才降级为单扇区容错重读。
+        # 若光驱/驱动在首次探测时拒绝大批量，自动逐级降档 48 → 32 → 27 → 16（以及 12 → 8 兼容 32KB 上限 USB 桥接器）；
+        # 若某一批已稳定成功过，后续偶发单点划痕只针对该批单扇区兜底，不永久降速整张专辑。
         BATCH_CANDIDATES = (64, 48, 32, 27, 16)
+        SUB_BATCH_CANDIDATES = (12, 8)
         sectors_per_batch = BATCH_CANDIDATES[0]
         raw_buffer = ctypes.create_string_buffer(CD_SECTOR_RAW_BYTES * BATCH_CANDIDATES[0])
+        raw_mv = memoryview(raw_buffer)
+        single_buf = ctypes.create_string_buffer(CD_SECTOR_RAW_BYTES)
+        single_mv = memoryview(single_buf)
         bytes_returned = wintypes.DWORD(0)
+        single_ret = wintypes.DWORD(0)
         raw_info = RAW_READ_INFO()
+        single_info = RAW_READ_INFO()
         PROGRESS_MIN_INTERVAL = 0.12  # 进度回调节流间隔（秒），避免每批次跨线程唤醒 UI
 
         saved_tracks: List[LocalTrackInfo] = []
-        total_audio_sectors = sum(t.end_lba - t.start_lba for t in self.toc.tracks if not t.is_data_track)
+        total_audio_sectors = sum(t.end_lba - t.start_lba for t in audio_tracks)
         sectors_ripped_so_far = 0
         consecutive_hardware_errors = 0
+        batch_succeeded_once = False
+        rip_succeeded = False
 
         try:
-            for idx, trk in enumerate(self.toc.tracks):
+            for idx, trk in enumerate(audio_tracks):
                 if self._cancelled:
                     self._progress.status_text = "抓轨任务已由用户取消"
                     break
 
                 self._progress.current_track_index = idx + 1
                 self._progress.track_title = trk.title or f"Track {trk.track_number:02d}"
-                self._progress.status_text = f"正在抓取 ({idx + 1}/{len(self.toc.tracks)}): {self._progress.track_title}"
+                self._progress.status_text = f"正在抓取 ({idx + 1}/{len(audio_tracks)}): {self._progress.track_title}"
                 if self.on_progress:
                     self.on_progress(self._progress)
 
@@ -829,88 +850,99 @@ class CdRipperTask:
                 end_lba = trk.end_lba
                 track_total_sectors = max(1, end_lba - cur_lba)
 
-                with wave.open(wav_path, "wb") as wf:
-                    wf.setnchannels(2)
-                    wf.setsampwidth(2)
-                    wf.setframerate(44100)
+                with open(wav_path, "wb", buffering=1024 * 1024) as f_wav:
+                    with wave.open(f_wav, "wb") as wf:
+                        wf.setnchannels(2)
+                        wf.setsampwidth(2)
+                        wf.setframerate(44100)
 
-                    last_progress_ts = 0.0
-                    while cur_lba < end_lba:
-                        if self._cancelled:
-                            break
+                        last_progress_ts = 0.0
+                        while cur_lba < end_lba:
+                            if self._cancelled:
+                                break
 
-                        batch_count = min(sectors_per_batch, end_lba - cur_lba)
-                        required_bytes = batch_count * CD_SECTOR_RAW_BYTES
+                            batch_count = min(sectors_per_batch, end_lba - cur_lba)
+                            required_bytes = batch_count * CD_SECTOR_RAW_BYTES
 
-                        raw_info.DiskOffset = cur_lba * 2048
-                        raw_info.SectorCount = batch_count
-                        raw_info.TrackMode = CDDA_TRACK_MODE
+                            raw_info.DiskOffset = cur_lba * 2048
+                            raw_info.SectorCount = batch_count
+                            raw_info.TrackMode = CDDA_TRACK_MODE
 
-                        ok = kernel32.DeviceIoControl(
-                            h_drive,
-                            IOCTL_CDROM_RAW_READ,
-                            ctypes.byref(raw_info),
-                            ctypes.sizeof(raw_info),
-                            raw_buffer,
-                            required_bytes,
-                            ctypes.byref(bytes_returned),
-                            None,
-                        )
+                            ok = kernel32.DeviceIoControl(
+                                h_drive,
+                                IOCTL_CDROM_RAW_READ,
+                                ctypes.byref(raw_info),
+                                ctypes.sizeof(raw_info),
+                                raw_buffer,
+                                required_bytes,
+                                ctypes.byref(bytes_returned),
+                                None,
+                            )
 
-                        if ok and bytes_returned.value >= required_bytes:
-                            consecutive_hardware_errors = 0
-                            pcm_data = raw_buffer.raw[: required_bytes]
-                        else:
-                            # 大批量被光驱固件/驱动拒绝时，自动降档并在同一 LBA 重试（仅整批失败才降档）
-                            lower_candidates = [c for c in BATCH_CANDIDATES if c < sectors_per_batch]
-                            if lower_candidates and batch_count >= sectors_per_batch:
-                                sectors_per_batch = lower_candidates[0]
-                                continue
+                            if ok and bytes_returned.value >= required_bytes:
+                                batch_succeeded_once = True
+                                consecutive_hardware_errors = 0
+                                wf.writeframesraw(raw_mv[:required_bytes])
+                            else:
+                                # 仅在驱动尚未成功过时永久降档探测硬件单次传输上限；
+                                # 若已稳定跑通当前档位，则视为局部划痕，仅对当前批单扇区重读而不降速整碟
+                                if not batch_succeeded_once and batch_count >= sectors_per_batch:
+                                    lower_candidates = [c for c in BATCH_CANDIDATES if c < sectors_per_batch]
+                                    if lower_candidates:
+                                        sectors_per_batch = lower_candidates[0]
+                                        continue
+                                    sub_lower = [c for c in SUB_BATCH_CANDIDATES if c < sectors_per_batch]
+                                    if sub_lower:
+                                        sectors_per_batch = sub_lower[0]
+                                        continue
 
-                            # 已降到最小批量仍失败时，降级为单扇区逐一读取尝试，兼容老旧光盘或深痕介质
-                            single_buf = ctypes.create_string_buffer(CD_SECTOR_RAW_BYTES)
-                            single_ret = wintypes.DWORD(0)
-                            fallback_pcm = bytearray()
-                            for sub_lba in range(cur_lba, cur_lba + batch_count):
-                                single_info = RAW_READ_INFO()
-                                single_info.DiskOffset = sub_lba * 2048
-                                single_info.SectorCount = 1
-                                single_info.TrackMode = CDDA_TRACK_MODE
-                                single_ok = kernel32.DeviceIoControl(
-                                    h_drive,
-                                    IOCTL_CDROM_RAW_READ,
-                                    ctypes.byref(single_info),
-                                    ctypes.sizeof(single_info),
-                                    single_buf,
-                                    CD_SECTOR_RAW_BYTES,
-                                    ctypes.byref(single_ret),
-                                    None,
-                                )
-                                if single_ok and single_ret.value >= CD_SECTOR_RAW_BYTES:
-                                    consecutive_hardware_errors = 0
-                                    fallback_pcm.extend(single_buf.raw[:CD_SECTOR_RAW_BYTES])
-                                else:
-                                    consecutive_hardware_errors += 1
-                                    if consecutive_hardware_errors >= 80:
-                                        raise RuntimeError(f"光驱扇区持续读取失败 (错误码 {kernel32.GetLastError()})，请检查光驱或光盘")
-                                    fallback_pcm.extend(b"\x00" * CD_SECTOR_RAW_BYTES)
-                            pcm_data = bytes(fallback_pcm)
+                                # 降级为单扇区逐一读取尝试，兼容老旧光盘或局部划痕介质
+                                fallback_pcm = bytearray()
+                                for sub_lba in range(cur_lba, cur_lba + batch_count):
+                                    if self._cancelled:
+                                        break
+                                    single_info.DiskOffset = sub_lba * 2048
+                                    single_info.SectorCount = 1
+                                    single_info.TrackMode = CDDA_TRACK_MODE
+                                    single_ok = kernel32.DeviceIoControl(
+                                        h_drive,
+                                        IOCTL_CDROM_RAW_READ,
+                                        ctypes.byref(single_info),
+                                        ctypes.sizeof(single_info),
+                                        single_buf,
+                                        CD_SECTOR_RAW_BYTES,
+                                        ctypes.byref(single_ret),
+                                        None,
+                                    )
+                                    if single_ok and single_ret.value >= CD_SECTOR_RAW_BYTES:
+                                        consecutive_hardware_errors = 0
+                                        fallback_pcm.extend(single_mv)
+                                    else:
+                                        consecutive_hardware_errors += 1
+                                        if consecutive_hardware_errors >= 80:
+                                            raise RuntimeError(f"光驱扇区持续读取失败 (错误码 {kernel32.GetLastError()})，请检查光驱或光盘")
+                                        fallback_pcm.extend(b"\x00" * CD_SECTOR_RAW_BYTES)
+                                if self._cancelled:
+                                    break
+                                wf.writeframesraw(fallback_pcm)
 
-                        wf.writeframes(pcm_data)
-                        cur_lba += batch_count
-                        sectors_ripped_so_far += batch_count
+                            cur_lba += batch_count
+                            sectors_ripped_so_far += batch_count
 
-                        track_pct = round(((cur_lba - trk.start_lba) / track_total_sectors) * 100, 1)
-                        overall_pct = round((sectors_ripped_so_far / max(1, total_audio_sectors)) * 100, 1)
-                        self._progress.track_progress_pct = min(100.0, track_pct)
-                        self._progress.overall_progress_pct = min(100.0, overall_pct)
-                        # 进度回调节流：最多每 120ms 唤醒一次 UI，避免大批量传输时被跨线程刷新拖慢
-                        now_ts = time.time()
-                        if self.on_progress and (
-                            now_ts - last_progress_ts >= PROGRESS_MIN_INTERVAL or cur_lba >= end_lba
-                        ):
-                            last_progress_ts = now_ts
-                            self.on_progress(self._progress)
+                            track_pct = round(((cur_lba - trk.start_lba) / track_total_sectors) * 100, 1)
+                            overall_pct = round((sectors_ripped_so_far / max(1, total_audio_sectors)) * 100, 1)
+                            self._progress.track_progress_pct = min(100.0, track_pct)
+                            self._progress.overall_progress_pct = min(100.0, overall_pct)
+                            # 进度回调节流：最多每 120ms 唤醒一次 UI，避免大批量传输时被跨线程刷新拖慢
+                            now_ts = time.time()
+                            if self.on_progress and (
+                                now_ts - last_progress_ts >= PROGRESS_MIN_INTERVAL or cur_lba >= end_lba
+                            ):
+                                last_progress_ts = now_ts
+                                self.on_progress(self._progress)
+
+                if self._cancelled:
+                    break
 
                 lyrics_data = self.lyrics_cache.get(trk.track_number, [])
                 saved_tracks.append(
@@ -941,6 +973,7 @@ class CdRipperTask:
                     json.dump(meta_payload, f_meta, ensure_ascii=False, indent=2)
 
                 self.library_mgr.list_albums(force_refresh=True)
+                rip_succeeded = True
 
                 self._progress.is_ripping = False
                 self._progress.is_completed = True
@@ -956,6 +989,12 @@ class CdRipperTask:
                 self.on_progress(self._progress)
         finally:
             kernel32.CloseHandle(h_drive)
+            if not rip_succeeded and not had_album_json:
+                # 抓轨取消或失败时清理本次新建的半成品目录，避免资料库残留残缺 WAV
+                try:
+                    shutil.rmtree(target_dir, ignore_errors=True)
+                except Exception:
+                    pass
             if self._cancelled:
                 self._progress.is_ripping = False
                 self._progress.status_text = "抓轨任务已取消"

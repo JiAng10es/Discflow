@@ -831,5 +831,112 @@ if (items[1].querySelectorAll('.lyric-word').length === 0) {
         self.assertEqual(ctrl.lyrics_cache[2][0]["text"], "重刷 0", "force_refresh=True 应能强制重刷已锁定音轨")
 
 
+class TestCdRippingSpeedAndReliability(unittest.TestCase):
+    """验证抓轨数据轨跳过、零拷贝流式 WAV 写入、局部划痕不永久降速与播放器句柄空闲等待。"""
+
+    def test_wait_reader_idle_returns_true_when_idle(self):
+        player = cd_engine.CddaWaveOutPlayer()
+        self.assertTrue(player.wait_reader_idle(timeout=0.1))
+
+    def test_ripper_skips_data_track_and_recovers_scratch_without_crippling_batch(self):
+        import ctypes
+        import wave
+        from types import SimpleNamespace
+
+        tmp_dir = tempfile.mkdtemp(prefix="discflow_rip_test_")
+        try:
+            mgr = library_service.DiscflowLibraryManager(base_dir=tmp_dir)
+            # Track 1: 130 sectors (64 + 64 + 2), Track 2: data track (must be skipped!)
+            toc = SimpleNamespace(
+                disc_id="rip_probe_disc",
+                drive_letter="G:",
+                tracks=[
+                    SimpleNamespace(
+                        track_number=1, title="Track One", artist="Artist",
+                        duration_sec=1.73, start_lba=0, end_lba=130, is_data_track=False,
+                    ),
+                    SimpleNamespace(
+                        track_number=2, title="Data Track", artist="Artist",
+                        duration_sec=10.0, start_lba=130, end_lba=500, is_data_track=True,
+                    ),
+                ],
+            )
+            task = library_service.CdRipperTask(
+                toc=toc,
+                album_title="Rip Album",
+                artist="Artist",
+                year="2026",
+                cover_data_url="",
+                lyrics_cache={},
+                library_mgr=mgr,
+            )
+
+            sector_counts_seen = []
+
+            def fake_ioctl(h, code, in_ptr, in_sz, out_buf, out_sz, ret_ptr, overlapped):
+                raw_info = ctypes.cast(in_ptr, ctypes.POINTER(cd_engine.RAW_READ_INFO)).contents
+                lba = int(raw_info.DiskOffset // 2048)
+                cnt = int(raw_info.SectorCount)
+                sector_counts_seen.append((lba, cnt))
+                # 模拟第 2 批 (lba=64, cnt=64) 遇到 1 处局部划痕整批失败，但单扇区读时仅 lba=65 坏道，后续批恢复 64 扇区
+                if cnt == 64 and lba == 64:
+                    return 0
+                if cnt == 1 and lba == 65:
+                    return 0
+                ret_val = ctypes.cast(ret_ptr, ctypes.POINTER(ctypes.c_ulong))
+                ret_val.contents.value = out_sz
+                ctypes.memset(out_buf, 0x2A, out_sz)
+                return 1
+
+            with patch.object(library_service.WindowsCdDriveManager, "open_drive_handle", return_value=12345), \
+                 patch.object(library_service.kernel32, "DeviceIoControl", side_effect=fake_ioctl), \
+                 patch.object(library_service.kernel32, "CloseHandle", return_value=1):
+                task.run()
+
+            prog = task.get_progress()
+            self.assertTrue(prog.is_completed, f"抓轨应成功完成（跳过数据轨），实际：{prog}")
+            self.assertEqual(prog.total_tracks, 1)
+
+            wav_path = os.path.join(tmp_dir, "rip_probe_disc", "track_01.wav")
+            self.assertTrue(os.path.isfile(wav_path))
+            with wave.open(wav_path, "rb") as wf:
+                # 130 sectors * 2352 bytes / 4 bytes per stereo 16-bit frame = 76440 frames
+                self.assertEqual(wf.getnframes(), 130 * 2352 // 4)
+            # 首个 64 扇区成功后，局部划痕不应导致永久降档到 48/32/16
+            self.assertNotIn(48, [c for _, c in sector_counts_seen])
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_ripper_cleans_up_partial_dir_on_cancel(self):
+        from types import SimpleNamespace
+
+        tmp_dir = tempfile.mkdtemp(prefix="discflow_rip_cancel_")
+        try:
+            mgr = library_service.DiscflowLibraryManager(base_dir=tmp_dir)
+            toc = SimpleNamespace(
+                disc_id="rip_cancel_disc",
+                drive_letter="G:",
+                tracks=[
+                    SimpleNamespace(
+                        track_number=1, title="Track One", artist="Artist",
+                        duration_sec=1.0, start_lba=0, end_lba=64, is_data_track=False,
+                    ),
+                ],
+            )
+            task = library_service.CdRipperTask(
+                toc=toc, album_title="Cancel Album", artist="Artist", year="2026",
+                cover_data_url="", lyrics_cache={}, library_mgr=mgr,
+            )
+            task.cancel()
+
+            with patch.object(library_service.WindowsCdDriveManager, "open_drive_handle", return_value=12345), \
+                 patch.object(library_service.kernel32, "CloseHandle", return_value=1):
+                task.run()
+
+            self.assertFalse(os.path.exists(os.path.join(tmp_dir, "rip_cancel_disc")), "取消抓轨应清理半成品目录")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

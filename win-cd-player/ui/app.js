@@ -1467,13 +1467,19 @@ function toggleDiscflowMenu(event) {
 
   // ================= 资料库与抓轨服务 =================
   let ripPollTimer = null;
+  let ripFinishedOk = false;
 
   async function startRippingCurrentCd() {
     if (!appState.discId || !appState.tracks || appState.tracks.length === 0) {
       alertToast("请先放入实体音频 CD 识别完成后再抓轨");
       return;
     }
+    if (appState.isLocal) {
+      alertToast("当前已是本地资料库专辑，无需重复抓轨");
+      return;
+    }
 
+    ripFinishedOk = false;
     document.getElementById("ripAlbumTitle").textContent = appState.albumTitle || "音频 CD";
     document.getElementById("ripArtist").textContent = appState.artist || "未知歌手";
     document.getElementById("ripCoverImg").src = appState.coverDataUrl || "";
@@ -1483,8 +1489,10 @@ function toggleDiscflowMenu(event) {
     document.getElementById("ripTrackPctText").textContent = "0%";
     document.getElementById("ripStatusText").textContent = "正在启动抓轨引擎...";
     document.getElementById("ripTrackTitle").textContent = "准备读取第一首音轨...";
-    document.getElementById("ripDoneBtn").style.display = "none";
-    document.getElementById("ripCancelBtn").style.display = "inline-flex";
+    const doneBtn = document.getElementById("ripDoneBtn");
+    const cancelBtn = document.getElementById("ripCancelBtn");
+    if (doneBtn) { doneBtn.style.display = "none"; doneBtn.textContent = "前往资料库"; }
+    if (cancelBtn) { cancelBtn.style.display = "inline-flex"; }
 
     openModal("ripModal");
 
@@ -1492,6 +1500,8 @@ function toggleDiscflowMenu(event) {
       const res = await window.pywebview.api.start_ripping();
       if (!res || !res.success) {
         document.getElementById("ripStatusText").textContent = res ? res.message : "抓轨启动失败";
+        if (cancelBtn) cancelBtn.style.display = "none";
+        if (doneBtn) { doneBtn.textContent = "关闭"; doneBtn.style.display = "inline-flex"; }
         return;
       }
     }
@@ -1513,15 +1523,21 @@ function toggleDiscflowMenu(event) {
       document.getElementById("ripStatusText").textContent = p.status_text || "";
       document.getElementById("ripTrackTitle").textContent = p.track_title ? `正在转录: ${p.track_title}` : "";
 
+      const doneBtn = document.getElementById("ripDoneBtn");
+      const cancelBtn = document.getElementById("ripCancelBtn");
       if (p.is_completed) {
+        ripFinishedOk = true;
         clearInterval(ripPollTimer);
         ripPollTimer = null;
-        document.getElementById("ripDoneBtn").style.display = "inline-flex";
-        document.getElementById("ripCancelBtn").style.display = "none";
+        if (doneBtn) { doneBtn.textContent = "前往资料库"; doneBtn.style.display = "inline-flex"; }
+        if (cancelBtn) cancelBtn.style.display = "none";
       } else if (!p.is_ripping && p.error_message) {
+        ripFinishedOk = false;
         clearInterval(ripPollTimer);
         ripPollTimer = null;
         document.getElementById("ripStatusText").textContent = `错误: ${p.error_message}`;
+        if (cancelBtn) cancelBtn.style.display = "none";
+        if (doneBtn) { doneBtn.textContent = "关闭"; doneBtn.style.display = "inline-flex"; }
       }
     } catch (e) {
       console.warn("pollRippingProgress error:", e);
@@ -1541,8 +1557,10 @@ function toggleDiscflowMenu(event) {
 
   function finishRippingAndShowLibrary() {
     closeModal("ripModal");
-    switchMainView("library");
-    renderLibraryCards();
+    if (ripFinishedOk) {
+      switchMainView("library");
+      renderLibraryCards();
+    }
   }
 
   // ================= 谜底黑胶 (MD Vinyl) 资料库交互 =================

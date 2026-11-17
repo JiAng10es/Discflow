@@ -611,8 +611,10 @@ class CddaWaveOutPlayer:
         self._next_track: Optional[CdTrackInfo] = None
         self._next_track_index: int = -1
 
-        # 复用音频输出句柄
+        # 复用音频输出句柄与读线程空闲信号
         self._h_wave: Optional[wintypes.HANDLE] = None
+        self._reader_idle_event = threading.Event()
+        self._reader_idle_event.set()
 
         self.on_position = on_position
         self.on_finished = on_finished
@@ -721,6 +723,10 @@ class CddaWaveOutPlayer:
                 except Exception:
                     pass
 
+    def wait_reader_idle(self, timeout: float = 2.0) -> bool:
+        """等待后台读盘线程彻底退出并关闭光驱句柄，避免抓轨时与播放预读争抢硬件。"""
+        return self._reader_idle_event.wait(timeout=max(0.0, float(timeout)))
+
     def close(self):
         """彻底关闭并释放 waveOut 硬件句柄"""
         self.stop()
@@ -747,6 +753,7 @@ class CddaWaveOutPlayer:
         initial_index: int,
     ):
         """内存预读线程 (RAM Read-Ahead Worker)：后台连续读取扇区，支持无缝复用句柄平滑跨轨"""
+        self._reader_idle_event.clear()
         cur_drv = initial_drive
         cur_trk = initial_track
         cur_idx = initial_index
@@ -963,6 +970,7 @@ class CddaWaveOutPlayer:
                     wf_reader.close()
                 except Exception:
                     pass
+            self._reader_idle_event.set()
 
     def _run_loop(
         self,

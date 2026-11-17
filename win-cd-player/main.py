@@ -1418,8 +1418,12 @@ class DiscflowController:
             if self.ripper_task and self.ripper_task.get_progress().is_ripping:
                 return {"success": False, "message": "当前已有抓轨任务正在进行中"}
 
-            # 抓轨前安全停播，彻底释放硬件激光头寻道与独占锁定
+            # 抓轨前安全停播并等待读线程关闭光驱句柄，彻底避免双线程争抢激光头导致降速或 I/O 报错
             self.player.stop()
+            try:
+                self.player.wait_reader_idle(timeout=1.5)
+            except Exception:
+                pass
 
             task = CdRipperTask(
                 toc=self.current_toc,
