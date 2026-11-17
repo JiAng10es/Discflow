@@ -48,9 +48,7 @@ def is_under_test_runner() -> bool:
         if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
             return True
         if "unittest" in sys.modules:
-            argv_probe = " ".join(sys.argv[:3]).lower()
-            if "unittest" in argv_probe or "discover" in argv_probe:
-                return True
+            return True
     except Exception:
         pass
     return False
