@@ -830,6 +830,7 @@ class CdRipperTask:
         consecutive_hardware_errors = 0
         batch_succeeded_once = False
         rip_succeeded = False
+        rip_start_ts = time.perf_counter()
 
         try:
             for idx, trk in enumerate(audio_tracks):
@@ -935,6 +936,13 @@ class CdRipperTask:
                             self._progress.overall_progress_pct = min(100.0, overall_pct)
                             # 进度回调节流：最多每 120ms 唤醒一次 UI，避免大批量传输时被跨线程刷新拖慢
                             now_ts = time.time()
+                            elapsed_rip = max(0.05, time.perf_counter() - rip_start_ts)
+                            speed_x = (sectors_ripped_so_far / 75.0) / elapsed_rip
+                            mb_s = (sectors_ripped_so_far * CD_SECTOR_RAW_BYTES) / (1024.0 * 1024.0 * elapsed_rip)
+                            self._progress.status_text = (
+                                f"正在抓取 ({idx + 1}/{len(audio_tracks)}) · "
+                                f"{speed_x:.1f}x ({mb_s:.2f} MB/s) · 批{sectors_per_batch}扇区"
+                            )
                             if self.on_progress and (
                                 now_ts - last_progress_ts >= PROGRESS_MIN_INTERVAL or cur_lba >= end_lba
                             ):

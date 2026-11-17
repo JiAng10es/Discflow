@@ -1165,11 +1165,26 @@ class DiscflowController:
         threading.Thread(target=self._ui_push_worker, daemon=True).start()
         threading.Thread(target=self._auto_check_updates_bg, daemon=True).start()
 
+    def _is_ripping(self) -> bool:
+        task = getattr(self, "ripper_task", None)
+        if not task:
+            return False
+        try:
+            return bool(task.get_progress().is_ripping)
+        except Exception:
+            return False
+
     def select_drive(self, drive_letter: str):
+        if self._is_ripping():
+            return
         if drive_letter:
             threading.Thread(target=self._load_drive_async, args=(drive_letter,), daemon=True).start()
 
     def rescan_drive(self):
+        if self._is_ripping():
+            self.status_text = "正在抓轨中，请等待完成或取消后再重新读盘"
+            self._bump_meta()
+            return
         phys = self._refresh_cached_drives()
         self._non_audio_drives.clear()
         target = ""
@@ -1195,6 +1210,10 @@ class DiscflowController:
         threading.Thread(target=self._load_drive_async, args=(target,), daemon=True).start()
 
     def eject_drive(self):
+        if self._is_ripping():
+            self.status_text = "正在抓轨中，请先取消抓轨再弹出光盘"
+            self._bump_meta()
+            return
         drv = self.current_drive
         if not drv:
             return
@@ -1220,6 +1239,10 @@ class DiscflowController:
         threading.Thread(target=_eject_worker, args=(drv,), daemon=True).start()
 
     def toggle_play_pause(self):
+        if self._is_ripping():
+            self.status_text = "正在抓轨中，请等待抓轨完成或取消后再播放"
+            self._bump_meta()
+            return
         if not self.current_toc or not self.current_toc.tracks:
             return
         if not self.player.is_running():
@@ -1251,6 +1274,8 @@ class DiscflowController:
             self._start_track(int(index))
 
     def seek_to(self, seconds: float):
+        if self._is_ripping():
+            return
         target = max(0.0, float(seconds))
         self.elapsed_sec = target
         self.player.seek_seconds(target)
@@ -2207,6 +2232,9 @@ class DiscflowController:
                         continue
 
                 phys = self._refresh_cached_drives()
+                if self._is_ripping():
+                    self._watcher_miss_count.clear()
+                    continue
                 if not phys:
                     if self.current_toc and not getattr(self.current_toc, "is_local", False):
                         self._handle_disc_removed(self.current_drive)
@@ -2514,6 +2542,8 @@ class DiscflowController:
         self._bump_meta()
 
     def _start_track(self, index: int, autoplay: bool = True):
+        if self._is_ripping():
+            return
         if not self.current_toc or not (0 <= index < len(self.current_toc.tracks)):
             return
 

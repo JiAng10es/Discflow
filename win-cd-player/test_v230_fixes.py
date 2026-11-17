@@ -937,6 +937,34 @@ class TestCdRippingSpeedAndReliability(unittest.TestCase):
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    def test_playback_and_watcher_blocked_while_ripping(self):
+        from types import SimpleNamespace
+
+        ctrl = _make_controller()
+        ctrl.current_toc = SimpleNamespace(
+            disc_id="rip_lock_disc",
+            drive_letter="G:",
+            is_local=False,
+            tracks=[
+                SimpleNamespace(
+                    track_number=1, title="Track 1", artist="Artist",
+                    duration_sec=180.0, start_lba=0, end_lba=13500, is_data_track=False,
+                )
+            ],
+        )
+        ctrl.ripper_task = SimpleNamespace(
+            get_progress=lambda: library_service.RippingProgress(is_ripping=True)
+        )
+        self.assertTrue(ctrl._is_ripping())
+        with patch.object(ctrl.player, "load_and_play") as mock_play, \
+             patch.object(ctrl.player, "seek_seconds") as mock_seek:
+            ctrl.toggle_play_pause()
+            ctrl._start_track(0)
+            ctrl.seek_to(10.0)
+            mock_play.assert_not_called()
+            mock_seek.assert_not_called()
+            self.assertIn("抓轨", ctrl.status_text)
+
 
 if __name__ == "__main__":
     unittest.main()
