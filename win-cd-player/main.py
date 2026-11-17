@@ -62,7 +62,7 @@ from metadata_service import (
 )
 
 APP_NAME = "Discflow"
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.3.1"
 GITHUB_RELEASES_API = "https://api.github.com/repos/JiAng10es/Discflow/releases/latest"
 GITHUB_RELEASES_PAGE = "https://github.com/JiAng10es/Discflow/releases"
 
@@ -786,51 +786,93 @@ class DiscflowController:
                 headers={"Accept": "application/vnd.github+json", "User-Agent": f"{APP_NAME}/{APP_VERSION}"},
                 timeout=6,
             )
-            if r.status_code != 200:
-                res["error"] = f"HTTP {r.status_code}"
-                return res
-            data = r.json()
-            raw_tag = str(data.get("tag_name") or "").strip()
-            tag = raw_tag.lstrip("vV").strip()
-            has_upd = bool(tag and self._parse_version_tuple(tag) > self._parse_version_tuple(APP_VERSION))
+            if r.status_code == 200:
+                data = r.json()
+                raw_tag = str(data.get("tag_name") or "").strip()
+                tag = raw_tag.lstrip("vV").strip()
+                has_upd = bool(tag and self._parse_version_tuple(tag) > self._parse_version_tuple(APP_VERSION))
 
-            download_url = ""
-            asset_size = 0
-            fallback_url = ""
-            fallback_size = 0
-            for ast in (data.get("assets") or []):
-                if not isinstance(ast, dict):
-                    continue
-                aname = str(ast.get("name") or "").lower()
-                aurl = str(ast.get("browser_download_url") or "")
-                if aname.endswith(".exe") and aurl:
-                    if "discflow" in aname:
-                        download_url = aurl
-                        asset_size = int(ast.get("size") or 0)
-                        break
-                    if not fallback_url:
-                        fallback_url = aurl
-                        fallback_size = int(ast.get("size") or 0)
-            if not download_url:
-                download_url = fallback_url
-                asset_size = fallback_size
-            if not download_url and has_upd and raw_tag:
+                download_url = ""
+                asset_size = 0
+                fallback_url = ""
+                fallback_size = 0
+                for ast in (data.get("assets") or []):
+                    if not isinstance(ast, dict):
+                        continue
+                    aname = str(ast.get("name") or "").lower()
+                    aurl = str(ast.get("browser_download_url") or "")
+                    if aname.endswith(".exe") and aurl:
+                        if "discflow" in aname:
+                            download_url = aurl
+                            asset_size = int(ast.get("size") or 0)
+                            break
+                        if not fallback_url:
+                            fallback_url = aurl
+                            fallback_size = int(ast.get("size") or 0)
+                if not download_url:
+                    download_url = fallback_url
+                    asset_size = fallback_size
+                if not download_url and has_upd and raw_tag:
+                    download_url = f"https://github.com/JiAng10es/Discflow/releases/download/{raw_tag}/Discflow.exe"
+
+                res.update({
+                    "ok": True,
+                    "latestVersion": tag or APP_VERSION,
+                    "hasUpdate": has_upd,
+                    "ignored": bool(has_upd and tag == self._ignored_update_version),
+                    "releaseUrl": str(data.get("html_url") or GITHUB_RELEASES_PAGE),
+                    "downloadUrl": download_url,
+                    "assetSize": asset_size,
+                    "notes": str(data.get("body") or ""),
+                    "publishedAt": str(data.get("published_at") or ""),
+                })
+                self._update_info = res
+                if has_upd:
+                    self._bump_meta()
+                return dict(res)
+
+            # GitHub REST API 遭遇 403/429 限流时，自动回退网页端 releases/latest 重定向探测（无 API 配额限制）
+            web_r = requests.get(
+                f"{GITHUB_RELEASES_PAGE}/latest",
+                headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"},
+                allow_redirects=True,
+                timeout=6,
+            )
+            final_url = str(getattr(web_r, "url", "") or "")
+            if web_r.status_code == 200 and "/releases/tag/" in final_url:
+                raw_tag = final_url.rstrip("/").rsplit("/", 1)[-1].strip()
+                tag = raw_tag.lstrip("vV").strip()
+                has_upd = bool(tag and self._parse_version_tuple(tag) > self._parse_version_tuple(APP_VERSION))
                 download_url = f"https://github.com/JiAng10es/Discflow/releases/download/{raw_tag}/Discflow.exe"
+                asset_size = 0
+                if has_upd:
+                    try:
+                        hr = requests.head(
+                            download_url,
+                            headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"},
+                            allow_redirects=True,
+                            timeout=4,
+                        )
+                        if hr.status_code == 200:
+                            asset_size = int(hr.headers.get("Content-Length") or 0)
+                    except Exception:
+                        pass
+                res.update({
+                    "ok": True,
+                    "latestVersion": tag or APP_VERSION,
+                    "hasUpdate": has_upd,
+                    "ignored": bool(has_upd and tag == self._ignored_update_version),
+                    "releaseUrl": final_url,
+                    "downloadUrl": download_url if has_upd else "",
+                    "assetSize": asset_size,
+                })
+                self._update_info = res
+                if has_upd:
+                    self._bump_meta()
+                return dict(res)
 
-            res.update({
-                "ok": True,
-                "latestVersion": tag or APP_VERSION,
-                "hasUpdate": has_upd,
-                "ignored": bool(has_upd and tag == self._ignored_update_version),
-                "releaseUrl": str(data.get("html_url") or GITHUB_RELEASES_PAGE),
-                "downloadUrl": download_url,
-                "assetSize": asset_size,
-                "notes": str(data.get("body") or ""),
-                "publishedAt": str(data.get("published_at") or ""),
-            })
-            self._update_info = res
-            if has_upd:
-                self._bump_meta()
+            res["error"] = f"HTTP {r.status_code}"
+            return res
         except Exception as e:
             res["error"] = str(e)
         return dict(res)

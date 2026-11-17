@@ -965,6 +965,22 @@ class TestCdRippingSpeedAndReliability(unittest.TestCase):
             mock_seek.assert_not_called()
             self.assertIn("抓轨", ctrl.status_text)
 
+    def test_check_for_updates_falls_back_to_web_redirect_on_403(self):
+        ctrl = _make_controller()
+        api_resp = MagicMock(status_code=403)
+        web_resp = MagicMock(status_code=200, url="https://github.com/JiAng10es/Discflow/releases/tag/v9.9.9")
+        head_resp = MagicMock(status_code=200, headers={"Content-Length": "15260569"})
+
+        with patch("main.requests.get", side_effect=[api_resp, web_resp]), \
+             patch("main.requests.head", return_value=head_resp):
+            info = ctrl.check_for_updates(force=True)
+
+        self.assertTrue(info["ok"])
+        self.assertTrue(info["hasUpdate"])
+        self.assertEqual(info["latestVersion"], "9.9.9")
+        self.assertEqual(info["downloadUrl"], "https://github.com/JiAng10es/Discflow/releases/download/v9.9.9/Discflow.exe")
+        self.assertEqual(info["assetSize"], 15260569)
+
 
 if __name__ == "__main__":
     unittest.main()
