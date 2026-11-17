@@ -95,7 +95,8 @@ win-cd-player/
   - `test_boost_features.py`：Seek 代数防竞争、CD-TEXT 双字节解码、全局媒体键、会话恢复与偏移继承；
   - `test_dock_symmetry.py`：底栏三段式对称布局与窄屏适配；
   - `test_v111_features.py` / `test_v1112_clean_titles.py` / `test_portable_library_path.py`：逐字卡拉 OK 时钟、翻译开关、手动匹配、标题清洗与便携路径优先级。
-- **打包同步**：在 `win-cd-player/` 执行 `pyinstaller --noconfirm Discflow.spec`，并将 `dist\Discflow.exe` 同步至 `F:\Discflow1.0\Discflow.exe` 与 `E:\Discflow\Discflow.exe`。
+- **打包同步**：通过根目录 `scripts/build_and_sync.ps1` 一键串联语法检查、全量回归、PRD 记录校验、PyInstaller 打包与双盘 `SHA256` 同步（`F:\Discflow1.0\Discflow.exe` 与 `E:\Discflow\Discflow.exe`）。
+- **PRD 留痕规范**：每次功能迭代、Bug 修复或工程架构调整后，必须同步更新本 `PRD.md`（记录关键改动、影响范围与验证结论），再执行打包与本地 Git 提交。
 
 ---
 

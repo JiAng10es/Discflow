@@ -123,9 +123,16 @@ if (-not $SkipBuild) {
 }
 
 # 5. 本地 Git 留痕 & 可控发布
-Write-Step "5/5 Git 本地留痕与发布状态"
+Write-Step "5/5 PRD 记录检查、Git 本地留痕与发布状态"
 Push-Location $RepoRoot
 try {
+    $ChangedFiles = git status --porcelain
+    $TouchedAppCode = $ChangedFiles | Where-Object { $_ -match 'win-cd-player/' }
+    $TouchedPrd = $ChangedFiles | Where-Object { $_ -match 'PRD\.md$' }
+    if ($TouchedAppCode -and -not $TouchedPrd) {
+        Write-Warning "检测到 win-cd-player/ 有代码改动，但 PRD.md 尚未同步记录本轮重要变更！"
+    }
+
     if ($CommitMessage) {
         git add -A
         $StatusOut = git status --porcelain
