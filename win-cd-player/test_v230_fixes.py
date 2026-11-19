@@ -1449,6 +1449,98 @@ setTimeout(function () {
         self.assertIn("_sounddevice_data", spec)
         self.assertIn("mutagen.flac", spec)
 
+    def test_lyric_offset_dock_controls_and_ime_shortcuts(self):
+        base_dir = os.path.dirname(__file__)
+        with open(os.path.join(base_dir, "ui", "index.html"), "r", encoding="utf-8") as f:
+            html = f.read()
+        with open(os.path.join(base_dir, "ui", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+
+        self.assertIn('id="dockLyricOffsetWrap"', html)
+        self.assertIn('id="dockLyricOffsetBtn"', html)
+        self.assertIn('id="dockLyricOffsetVal"', html)
+        self.assertIn("_lyricOffsetGuardUntil", js)
+        self.assertIn('e.key === "【"', js)
+        self.assertIn('e.key === "】"', js)
+        self.assertIn('e.key === "、"', js)
+
+    def test_album_matching_trad_simp_duration_fit_and_cdtext_backfill(self):
+        import metadata_service
+
+        # 1. 繁简汉字归一化相似度
+        self.assertEqual(metadata_service._title_similarity("周杰倫 葉惠美", "周杰伦 叶惠美"), 1.0)
+
+        # 2. 逐轨时长吻合度打分将真正吻合压盘的专辑排在第一位
+        fake_cands = [
+            {
+                "source": "qq", "album_id": "live_ver", "title": "Test Album",
+                "artist": "Tester", "year": "2020", "track_count": 2, "cover_url": "",
+            },
+            {
+                "source": "itunes", "album_id": "studio_ver", "title": "Test Album",
+                "artist": "Tester", "year": "2020", "track_count": 2, "cover_url": "",
+            },
+        ]
+
+        def fake_fill(cand):
+            out = dict(cand)
+            if cand["album_id"] == "live_ver":
+                out["tracks"] = [
+                    {"track_number": 1, "title": "Song A (Live)", "duration_sec": 300.0},
+                    {"track_number": 2, "title": "Song B (Live)", "duration_sec": 320.0},
+                ]
+            else:
+                out["tracks"] = [
+                    {"track_number": 1, "title": "Song A", "duration_sec": 210.5},
+                    {"track_number": 2, "title": "Song B", "duration_sec": 241.0},
+                ]
+            out["_cleanliness"] = 1.0
+            out["_dirty_tracks"] = 0
+            return out
+
+        with patch.object(metadata_service, "_qq_album_search", return_value=[fake_cands[0]]), \
+             patch.object(metadata_service, "_itunes_album_search_lite", return_value=[fake_cands[1]]), \
+             patch.object(metadata_service, "_netease_album_search", return_value=[]), \
+             patch.object(metadata_service, "_fill_album_tracks", side_effect=fake_fill):
+            res = metadata_service.search_album_candidates(
+                "Test Album", "Tester", expected_track_count=2, expected_durations=[210.0, 240.0]
+            )
+        self.assertGreaterEqual(len(res), 2)
+        self.assertEqual(res[0]["album_id"], "studio_ver")
+        self.assertEqual(res[0]["durationMatchedCount"], 2)
+
+        # 3. CD-TEXT 有专辑名但曲目为占位 Track 01 时自动三源补全
+        toc = cd_engine.CdDiscToc(
+            drive_letter="D:",
+            first_track=1,
+            last_track=2,
+            leadout_frame=34000,
+            tracks=[
+                cd_engine.CdTrackInfo(track_number=1, start_lba=0, end_lba=15750, start_frame=150, duration_sec=210.0, title="Track 01"),
+                cd_engine.CdTrackInfo(track_number=2, start_lba=15750, end_lba=33750, start_frame=15900, duration_sec=240.0, title="Track 02"),
+            ],
+            disc_id="cdtext_backfill_disc",
+            freedb_id="12345678",
+            toc_query_string="1+2+34000+150+15900",
+            cdtext_album="Test Album",
+            cdtext_artist="Tester",
+        )
+        metadata_service._METADATA_CACHE.pop("cdtext_backfill_disc", None)
+        with patch.object(metadata_service.requests, "get", side_effect=RuntimeError("offline mb/gnudb")), \
+             patch.object(metadata_service, "search_album_candidates", return_value=[{
+                 "source": "itunes", "title": "Test Album", "artist": "Tester", "year": "2020",
+                 "cover_url": "", "garbled": False, "titleSimilarity": 1.0, "durationFitScore": 1.0,
+                 "tracks": [
+                     {"track_number": 1, "title": "Real Track 1", "duration_sec": 210.0},
+                     {"track_number": 2, "title": "Real Track 2", "duration_sec": 240.0},
+                 ],
+             }]), \
+             patch.object(metadata_service, "_fetch_cover_art_bytes", return_value=b""):
+            meta = metadata_service.lookup_album_metadata(toc)
+        self.assertEqual(meta.track_titles[1], "Real Track 1")
+        self.assertEqual(meta.track_titles[2], "Real Track 2")
+        self.assertIn("补全", meta.matched_source)
+
 
 if __name__ == "__main__":
     unittest.main()

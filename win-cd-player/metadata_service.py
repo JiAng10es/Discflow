@@ -600,6 +600,59 @@ def lookup_album_metadata(
     except Exception:
         pass
 
+    if result.album_title not in ("Audio CD", "CD-TEXT Album", ""):
+        # 自动识盘智能补全：若 CD-TEXT / GNUDb 只拿到了专辑名，但曲目仍为占位或存在乱码或缺封面，
+        # 自动结合音轨数量与逐轨时长在三源曲库中检索最吻合的非乱码候选进行补全。
+        audio_tracks = [t for t in toc.tracks if not getattr(t, "is_data_track", False)]
+        has_placeholder_or_garbled = any(
+            re.match(r"^Track\s*\d+$", result.track_titles.get(t.track_number, ""), re.I)
+            or _looks_garbled(result.track_titles.get(t.track_number, ""))
+            for t in audio_tracks
+        )
+        if audio_tracks and has_placeholder_or_garbled:
+            try:
+                audio_durations = [float(t.duration_sec or 0.0) for t in audio_tracks]
+                hint_artist = "" if result.artist in ("Audio CD", "未知艺术家") else result.artist
+                cands = search_album_candidates(
+                    result.album_title,
+                    hint_artist,
+                    expected_track_count=len(audio_tracks),
+                    detail_top=3,
+                    expected_durations=audio_durations,
+                )
+                best_cand = next(
+                    (
+                        c for c in cands
+                        if not c.get("garbled")
+                        and (c.get("tracks") or [])
+                        and (float(c.get("titleSimilarity") or 0) >= 0.55 or float(c.get("durationFitScore") or 0) >= 0.65)
+                    ),
+                    None,
+                )
+                if best_cand:
+                    cand_tracks = best_cand.get("tracks") or []
+                    mapping = match_tracks_by_duration(audio_durations, cand_tracks)
+                    for idx, ct in mapping.items():
+                        if 0 <= idx < len(audio_tracks):
+                            trk = audio_tracks[idx]
+                            ct_title = _sanitize_title(ct.get("title"))
+                            if ct_title and not _looks_garbled(ct_title):
+                                result.track_titles[trk.track_number] = ct_title
+                            if best_cand.get("artist"):
+                                result.track_artists[trk.track_number] = _sanitize_title(best_cand["artist"])
+                    if best_cand.get("artist") and result.artist in ("Audio CD", "未知艺术家", ""):
+                        result.artist = _sanitize_title(best_cand["artist"])
+                    if best_cand.get("year") and not result.year:
+                        result.year = str(best_cand["year"])[:4]
+                    src_tag = best_cand.get("source") or "曲库"
+                    result.matched_source = f"{result.matched_source} + {src_tag} 补全" if result.matched_source else f"{src_tag} 智能补全"
+                    if not result.cover_data_url and best_cand.get("cover_url"):
+                        cov = download_image_bytes(best_cand["cover_url"])
+                        if cov:
+                            result.cover_data_url = _bytes_to_data_url(cov)
+            except Exception:
+                pass
+
     if on_partial and result.album_title != "Audio CD":
         try:
             on_partial(result)
@@ -607,16 +660,44 @@ def lookup_album_metadata(
             pass
 
     if result.album_title != "Audio CD":
-        cover_bytes = _fetch_cover_art_bytes("", result.artist, result.album_title)
-        result.cover_data_url = _bytes_to_data_url(cover_bytes)
+        if not result.cover_data_url:
+            cover_bytes = _fetch_cover_art_bytes("", result.artist, result.album_title)
+            result.cover_data_url = _bytes_to_data_url(cover_bytes)
         _METADATA_CACHE[toc.disc_id] = result
 
     return result
 
 
+_TRAD_TO_SIMP_MAP = str.maketrans({
+    "傑": "杰", "倫": "伦", "華": "华", "國": "国", "語": "语", "樂": "乐", "愛": "爱",
+    "夢": "梦", "風": "风", "雲": "云", "聲": "声", "聽": "听", "輯": "辑", "選": "选",
+    "實": "实", "錄": "录", "響": "响", "動": "动", "畫": "画", "時": "时", "間": "间",
+    "裏": "里", "後": "后", "發": "发", "為": "为", "與": "与", "無": "无", "當": "当",
+    "過": "过", "來": "来", "開": "开", "關": "关", "點": "点", "線": "线", "邊": "边",
+    "飛": "飞", "龍": "龙", "鳳": "凤", "東": "东", "門": "门", "車": "车", "馬": "马",
+    "鳥": "鸟", "魚": "鱼", "見": "见", "貝": "贝", "頁": "页", "會": "会", "學": "学",
+    "體": "体", "書": "书", "寫": "写", "詩": "诗", "說": "说", "話": "话", "詞": "词",
+    "誰": "谁", "謝": "谢", "請": "请", "讓": "让", "變": "变", "紅": "红", "藍": "蓝",
+    "綠": "绿", "黃": "黄", "銀": "银", "鐵": "铁", "長": "长", "舊": "旧", "遠": "远",
+    "這": "这", "個": "个", "們": "们", "雙": "双", "單": "单", "萬": "万", "億": "亿",
+    "號": "号", "幾": "几", "歲": "岁", "經": "经", "紀": "纪", "終": "终", "結": "结",
+    "網": "网", "緣": "缘", "總": "总", "絕": "绝", "對": "对", "錯": "错", "難": "难",
+    "離": "离", "電": "电", "陽": "阳", "陰": "阴", "戀": "恋", "淚": "泪", "傷": "伤",
+    "靈": "灵", "葉": "叶", "樹": "树", "櫻": "樱", "澤": "泽", "濱": "滨", "齊": "齐",
+    "齋": "斋", "島": "岛", "廣": "广", "淺": "浅", "傳": "传", "記": "记", "憶": "忆",
+    "氣": "气", "體": "体", "號": "号", "歲": "岁", "歲": "岁", "夢": "梦", "願": "愿",
+    "獨": "独", "孤": "孤", "純": "纯", "粹": "粹", "精": "精", "彩": "彩", "專": "专",
+})
+
+
+def _to_simplified_for_match(text: str) -> str:
+    """轻量繁简/日文旧字体归一化（仅用于匹配打分，不影响界面展示原字）"""
+    return (text or "").translate(_TRAD_TO_SIMP_MAP)
+
+
 def _normalize_song_title(text: str) -> str:
-    """归一化歌名：去括号后缀（Original / Remastered / Live 等）、去标点、转小写"""
-    s = (text or "").lower()
+    """归一化歌名：繁简统一、去括号后缀（Original / Remastered / Live 等）、去标点、转小写"""
+    s = _to_simplified_for_match(text).lower()
     s = re.sub(r"[\(（\[【][^\)）\]】]*[\)）\]】]", " ", s)
     s = re.sub(r"[^\w\u4e00-\u9fff]+", " ", s)
     return " ".join(s.split())
@@ -1770,14 +1851,50 @@ def _backfill_empty_album_tracks(detailed: List[dict], expected_track_count: int
             )
 
 
+def _compute_duration_fit(expected_durations: List[float], candidate_tracks: List[dict]) -> dict:
+    """
+    评估候选专辑音轨列表与当前光盘逐轨时长的吻合度。
+    返回 {matched_count, expected_count, avg_diff_sec, fit_score}。
+    """
+    exp = [float(d or 0.0) for d in (expected_durations or []) if float(d or 0.0) > 0]
+    if not exp or not candidate_tracks:
+        return {"matched_count": 0, "expected_count": len(exp), "avg_diff_sec": 99.0, "fit_score": 0.0}
+
+    mapping = match_tracks_by_duration(exp, candidate_tracks)
+    matched = 0
+    total_diff = 0.0
+    valid_pairs = 0
+    for idx, dur in enumerate(exp):
+        ct = mapping.get(idx)
+        if not ct:
+            continue
+        cd = float(ct.get("duration_sec") or 0.0)
+        if cd <= 0:
+            continue
+        diff = abs(cd - dur)
+        total_diff += diff
+        valid_pairs += 1
+        if diff <= 5.0:
+            matched += 1
+    avg_diff = round(total_diff / valid_pairs, 2) if valid_pairs > 0 else 99.0
+    fit_score = round(matched / len(exp), 3) if exp else 0.0
+    return {
+        "matched_count": matched,
+        "expected_count": len(exp),
+        "avg_diff_sec": avg_diff,
+        "fit_score": fit_score,
+    }
+
+
 def search_album_candidates(
     album_title: str,
     artist: str = "",
     expected_track_count: int = 0,
     detail_top: int = 4,
+    expected_durations: Optional[List[float]] = None,
 ) -> List[dict]:
     """
-    三源并发检索专辑候选，按「专辑名相似度 + 艺术家相似度 + 曲目数差」排序，
+    三源并发检索专辑候选，按「专辑名相似度 + 艺术家相似度 + 曲目数差 + 逐轨时长吻合度 + 干净度」排序，
     并对前 detail_top 条补齐曲目表（含可用于直取歌词的 song_id）。
     """
     title_in = (album_title or "").strip()
@@ -1794,10 +1911,15 @@ def search_album_candidates(
     raw: List[dict] = []
 
     def _itunes_worker():
+        tasks = [(q, country) for country in ITUNES_COUNTRIES for q in queries]
         acc: List[dict] = []
-        for country in ITUNES_COUNTRIES:
-            for q in queries:
-                acc.extend(_itunes_album_search_lite(q, country))
+        with ThreadPoolExecutor(max_workers=min(6, max(1, len(tasks)))) as ipool:
+            futs = [ipool.submit(_itunes_album_search_lite, q, c) for q, c in tasks]
+            for f in futs:
+                try:
+                    acc.extend(f.result() or [])
+                except Exception:
+                    pass
         return acc
 
     def _qq_worker():
@@ -1855,27 +1977,45 @@ def search_album_candidates(
     else:
         detailed = []
 
-    # ---- 曲名干净度重排 ----
-    # 同一张专辑在曲库里常有多个副本（干净版 + 乱码版），专辑名/艺术家/曲目数完全一致，
-    # 只能靠曲名本身判定。脏度按比例罚分：全脏 +60，半脏 +30，干净不罚。
+    # ---- 曲名干净度 + 逐轨时长吻合度重排 ----
+    # 同一张专辑在曲库里常有多个副本（干净版 + 乱码版 + Live/精选版），
+    # 结合「曲名干净度」与「CD 各轨真实时长吻合度」重排，让真正的原盘稳定排在第一位。
     reranked: List[Tuple[float, dict]] = []
     for cand in detailed:
         base = float(cand.get("_score") or 0.0)
         clean = float(cand.get("_cleanliness", 1.0))
         penalty = (1.0 - clean) * 60.0
+        tracks_list = cand.get("tracks") or []
+        if not tracks_list:
+            penalty += 18.0
+        dur_fit = _compute_duration_fit(expected_durations or [], tracks_list) if expected_durations else {
+            "matched_count": 0, "expected_count": 0, "avg_diff_sec": 0.0, "fit_score": 0.0
+        }
+        if expected_durations and tracks_list:
+            fit_ratio = float(dur_fit["fit_score"])
+            if fit_ratio >= 0.7:
+                penalty -= 32.0 * fit_ratio
+            elif fit_ratio < 0.4:
+                penalty += 28.0 * (1.0 - fit_ratio)
         cand["_final_score"] = round(base + penalty, 1)
         cand["_garbled"] = int(cand.get("_dirty_tracks") or 0) > 0
+        cand["_dur_fit"] = dur_fit
         reranked.append((cand["_final_score"], cand))
     reranked.sort(key=lambda item: item[0])
 
     results = []
     for _, cand in reranked:
         out = {k: v for k, v in cand.items() if not k.startswith("_")}
+        dur_fit = cand.get("_dur_fit") or {}
         out["score"] = cand.get("_final_score", cand.get("_score", 0))
         out["titleSimilarity"] = cand.get("_title_sim", 0)
         out["cleanliness"] = round(float(cand.get("_cleanliness", 1.0)), 2)
         out["garbled"] = bool(cand.get("_garbled", False))
         out["dirtyTracks"] = int(cand.get("_dirty_tracks") or 0)
+        out["durationMatchedCount"] = int(dur_fit.get("matched_count") or 0)
+        out["durationExpectedCount"] = int(dur_fit.get("expected_count") or 0)
+        out["durationAvgDiffSec"] = float(dur_fit.get("avg_diff_sec") or 0.0)
+        out["durationFitScore"] = float(dur_fit.get("fit_score") or 0.0)
         results.append(out)
     return results
 

@@ -349,6 +349,9 @@
       const canDirect = ids > 0;
       const metaParts = [];
       metaParts.push(trackCount ? `<b>${trackCount}</b> 首` : "曲目数未知");
+      if (c.durationExpectedCount > 0 && c.durationMatchedCount > 0) {
+        metaParts.push(`<b style="color:#30d158;">${c.durationMatchedCount}/${c.durationExpectedCount}</b> 轨时长吻合`);
+      }
       if (canDirect) metaParts.push(`<b>${ids}</b> 首可直取歌词`);
       else if (c.source === "netease" && !(c.tracks && c.tracks.length)) metaParts.push("仅封面与专辑信息");
       else metaParts.push("歌词需按曲名搜索");
@@ -602,12 +605,14 @@
 
     // 底部控制栏音量滑块展开/收起
   let isDockVolumeSliderOpen = false;
+  let isDockLyricOffsetOpen = false;
 
   function toggleDockVolumeSlider(event) {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
+    closeDockLyricOffsetPopover();
     isDockVolumeSliderOpen = !isDockVolumeSliderOpen;
     const wrap = document.getElementById("dockVolumeWrap");
     if (wrap) {
@@ -618,6 +623,26 @@
   function closeDockVolumeSlider() {
     isDockVolumeSliderOpen = false;
     const wrap = document.getElementById("dockVolumeWrap");
+    if (wrap) wrap.classList.remove("is-open");
+  }
+
+  function toggleDockLyricOffsetPopover(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    closeDockVolumeSlider();
+    isDockLyricOffsetOpen = !isDockLyricOffsetOpen;
+    const wrap = document.getElementById("dockLyricOffsetWrap");
+    if (wrap) {
+      wrap.classList.toggle("is-open", isDockLyricOffsetOpen);
+    }
+    syncLyricOffsetBadgeUI();
+  }
+
+  function closeDockLyricOffsetPopover() {
+    isDockLyricOffsetOpen = false;
+    const wrap = document.getElementById("dockLyricOffsetWrap");
     if (wrap) wrap.classList.remove("is-open");
   }
 
@@ -668,6 +693,10 @@ function toggleDiscflowMenu(event) {
     const volWrap = document.getElementById("dockVolumeWrap");
     if (isDockVolumeSliderOpen && volWrap && !volWrap.contains(e.target)) {
       closeDockVolumeSlider();
+    }
+    const offsetWrap = document.getElementById("dockLyricOffsetWrap");
+    if (isDockLyricOffsetOpen && offsetWrap && !offsetWrap.contains(e.target)) {
+      closeDockLyricOffsetPopover();
     }
   });
 
@@ -1380,6 +1409,30 @@ function toggleDiscflowMenu(event) {
   }
 
   let currentTrackLyricOffset = 0.0;
+  let _lyricOffsetGuardUntil = 0;
+  let _lyricOffsetGuardTrackKey = "";
+
+  function _getLyricOffsetTrackKey() {
+    return `${appState.discId || ""}#${appState.currentTrackIndex || 0}`;
+  }
+
+  function syncLyricOffsetBadgeUI() {
+    const val = Number(currentTrackLyricOffset) || 0.0;
+    const hasOffset = Math.abs(val) >= 0.05;
+    const sign = val > 0 ? "+" : "";
+    const label = `${sign}${val.toFixed(1)}s`;
+    const btn = document.getElementById("dockLyricOffsetBtn");
+    if (btn) {
+      btn.classList.toggle("has-offset", hasOffset);
+      btn.title = hasOffset
+        ? `歌词对齐: ${label} (快捷键 [ ] \\)`
+        : "歌词时间轴微调 (快捷键 [ ] \\)";
+    }
+    const valBtn = document.getElementById("dockLyricOffsetVal");
+    if (valBtn) {
+      valBtn.textContent = label;
+    }
+  }
 
   function adjustLyricOffset(delta) {
     currentTrackLyricOffset = Math.round((currentTrackLyricOffset + delta) * 10) / 10;
@@ -1392,7 +1445,14 @@ function toggleDiscflowMenu(event) {
   }
 
   function applyLyricOffset() {
-    updateActiveLyric(appState.elapsedSec, true);
+    _lyricOffsetGuardTrackKey = _getLyricOffsetTrackKey();
+    _lyricOffsetGuardUntil = Date.now() + 2500;
+    syncLyricOffsetBadgeUI();
+
+    const curSec = appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0);
+    updateActiveLyric(curSec, true);
+    renderKaraokeWords(appState.activeLyricIndex, curSec - (Number(currentTrackLyricOffset) || 0.0));
+
     const sign = currentTrackLyricOffset > 0 ? "+" : "";
     const tip = currentTrackLyricOffset === 0 ? "歌词时间轴已归零" : `歌词时间轴: ${sign}${currentTrackLyricOffset.toFixed(1)}s`;
     alertToast(tip);
@@ -2466,13 +2526,13 @@ function toggleDiscflowMenu(event) {
       prevTrack();
     } else if (e.key === "MediaPlayPause") {
       togglePlayPause();
-    } else if (e.key === "[" || e.code === "BracketLeft") {
+    } else if (e.key === "[" || e.code === "BracketLeft" || e.key === "【") {
       e.preventDefault();
       adjustLyricOffset(0.5);
-    } else if (e.key === "]" || e.code === "BracketRight") {
+    } else if (e.key === "]" || e.code === "BracketRight" || e.key === "】") {
       e.preventDefault();
       adjustLyricOffset(-0.5);
-    } else if (e.key === "\\" || e.code === "Backslash") {
+    } else if (e.key === "\\" || e.code === "Backslash" || e.key === "、") {
       e.preventDefault();
       resetLyricOffset();
     }
@@ -2614,7 +2674,11 @@ function toggleDiscflowMenu(event) {
 
     Object.assign(appState, payload);
     if (typeof payload.lyricOffset === "number") {
-      currentTrackLyricOffset = payload.lyricOffset;
+      const curKey = _getLyricOffsetTrackKey();
+      if (curKey !== _lyricOffsetGuardTrackKey || Date.now() > _lyricOffsetGuardUntil) {
+        currentTrackLyricOffset = payload.lyricOffset;
+        syncLyricOffsetBadgeUI();
+      }
     }
     if ("updateAvailable" in payload) {
       renderUpdateNotice(payload.updateAvailable);

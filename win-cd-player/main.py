@@ -1426,14 +1426,16 @@ class DiscflowController:
             return dict(self._wav_migration_state)
 
     def search_album_candidates_for_current(self, title: str = "", artist: str = "") -> list:
-        """按输入（缺省用当前专辑名/艺术家）三源并发检索专辑候选"""
+        """按输入（缺省用当前专辑名/艺术家）三源并发检索专辑候选，并结合各轨时长吻合度排序"""
         toc_ref = self.current_toc
-        count = len(toc_ref.tracks) if toc_ref else 0
+        audio_tracks = [t for t in (toc_ref.tracks if toc_ref else []) if not getattr(t, "is_data_track", False)]
+        count = len(audio_tracks) if audio_tracks else (len(toc_ref.tracks) if toc_ref else 0)
+        durations = [float(t.duration_sec or 0.0) for t in audio_tracks] if audio_tracks else None
         use_title = (title or "").strip() or (self.album_title or "")
         use_artist = (artist or "").strip() or (self.artist or "")
         if not use_title or use_title in ("Audio CD",) or use_title.startswith("等待"):
             return []
-        return search_album_candidates(use_title, use_artist, count)
+        return search_album_candidates(use_title, use_artist, count, expected_durations=durations)
 
     def apply_album_candidate(self, cand: dict) -> dict:
         """

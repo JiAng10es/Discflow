@@ -302,6 +302,27 @@
 
       <!-- 3. 右侧：声音控制 (固定宽度 170px，点击展开浮动音量条，位置比例固定) -->
       <div class="dock-right-actions">
+        <!-- 歌词时间轴微调：点击展开悬浮微调胶囊 -->
+        <div class="dock-lyric-offset-wrap" id="dockLyricOffsetWrap">
+          <button id="dockLyricOffsetBtn" class="dock-action-btn dock-lyric-offset-btn" onclick="toggleDockLyricOffsetPopover(event)" title="歌词时间轴微调 (快捷键 [ ] \)">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="8.5"></circle>
+              <polyline points="12 7.8 12 12 15.2 13.6"></polyline>
+            </svg>
+            <span class="dock-offset-dot"></span>
+          </button>
+          <div class="dock-lyric-offset-popover" id="dockLyricOffsetPopover" onclick="event.stopPropagation()">
+            <div class="dock-offset-head">
+              <span>歌词对齐</span>
+              <span class="dock-offset-keys">[  ]  \</span>
+            </div>
+            <div class="dock-offset-row">
+              <button type="button" class="dock-offset-step-btn" onclick="adjustLyricOffset(-0.5)" title="提前 0.5 秒 (快捷键 ])">-0.5s</button>
+              <button type="button" id="dockLyricOffsetVal" class="dock-offset-val-btn" onclick="resetLyricOffset()" title="点击归零 (快捷键 \)">0.0s</button>
+              <button type="button" class="dock-offset-step-btn" onclick="adjustLyricOffset(0.5)" title="延后 0.5 秒 (快捷键 [)">+0.5s</button>
+            </div>
+          </div>
+        </div>
         <!-- 双语翻译开关：随时切换歌词译文显示 -->
         <button id="dockTransBtn" class="dock-action-btn dock-trans-btn" onclick="toggleBilingualLyrics()" title="双语翻译：已开启（点击关闭）" aria-pressed="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">

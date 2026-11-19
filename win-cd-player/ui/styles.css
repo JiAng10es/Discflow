@@ -3005,6 +3005,141 @@
     justify-content: center;
   }
 
+  /* 歌词时间轴微调浮层（与音量卡片同源毛玻璃质感） */
+  .dock-lyric-offset-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dock-lyric-offset-btn {
+    position: relative;
+  }
+
+  .dock-offset-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #30d158;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    pointer-events: none;
+  }
+
+  .dock-lyric-offset-btn.has-offset .dock-offset-dot {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .dock-lyric-offset-popover {
+    position: absolute;
+    bottom: calc(100% + 14px);
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    min-width: 176px;
+    padding: 10px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(26, 26, 32, 0.92);
+    background-image: var(--dock-liquid-sheen);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: var(--popover-shadow);
+    border-radius: var(--radius-card);
+    transform-origin: bottom center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.22s var(--spring-fluid);
+    z-index: 120;
+    user-select: none;
+  }
+
+  .dock-lyric-offset-wrap.is-open .dock-lyric-offset-popover {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  [data-theme="light"] .dock-lyric-offset-popover {
+    background: rgba(255, 255, 255, 0.94);
+    background-image: var(--dock-liquid-sheen);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: #1D1D1F;
+  }
+
+  .dock-offset-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 0 2px;
+  }
+
+  .dock-offset-keys {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    opacity: 0.65;
+  }
+
+  .dock-offset-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .dock-offset-step-btn,
+  .dock-offset-val-btn {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    border-radius: 8px;
+    padding: 5px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, transform 0.14s var(--spring-fluid);
+  }
+
+  .dock-offset-val-btn {
+    flex: 1;
+    text-align: center;
+    min-width: 48px;
+  }
+
+  .dock-offset-step-btn:hover,
+  .dock-offset-val-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .dock-offset-step-btn:active,
+  .dock-offset-val-btn:active {
+    transform: scale(0.95);
+  }
+
+  [data-theme="light"] .dock-offset-step-btn,
+  [data-theme="light"] .dock-offset-val-btn {
+    border-color: rgba(0, 0, 0, 0.08);
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  [data-theme="light"] .dock-offset-step-btn:hover,
+  [data-theme="light"] .dock-offset-val-btn:hover {
+    background: rgba(0, 0, 0, 0.10);
+  }
+
   /* 竖向独立悬浮音量卡片 */
   /* 现代 Apple Control Center 风格质感悬浮音量卡片 */
   .dock-volume-popover.vertical {
