@@ -388,7 +388,7 @@ class TestV117ManualAlbumMatch(unittest.TestCase):
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "app.js"), encoding="utf-8") as f:
             src = f.read()
         body = src[src.index("async function playLocalAlbumWithAnimation"):src.index("async function playLocalAlbum(")]
-        self.assertIn('applyRightPanelMode("queue")', body, "从资料库点开专辑后应自动切到曲目栏")
+        self.assertIn('applyRightPanelMode("lyrics")', body, "从资料库点开专辑后应默认直达歌词栏")
 
     def test_track_matching_by_duration(self):
         # 数量一致：顺序对应

@@ -1144,12 +1144,15 @@ setTimeout(function () {
 
         anim_body = js[js.index("async function playLocalAlbumWithAnimation"):js.index("async function playLocalAlbum(")]
         self.assertIn("applyOptimisticLocalAlbum(discId)", anim_body)
-        self.assertIn('applyRightPanelMode("queue")', anim_body)
+        self.assertIn('applyRightPanelMode("lyrics")', anim_body)
         self.assertNotIn("setTimeout(r, 460)", anim_body)
         self.assertNotIn(", 280);", anim_body)
         self.assertIn("window._libraryRenderSig", js)
         self.assertIn('decoding="async"', js)
         self.assertIn("@keyframes viewPageFadeIn", css)
+        self.assertIn("@keyframes lyricActiveRise", css)
+        active_lyric_css = css[css.index(".lyric-item.active {"):css.index(".lyric-item.active .lyric-orig {")]
+        self.assertIn("background: transparent;", active_lyric_css)
         self.assertIn("def _async_start_local_album():", py)
 
 

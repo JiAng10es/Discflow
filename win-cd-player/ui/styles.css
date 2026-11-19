@@ -1171,15 +1171,53 @@
   .lyric-item.active {
     opacity: 1.0;
     filter: blur(0px);
-    transform: scale(1.03) translateX(4px);
-    background: var(--bg-pill);
-    text-shadow: 0 4px 26px var(--lyric-glow);
+    background: transparent;
+    transform: scale(1.045) translate3d(4px, -1px, 0);
+    animation: lyricActiveRise 0.48s var(--spring-fluid) both;
+  }
+
+  .lyric-item.active .lyric-orig {
+    text-shadow:
+      0 0 18px rgba(255, 255, 255, 0.34),
+      0 2px 32px rgba(255, 255, 255, 0.18);
+  }
+
+  .lyric-item.active .lyric-trans {
+    color: rgba(255, 255, 255, 0.78);
+    text-shadow: 0 0 14px rgba(255, 255, 255, 0.20);
+  }
+
+  [data-theme="light"] .lyric-item.active .lyric-orig {
+    text-shadow:
+      0 0 16px rgba(255, 255, 255, 0.90),
+      0 2px 18px rgba(0, 0, 0, 0.10);
+  }
+
+  [data-theme="light"] .lyric-item.active .lyric-trans {
+    color: rgba(29, 29, 31, 0.76);
+    text-shadow: 0 1px 10px rgba(255, 255, 255, 0.72);
+  }
+
+  @keyframes lyricActiveRise {
+    0% {
+      transform: scale(0.99) translate3d(0, 3px, 0);
+    }
+    55% {
+      transform: scale(1.052) translate3d(5px, -2px, 0);
+    }
+    100% {
+      transform: scale(1.045) translate3d(4px, -1px, 0);
+    }
   }
 
   .lyric-item:hover {
     opacity: 0.88;
     filter: blur(0px);
-    background: var(--bg-pill);
+    background: transparent;
+  }
+
+  .lyric-item:not(.active):hover {
+    transform: scale(0.99) translateX(2px);
   }
 
   .lyric-item:active {
@@ -1252,7 +1290,12 @@
   .lyric-item.is-credit-line.active {
     opacity: 0.76;
     transform: none;
+    animation: none;
     background: transparent;
+    text-shadow: none;
+  }
+
+  .lyric-item.is-credit-line.active .lyric-orig {
     text-shadow: none;
   }
 

@@ -1916,8 +1916,8 @@ function toggleDiscflowMenu(event) {
       toggleImmersiveVinylMode(false);
     }
     switchMainView("cd");
-    // 从资料库进入时默认展开曲目栏，方便直接查看曲目并手动匹配专辑信息
-    applyRightPanelMode("queue");
+    // 换专辑后默认直达歌词界面，同时后台刷新曲目队列备用
+    applyRightPanelMode("lyrics");
     renderQueueList();
   }
 
@@ -1928,6 +1928,8 @@ function toggleDiscflowMenu(event) {
       toggleImmersiveVinylMode(false);
     }
     switchMainView("cd");
+    applyRightPanelMode("lyrics");
+    renderQueueList();
     try {
       const ok = await window.pywebview.api.play_local_album(discId);
       if (ok) {
