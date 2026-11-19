@@ -974,9 +974,17 @@ class TestCdRippingSpeedAndReliability(unittest.TestCase):
         web_resp = MagicMock(status_code=200, url="https://github.com/JiAng10es/Discflow/releases/tag/v9.9.9")
         head_resp = MagicMock(status_code=200, headers={"Content-Length": "15260569"})
 
-        with patch("main.requests.get", side_effect=[api_resp, web_resp]), \
-             patch("main.requests.head", return_value=head_resp):
-            info = ctrl.check_for_updates(force=True)
+        def _fake_get(url, *args, **kwargs):
+            if "/releases/latest" in str(url) and "api.github.com" not in str(url):
+                return web_resp
+            return api_resp
+
+        try:
+            with patch("main.requests.get", side_effect=_fake_get), \
+                 patch("main.requests.head", return_value=head_resp):
+                info = ctrl.check_for_updates(force=True)
+        finally:
+            ctrl.shutdown()
 
         self.assertTrue(info["ok"])
         self.assertTrue(info["hasUpdate"])
@@ -1153,6 +1161,8 @@ setTimeout(function () {
         self.assertIn("@keyframes lyricActiveRise", css)
         active_lyric_css = css[css.index(".lyric-item.active {"):css.index(".lyric-item.active .lyric-orig {")]
         self.assertIn("background: transparent;", active_lyric_css)
+        self.assertIn("clip-path: inset(-18px calc(100% - var(--wp, 0%)) -18px 0px);", css)
+        self.assertIn(".lyric-item.active .lyric-orig:has(.lyric-word)", css)
         self.assertIn("def _async_start_local_album():", py)
 
 

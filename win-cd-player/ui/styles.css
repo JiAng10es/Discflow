@@ -1172,41 +1172,52 @@
     opacity: 1.0;
     filter: blur(0px);
     background: transparent;
-    transform: scale(1.045) translate3d(4px, -1px, 0);
+    transform: scale(1.05) translate3d(4px, -2px, 0);
     animation: lyricActiveRise 0.48s var(--spring-fluid) both;
   }
 
   .lyric-item.active .lyric-orig {
     text-shadow:
-      0 0 18px rgba(255, 255, 255, 0.34),
-      0 2px 32px rgba(255, 255, 255, 0.18);
+      0 0 10px rgba(255, 255, 255, 0.56),
+      0 0 24px rgba(255, 255, 255, 0.28),
+      0 0 42px rgba(255, 255, 255, 0.14);
+  }
+
+  /* 逐字卡拉 OK 行：未唱出的字保持干净半透明，把发光聚焦给真正唱到的字 */
+  .lyric-item.active .lyric-orig:has(.lyric-word) {
+    text-shadow: none;
   }
 
   .lyric-item.active .lyric-trans {
-    color: rgba(255, 255, 255, 0.78);
-    text-shadow: 0 0 14px rgba(255, 255, 255, 0.20);
+    color: rgba(255, 255, 255, 0.80);
+    text-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
   }
 
   [data-theme="light"] .lyric-item.active .lyric-orig {
     text-shadow:
-      0 0 16px rgba(255, 255, 255, 0.90),
-      0 2px 18px rgba(0, 0, 0, 0.10);
+      0 0 14px rgba(255, 255, 255, 0.96),
+      0 0 26px rgba(255, 255, 255, 0.78),
+      0 2px 10px rgba(0, 0, 0, 0.12);
+  }
+
+  [data-theme="light"] .lyric-item.active .lyric-orig:has(.lyric-word) {
+    text-shadow: none;
   }
 
   [data-theme="light"] .lyric-item.active .lyric-trans {
-    color: rgba(29, 29, 31, 0.76);
-    text-shadow: 0 1px 10px rgba(255, 255, 255, 0.72);
+    color: rgba(29, 29, 31, 0.78);
+    text-shadow: 0 0 12px rgba(255, 255, 255, 0.86);
   }
 
   @keyframes lyricActiveRise {
     0% {
-      transform: scale(0.99) translate3d(0, 3px, 0);
+      transform: scale(0.985) translate3d(0, 4px, 0);
     }
     55% {
-      transform: scale(1.052) translate3d(5px, -2px, 0);
+      transform: scale(1.058) translate3d(5px, -3px, 0);
     }
     100% {
-      transform: scale(1.045) translate3d(4px, -1px, 0);
+      transform: scale(1.05) translate3d(4px, -2px, 0);
     }
   }
 
@@ -1253,12 +1264,23 @@
     position: absolute;
     left: 0;
     top: 0;
-    width: var(--wp, 0%);
+    width: 100%;
     height: 100%;
-    overflow: hidden;
+    clip-path: inset(-18px calc(100% - var(--wp, 0%)) -18px 0px);
     white-space: pre;
     color: var(--karaoke-fill);
+    text-shadow:
+      0 0 10px rgba(255, 255, 255, 0.72),
+      0 0 24px rgba(255, 255, 255, 0.38),
+      0 0 42px rgba(255, 255, 255, 0.18);
     pointer-events: none;
+  }
+
+  [data-theme="light"] .lyric-item.active .lyric-word::after {
+    text-shadow:
+      0 0 14px rgba(255, 255, 255, 0.96),
+      0 0 26px rgba(255, 255, 255, 0.78),
+      0 2px 10px rgba(0, 0, 0, 0.14);
   }
 
   .lyric-trans {
