@@ -13,11 +13,14 @@ param(
     [switch]$SyncWebsite,
     [string]$CommitMessage = "",
     [switch]$PublishRelease,
-    [string]$ReleaseNotes = ""
+    [string]$ReleaseTitle = "",
+    [string]$ReleaseNotes = "",
+    [string]$ReleaseNotesFile = ""
 )
 
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $AppDir = Join-Path $RepoRoot "win-cd-player"
@@ -153,9 +156,23 @@ try {
         git push origin main
         if ($LASTEXITCODE -ne 0) { throw "git push 失败" }
 
-        $NoteArg = if ($ReleaseNotes) { $ReleaseNotes } else { "Discflow $Tag release" }
-        gh release create $Tag $TargetF --title "Discflow $Tag" --notes $NoteArg
-        if ($LASTEXITCODE -ne 0) { throw "gh release create 失败" }
+        $TitleArg = if ($ReleaseTitle) { $ReleaseTitle } else { "Discflow $Tag" }
+        $TempNotes = $null
+        try {
+            $NotesFileArg = $ReleaseNotesFile
+            if (-not $NotesFileArg) {
+                $TempNotes = [System.IO.Path]::GetTempFileName()
+                $NoteBody = if ($ReleaseNotes) { $ReleaseNotes } else { "Discflow $Tag release" }
+                [System.IO.File]::WriteAllText($TempNotes, $NoteBody, (New-Object System.Text.UTF8Encoding($false)))
+                $NotesFileArg = $TempNotes
+            }
+            gh release create $Tag $TargetF --title $TitleArg --notes-file $NotesFileArg
+            if ($LASTEXITCODE -ne 0) { throw "gh release create 失败" }
+        } finally {
+            if ($TempNotes -and (Test-Path $TempNotes)) {
+                Remove-Item -Path $TempNotes -Force -ErrorAction SilentlyContinue
+            }
+        }
         Write-Host "GitHub Release $Tag 发布完成！" -ForegroundColor Green
     } else {
         Write-Host "发布节点由用户手动确认，本次未执行 git push / GitHub Release。" -ForegroundColor DarkGray

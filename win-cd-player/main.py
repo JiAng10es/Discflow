@@ -63,7 +63,7 @@ from metadata_service import (
 )
 
 APP_NAME = "Discflow"
-APP_VERSION = "2.3.1"
+APP_VERSION = "2.3.2"
 GITHUB_RELEASES_API = "https://api.github.com/repos/JiAng10es/Discflow/releases/latest"
 GITHUB_RELEASES_PAGE = "https://github.com/JiAng10es/Discflow/releases"
 

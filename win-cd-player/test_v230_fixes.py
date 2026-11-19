@@ -1048,7 +1048,7 @@ window.pywebview = {
     get: function (_t, prop) {
       return function () {
         if (prop === 'get_state') return Promise.resolve({ mode: 'library', tracks: [], lyrics: [] });
-        if (prop === 'check_for_updates') return Promise.resolve({ ok: true, hasUpdate: false, latestVersion: '2.3.1' });
+        if (prop === 'check_for_updates') return Promise.resolve({ ok: true, hasUpdate: false, latestVersion: '2.3.2' });
         if (prop === 'get_library_albums') return Promise.resolve({ albums: [] });
         return Promise.resolve({ ok: true });
       };
