@@ -1218,6 +1218,30 @@ setTimeout(function () {
         self.assertIn("function syncBackendPollSchedule()", js)
         self.assertIn("alb.thumb_data_url || alb.cover_data_url", js)
 
+    def test_phase2_modular_split_win_native_and_updater_service(self):
+        import updater_service
+        import win_native
+
+        for fn_name in (
+            "enable_dpi_awareness",
+            "get_dpi_scale",
+            "apply_dwm_rounded_dark_window",
+            "sync_native_window_theme",
+            "begin_native_window_resize",
+            "GlobalMediaKeyListener",
+        ):
+            self.assertTrue(hasattr(win_native, fn_name), f"win_native 缺少 {fn_name}")
+
+        for fn_name in (
+            "parse_version_tuple",
+            "resolve_update_target_exe",
+            "build_self_update_script",
+            "check_for_updates_info",
+            "download_and_stage_update",
+            "apply_staged_update_and_restart",
+        ):
+            self.assertTrue(hasattr(updater_service, fn_name), f"updater_service 缺少 {fn_name}")
+
 
 if __name__ == "__main__":
     unittest.main()
