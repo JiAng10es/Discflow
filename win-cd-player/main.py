@@ -79,7 +79,7 @@ from win_native import (
 )
 
 APP_NAME = "Discflow"
-APP_VERSION = "2.3.2"
+APP_VERSION = "2.4.0"
 GITHUB_RELEASES_API = "https://api.github.com/repos/JiAng10es/Discflow/releases/latest"
 GITHUB_RELEASES_PAGE = "https://github.com/JiAng10es/Discflow/releases"
 
