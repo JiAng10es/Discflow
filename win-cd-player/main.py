@@ -1526,7 +1526,25 @@ class DiscflowController:
 
     def list_local_albums(self) -> list:
         albums = self.library_manager.list_albums(force_refresh=True)
-        return [asdict(a) for a in albums]
+        lightweight_list = []
+        for a in albums:
+            d = asdict(a)
+            # 列表与搜索场景优先传输轻量缩略图，避免几十张高清原图 Base64 撑爆 IPC
+            if d.get("thumb_data_url"):
+                d["cover_data_url"] = ""
+            # 资料库货架仅需曲目名/时长用于搜索与展示，无需传输整张专辑逐字歌词数组
+            d["tracks"] = [
+                {
+                    "track_number": t.get("track_number"),
+                    "title": t.get("title", ""),
+                    "artist": t.get("artist", ""),
+                    "duration_sec": t.get("duration_sec", 0.0),
+                    "lyrics_locked": bool(t.get("lyrics_locked", False)),
+                }
+                for t in (d.get("tracks") or [])
+            ]
+            lightweight_list.append(d)
+        return lightweight_list
 
     def delete_local_album(self, disc_id: str) -> dict:
         """

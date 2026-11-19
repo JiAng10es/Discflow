@@ -355,6 +355,49 @@ class LocalTrackInfo:
     lyrics_offset: float = 0.0
 
 
+COVER_THUMB_FILENAME = "cover_thumb.jpg"
+
+
+def generate_cover_thumbnail(
+    raw_bytes: bytes,
+    thumb_path: Optional[str] = None,
+    max_size: int = 320,
+    quality: int = 82,
+) -> str:
+    """将高清封面字节流等比缩放为轻量 JPEG 缩略图，可选落盘并返回 data URL。"""
+    if not raw_bytes:
+        return ""
+    try:
+        import io
+        from PIL import Image, ImageOps
+
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode in ("RGBA", "LA", "P"):
+                rgba = img.convert("RGBA")
+                bg = Image.new("RGB", rgba.size, (24, 24, 26))
+                bg.paste(rgba, mask=rgba.split()[-1])
+                img = bg
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+
+            resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
+            img.thumbnail((max_size, max_size), resample)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            thumb_bytes = buf.getvalue()
+
+        if thumb_path:
+            try:
+                with open(thumb_path, "wb") as tf:
+                    tf.write(thumb_bytes)
+            except Exception:
+                pass
+        return f"data:image/jpeg;base64,{base64.b64encode(thumb_bytes).decode('ascii')}"
+    except Exception:
+        return ""
+
+
 @dataclass
 class LocalAlbumInfo:
     disc_id: str
@@ -363,6 +406,7 @@ class LocalAlbumInfo:
     year: str = ""
     cover_file: str = ""
     cover_data_url: str = ""
+    thumb_data_url: str = ""
     tracks: List[LocalTrackInfo] = field(default_factory=list)
     ripped_at: float = 0.0
     total_duration_sec: float = 0.0
@@ -423,20 +467,47 @@ class DiscflowLibraryManager:
 
                         tracks_data = [LocalTrackInfo(**t) for t in data.get("tracks", [])]
                         cover_data_url = data.get("cover_data_url", "")
+                        thumb_data_url = ""
 
                         # 如果未存 Base64，但有 cover.jpg / cover.png 文件，则即时生成
                         cover_file = data.get("cover_file", "")
-                        if not cover_data_url and cover_file:
+                        raw_cover_bytes = b""
+                        if cover_file:
                             full_cover = os.path.join(sub_dir, cover_file)
-                            if os.path.isfile(full_cover):
+                            if os.path.isfile(full_cover) and not cover_data_url:
                                 try:
                                     with open(full_cover, "rb") as cf:
-                                        raw_b = cf.read()
+                                        raw_cover_bytes = cf.read()
                                         mime = "image/png" if cover_file.lower().endswith(".png") else "image/jpeg"
-                                        b64 = base64.b64encode(raw_b).decode("ascii")
+                                        b64 = base64.b64encode(raw_cover_bytes).decode("ascii")
                                         cover_data_url = f"data:{mime};base64,{b64}"
                                 except Exception:
                                     pass
+
+                        thumb_path = os.path.join(sub_dir, COVER_THUMB_FILENAME)
+                        if os.path.isfile(thumb_path):
+                            try:
+                                with open(thumb_path, "rb") as tf:
+                                    tb64 = base64.b64encode(tf.read()).decode("ascii")
+                                    thumb_data_url = f"data:image/jpeg;base64,{tb64}"
+                            except Exception:
+                                pass
+                        elif cover_data_url or cover_file:
+                            if not raw_cover_bytes and cover_file:
+                                full_cover = os.path.join(sub_dir, cover_file)
+                                if os.path.isfile(full_cover):
+                                    try:
+                                        with open(full_cover, "rb") as cf:
+                                            raw_cover_bytes = cf.read()
+                                    except Exception:
+                                        pass
+                            if not raw_cover_bytes and "," in cover_data_url:
+                                try:
+                                    raw_cover_bytes = base64.b64decode(cover_data_url.split(",", 1)[1])
+                                except Exception:
+                                    raw_cover_bytes = b""
+                            if raw_cover_bytes:
+                                thumb_data_url = generate_cover_thumbnail(raw_cover_bytes, thumb_path=thumb_path)
 
                         alb = LocalAlbumInfo(
                             disc_id=data.get("disc_id", entry),
@@ -445,6 +516,7 @@ class DiscflowLibraryManager:
                             year=data.get("year", ""),
                             cover_file=cover_file,
                             cover_data_url=cover_data_url,
+                            thumb_data_url=thumb_data_url,
                             tracks=tracks_data,
                             ripped_at=data.get("ripped_at", 0.0),
                             total_duration_sec=sum(t.duration_sec for t in tracks_data),
@@ -553,13 +625,14 @@ class DiscflowLibraryManager:
             if not os.path.isfile(meta_path):
                 return False
             try:
-                # 若包含 base64，提取并写入 cover.jpg
+                # 若包含 base64，提取并写入 cover.jpg 与 cover_thumb.jpg
                 if "," in cover_data_url:
                     _, b64data = cover_data_url.split(",", 1)
                     raw_bytes = base64.b64decode(b64data)
                     cover_jpg_path = os.path.join(sub_dir, "cover.jpg")
                     with open(cover_jpg_path, "wb") as f_cov:
                         f_cov.write(raw_bytes)
+                    generate_cover_thumbnail(raw_bytes, thumb_path=os.path.join(sub_dir, COVER_THUMB_FILENAME))
 
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -846,6 +919,7 @@ class CdRipperTask:
                     cover_file = f"cover.{ext}"
                     with open(os.path.join(target_dir, cover_file), "wb") as f_cov:
                         f_cov.write(raw_img)
+                    generate_cover_thumbnail(raw_img, thumb_path=os.path.join(target_dir, COVER_THUMB_FILENAME))
             except Exception:
                 pass
 

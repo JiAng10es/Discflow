@@ -1669,7 +1669,7 @@ function toggleDiscflowMenu(event) {
     let html = "";
     matched.forEach(item => {
       const alb = item.album;
-      const coverSrc = alb.cover_data_url || "";
+      const coverSrc = alb.thumb_data_url || alb.cover_data_url || "";
       const discIdSafe = alb.disc_id.replace(/'/g, "\'");
       const trackHighlight = item.matchedTracks.length > 0
         ? `· 命中歌曲: ${item.matchedTracks.map(t => escapeHtml(t.title)).join(", ")}`
@@ -1802,7 +1802,7 @@ function toggleDiscflowMenu(event) {
       }
 
       const nextSig = albums.map(a => {
-        const cov = a.cover_data_url || "";
+        const cov = a.thumb_data_url || a.cover_data_url || "";
         const trkSig = (a.tracks || []).map(t => t.title || "").join("|");
         return `${a.disc_id}::${a.title}::${a.artist}::${a.year || ""}::${(a.tracks || []).length}::${cov.length}:${cov.slice(-16)}::${trkSig}`;
       }).join("||");
@@ -1814,7 +1814,7 @@ function toggleDiscflowMenu(event) {
 
       let html = "";
       albums.forEach(alb => {
-        const coverSrc = alb.cover_data_url || "";
+        const coverSrc = alb.thumb_data_url || alb.cover_data_url || "";
         const durFormatted = formatTime(alb.total_duration_sec);
         const trackCount = alb.tracks ? alb.tracks.length : 0;
         const discIdSafe = alb.disc_id.replace(/'/g, "\'");
@@ -1874,7 +1874,7 @@ function toggleDiscflowMenu(event) {
       albumTitle: alb.title || "Local Album",
       artist: alb.artist || "Local Artist",
       year: alb.year || "",
-      coverDataUrl: alb.cover_data_url || "",
+      coverDataUrl: alb.cover_data_url || alb.thumb_data_url || "",
       tracks,
       currentTrackIndex: 0,
       elapsedSec: 0,
@@ -2594,6 +2594,9 @@ function toggleDiscflowMenu(event) {
     }
     window.applyBackendState(patch);
     syncKaraokeAnchor();
+    if (typeof syncBackendPollSchedule === "function") {
+      syncBackendPollSchedule();
+    }
     if (needFollowUpPull) {
       triggerImmediatePoll();
     }
@@ -3241,6 +3244,35 @@ function toggleDiscflowMenu(event) {
   }
 
   let bridgeInitialized = false;
+  let _backendPollTimer = null;
+  let _backendPollIntervalMs = 0;
+
+  function syncBackendPollSchedule() {
+    if (!bridgeInitialized) return;
+    let nextMs = 0;
+    if (typeof document === "undefined" || !document.hidden) {
+      nextMs = (appState.isPlaying || appState.isLoading) ? 500 : 2500;
+    }
+    if (nextMs === _backendPollIntervalMs) return;
+    _backendPollIntervalMs = nextMs;
+    if (_backendPollTimer !== null) {
+      clearInterval(_backendPollTimer);
+      _backendPollTimer = null;
+    }
+    if (nextMs > 0) {
+      _backendPollTimer = setInterval(pollBackendState, nextMs);
+    }
+  }
+
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      syncBackendPollSchedule();
+      if (!document.hidden && bridgeInitialized) {
+        triggerImmediatePoll();
+      }
+    });
+  }
+
   function initPywebviewBridge() {
     if (bridgeInitialized) return true;
     if (window.pywebview && window.pywebview.api) {
@@ -3254,7 +3286,7 @@ function toggleDiscflowMenu(event) {
       syncLibraryPathText();
       startKaraokeLoop();
       pollBackendState();
-      setInterval(pollBackendState, 500);
+      syncBackendPollSchedule();
       return true;
     }
     return false;

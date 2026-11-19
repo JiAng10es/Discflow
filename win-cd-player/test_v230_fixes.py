@@ -1164,6 +1164,60 @@ setTimeout(function () {
         self.assertIn("transform 0.32s linear", css)
         self.assertIn("def _async_start_local_album():", py)
 
+    def test_phase1_cover_thumbnail_and_adaptive_polling(self):
+        import base64
+        import io
+        import json
+        import tempfile
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            alb_dir = os.path.join(tmpdir, "test_disc")
+            os.makedirs(alb_dir, exist_ok=True)
+            img = Image.new("RGB", (1000, 1000), color=(42, 120, 210))
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            raw_png = buf.getvalue()
+            cover_path = os.path.join(alb_dir, "cover.png")
+            with open(cover_path, "wb") as f:
+                f.write(raw_png)
+
+            meta = {
+                "disc_id": "test_disc",
+                "title": "Thumb Album",
+                "artist": "Tester",
+                "year": "2026",
+                "cover_file": "cover.png",
+                "cover_data_url": f"data:image/png;base64,{base64.b64encode(raw_png).decode('ascii')}",
+                "ripped_at": 100.0,
+                "tracks": [{"track_number": 1, "title": "T1", "artist": "Tester", "duration_sec": 120.0, "file_name": "01.wav", "lyrics": [{"time": 1.0, "text": "hi"}]}],
+            }
+            with open(os.path.join(alb_dir, "album.json"), "w", encoding="utf-8") as f:
+                json.dump(meta, f)
+
+            mgr = library_service.DiscflowLibraryManager(base_dir=tmpdir)
+            albums = mgr.list_albums(force_refresh=True)
+            self.assertEqual(len(albums), 1)
+            self.assertTrue(albums[0].thumb_data_url.startswith("data:image/jpeg;base64,"))
+            self.assertTrue(os.path.isfile(os.path.join(alb_dir, library_service.COVER_THUMB_FILENAME)))
+            self.assertLess(len(albums[0].thumb_data_url), 25000)
+
+            ctrl = _make_controller()
+            try:
+                ctrl.library_manager = mgr
+                light = ctrl.list_local_albums()
+                self.assertEqual(len(light), 1)
+                self.assertEqual(light[0]["cover_data_url"], "")
+                self.assertTrue(light[0]["thumb_data_url"].startswith("data:image/jpeg;base64,"))
+                self.assertNotIn("lyrics", light[0]["tracks"][0])
+            finally:
+                ctrl.shutdown()
+
+        with open(os.path.join(os.path.dirname(__file__), "ui", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("function syncBackendPollSchedule()", js)
+        self.assertIn("alb.thumb_data_url || alb.cover_data_url", js)
+
 
 if __name__ == "__main__":
     unittest.main()
