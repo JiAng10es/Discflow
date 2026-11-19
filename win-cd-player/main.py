@@ -2855,7 +2855,7 @@ def main():
         y=win_y,
         min_size=(880, 620),
         maximized=win_max,
-        background_color="#F5F5F7" if init_theme == "light" else "#000000",
+        background_color="#F5F5F7" if init_theme == "light" else "#111217",
         frameless=True,
         easy_drag=False,
     )
