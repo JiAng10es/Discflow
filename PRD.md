@@ -116,3 +116,4 @@ win-cd-player/
 | `v2.3.2+ (2026-11-19 Phase 1 缩略图与自适应轮询)` | 新增 `generate_cover_thumbnail()` 与 `cover_thumb.jpg`（`320×320` 轻量 JPEG 缩略图），资料库与搜索列表仅传缩略图与轻量曲目摘要、播放时再加载完整高清原图与逐字歌词（历史旧专辑自动补生成）；前端 `syncBackendPollSchedule()` 按播放/读盘/空闲/隐藏动态调节轮询频率（最小化 0 次/秒，空闲降频 80%） |
 | `v2.3.2+ (2026-11-19 Phase 2 后端模块化拆分)` | 将 Win32 原生 DPI/DWM 圆角主题/无边框拖拽缩放/全局多媒体热键监听从 `main.py` 剥离至 `win_native.py`，将 GitHub 更新探测、流式下载校验与自更新脚本抽离至 `updater_service.py`（保持 `main.py` 全部公共/测试接口 100% 兼容） |
 | `v2.3.2+ (2026-11-19 Phase 3 FLAC 无损压缩与 WASAPI 引擎)` | 1) CD 抓轨默认改为 FLAC 无损压缩（`libsndfile` 流式写入 + `mutagen` 自动写入标准 Vorbis Comment 标签与内嵌高清封面），设置中支持切换回 WAV；2) 新增「旧 WAV 专辑无损转 FLAC」后台迁移工具（逐轨严格采样帧校验、原子更新 `album.json` 后安全清理旧 WAV）；3) 本地播放引擎无缝兼容 WAV/FLAC 直读，并新增可选音频输出模式（默认标准兼容 `waveOut`，可选 `WASAPI 共享` 与 `WASAPI 独占直通 Bit-Perfect`，异常时自动降级回退） |
+| `v2.3.2+ (2026-11-19 设置面板视觉与文案精简)` | 将设置弹窗中的原生下拉菜单替换为 Apple 风格磨砂分段控制器（Segmented Control），双色适配深色/浅色主题；精简全设置面板冗长说明文案并移除底部多余提示块，提升各选项卡留白与视觉一致性 |

@@ -400,8 +400,8 @@
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><rect x="2.5" y="14" width="19" height="7" rx="3.5"/><circle cx="7" cy="7" r="2.5"/><circle cx="12" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/></svg>
                   <div>
-                    <div class="settings-item-title">顶部栏与底部导航栏 (Top Bar &amp; Dock)</div>
-                    <div class="settings-item-sub">拖动滑块时弹窗自动半透明，可直接看到背后真实界面变化</div>
+                    <div class="settings-item-title">顶栏与底部控制栏</div>
+                    <div class="settings-item-sub">拖动时窗口半透明，实时预览效果</div>
                   </div>
                 </div>
               </div>
@@ -421,7 +421,7 @@
               </div>
               <div class="custom-control-row">
                 <div class="custom-label-wrap">
-                  <label for="dockWidthInput">底部栏长短（宽度）</label>
+                  <label for="dockWidthInput">底部栏宽度</label>
                   <span id="dockWidthVal" class="custom-val-badge">720px</span>
                 </div>
                 <input type="range" id="dockWidthInput" min="480" max="1080" step="20" value="720" oninput="onDockWidthChange(this.value)" />
@@ -433,8 +433,8 @@
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
                 <div>
-                  <div class="settings-item-title">桌面歌词排版 (Typography)</div>
-                  <div class="settings-item-sub">调整歌词文本行间距与字间距渲染尺度</div>
+                  <div class="settings-item-title">歌词排版</div>
+                  <div class="settings-item-sub">调整行间距与字间距</div>
                 </div>
               </div>
               <div class="custom-control-row" style="margin-bottom: 8px;">
@@ -463,9 +463,9 @@
                 <div class="settings-item-col">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-                    <span>放入光盘时自动播放</span>
+                    <span>放入光盘自动播放</span>
                   </div>
-                  <div class="settings-item-sub">检测到光驱放入光盘读取成功后，自动解析 TOC 并从音轨 1 自动起播</div>
+                  <div class="settings-item-sub">读盘成功后自动从首轨起播</div>
                 </div>
                 <label class="ios-switch">
                   <input type="checkbox" id="autoPlaySwitch" onchange="toggleAutoPlay()" />
@@ -480,9 +480,9 @@
                 <div class="settings-item-col">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M7.4 3.2v2.1M3.2 5.3h8.4"/><path d="M9.5 5.3c-.5 3.6-2.6 6.4-6.1 8.3"/><path d="M5.0 7.3c1.6 2.5 3.7 4.6 6.3 6.1"/><path d="M13.2 20.2l3.8-9.2 3.8 9.2M14.5 17.2h5.2"/></svg>
-                    <span>默认开启双语歌词翻译</span>
+                    <span>默认开启双语翻译</span>
                   </div>
-                  <div class="settings-item-sub">播放包含双语翻译的曲目时自动展现中文对照</div>
+                  <div class="settings-item-sub">有翻译时自动显示中文对照</div>
                 </div>
                 <label class="ios-switch">
                   <input type="checkbox" id="prefTransSwitch" checked onchange="toggleBilingualLyrics()" />
@@ -497,13 +497,13 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
                     <span>音频输出引擎</span>
                   </div>
-                  <div class="settings-item-sub" id="audioOutputModeSub">默认使用标准兼容模式；WASAPI 独占直通可绕过系统混音器（独占时其他软件静音，设备不支持时自动回退）</div>
+                  <div class="settings-item-sub" id="audioOutputModeSub">waveOut · 全设备稳定兼容</div>
                 </div>
-                <select id="audioOutputModeSelect" class="drive-select" style="height: 30px; font-size: 12px; flex-shrink: 0;" onchange="onAudioOutputModeChange(this.value)">
-                  <option value="waveout">标准兼容 (waveOut · 默认)</option>
-                  <option value="wasapi_shared">WASAPI 共享 (低延迟)</option>
-                  <option value="wasapi_exclusive">WASAPI 独占直通 (Bit-Perfect)</option>
-                </select>
+                <div id="audioOutputModeControl" class="settings-segmented" role="radiogroup" aria-label="音频输出引擎">
+                  <button type="button" class="settings-seg-btn active" data-value="waveout" onclick="onAudioOutputModeChange('waveout')">标准</button>
+                  <button type="button" class="settings-seg-btn" data-value="wasapi_shared" onclick="onAudioOutputModeChange('wasapi_shared')">WASAPI 共享</button>
+                  <button type="button" class="settings-seg-btn" data-value="wasapi_exclusive" onclick="onAudioOutputModeChange('wasapi_exclusive')">独占直通</button>
+                </div>
               </div>
 
               <!-- CD-DA 硬件引擎状态 -->
@@ -511,16 +511,12 @@
                 <div class="settings-item-col">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="3"/></svg>
-                    <span>CD-DA 原生无损音频直读</span>
+                    <span>CD-DA 无损直读</span>
                   </div>
-                  <div class="settings-item-sub">Win32 IOCTL RAW_READ & FLAC/WAV 无损流式播放，标准 44.1kHz / 16-Bit</div>
+                  <div class="settings-item-sub">44.1kHz / 16-Bit 原生扇区流式播放</div>
                 </div>
-                <span style="font-size: 12px; color: #30d158; font-weight: 600;">硬件就绪</span>
+                <span style="font-size: 12px; color: #30d158; font-weight: 600;">已就绪</span>
               </div>
-            </div>
-
-            <div style="margin-top: 12px; padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: var(--radius-panel); border: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-tertiary); line-height: 1.5;">
-              💡 纯粹聆听提示：若遇到部分老旧或磨损光盘读取缓慢，可在顶部操作栏点击「读盘」按钮触发多重扇区安全重试。
             </div>
           </div>
 
@@ -529,16 +525,16 @@
             <div class="settings-card-group">
               <!-- 资源库存储文件夹 -->
               <div class="settings-row-item">
-                <div class="settings-item-col">
+                <div class="settings-item-col" style="padding-right: 12px; min-width: 0; flex: 1;">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h3.5a2 2 0 0 1 1.4.6L12.5 6H18a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-11z"/></svg>
-                    <span>资源库存储目录</span>
+                    <span>资料库目录</span>
                   </div>
-                  <div class="settings-item-sub" id="libraryPathSub">存储于：程序同级的 library 目录 (离线无损免光驱畅播)</div>
+                  <div class="settings-item-sub" id="libraryPathSub" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">程序同级 library 目录</div>
                 </div>
                 <button class="pill-btn" onclick="openLibraryFolder()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                  <span>在管理器中打开</span>
+                  <span>打开目录</span>
                 </button>
               </div>
 
@@ -547,14 +543,14 @@
                 <div class="settings-item-col" style="padding-right: 12px;">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                    <span>CD 抓轨归档格式</span>
+                    <span>抓轨归档格式</span>
                   </div>
-                  <div class="settings-item-sub">默认 FLAC 无损压缩（与 WAV 音质逐比特等价，节省约 45% 磁盘空间并自动内嵌封面与曲目标签）</div>
+                  <div class="settings-item-sub" id="ripFormatSub">FLAC 无损压缩 · 省空间且内嵌封面</div>
                 </div>
-                <select id="ripFormatSelect" class="drive-select" style="height: 30px; font-size: 12px; flex-shrink: 0;" onchange="onRipFormatChange(this.value)">
-                  <option value="flac">FLAC 无损压缩 (默认)</option>
-                  <option value="wav">WAV 原始无损</option>
-                </select>
+                <div id="ripFormatControl" class="settings-segmented" role="radiogroup" aria-label="抓轨归档格式">
+                  <button type="button" class="settings-seg-btn active" data-value="flac" onclick="onRipFormatChange('flac')">FLAC 无损</button>
+                  <button type="button" class="settings-seg-btn" data-value="wav" onclick="onRipFormatChange('wav')">WAV 原始</button>
+                </div>
               </div>
 
               <!-- 旧 WAV 专辑无损瘦身 -->
@@ -562,15 +558,15 @@
                 <div class="settings-item-col" style="padding-right: 12px; flex: 1; min-width: 0;">
                   <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                    <span>旧 WAV 专辑无损转 FLAC</span>
+                    <span>旧 WAV 转 FLAC</span>
                   </div>
-                  <div class="settings-item-sub" id="wavMigrationSub">正在扫描资料库中的 WAV 音轨...</div>
-                  <div id="wavMigrationProgressWrap" style="display: none; margin-top: 6px; height: 4px; width: 100%; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden;">
-                    <div id="wavMigrationProgressBar" style="height: 100%; width: 0%; background: #30d158; border-radius: 999px; transition: width 0.2s linear;"></div>
+                  <div class="settings-item-sub" id="wavMigrationSub">扫描中...</div>
+                  <div id="wavMigrationProgressWrap" class="settings-progress-track">
+                    <div id="wavMigrationProgressBar" class="settings-progress-fill"></div>
                   </div>
                 </div>
                 <button class="pill-btn" id="wavMigrationBtn" onclick="onWavMigrationButtonClick()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap; flex-shrink: 0;">
-                  <span>一键转 FLAC</span>
+                  <span>一键转换</span>
                 </button>
               </div>
 
@@ -581,10 +577,10 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12A9 9 0 0 0 6 5.3L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg>
                     <span>清空歌词缓存</span>
                   </div>
-                  <div class="settings-item-sub">重置已缓存的在线双语歌词与时间轴，切歌时重新从云端精准拉取</div>
+                  <div class="settings-item-sub">切歌时重新从云端拉取歌词</div>
                 </div>
                 <button class="pill-btn" onclick="confirmClearLyricsCache()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap;">
-                  <span>清空歌词缓存</span>
+                  <span>清空</span>
                 </button>
               </div>
             </div>
@@ -597,11 +593,11 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                     <span>清空资料库数据</span>
                   </div>
-                  <div class="settings-item-sub" style="color: #fca5a5;">删除所有本地已转录抓轨的专辑、封面及音频，操作不可撤销</div>
+                  <div class="settings-item-sub" style="color: #fca5a5;">删除全部已抓轨专辑，不可恢复</div>
                 </div>
                 <button class="pill-btn" onclick="confirmClearAllData()" style="background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.4); color: #f87171; font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-                  <span>清空资料库数据</span>
+                  <span>清空数据</span>
                 </button>
               </div>
             </div>

@@ -3923,6 +3923,71 @@
   .ios-switch input:checked + .ios-slider:before {
     transform: translateX(20px);
   }
+  /* Apple 风格分段控制器 (Segmented Control) */
+  .settings-segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    flex-shrink: 0;
+  }
+  [data-theme="light"] .settings-segmented {
+    background: rgba(0, 0, 0, 0.055);
+    border-color: rgba(0, 0, 0, 0.05);
+  }
+  .settings-seg-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 6.5px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.14s var(--spring-fluid);
+  }
+  .settings-seg-btn:hover {
+    color: var(--text-primary);
+  }
+  .settings-seg-btn:active {
+    transform: scale(0.96);
+  }
+  .settings-seg-btn.active {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+  }
+  [data-theme="light"] .settings-seg-btn.active {
+    background: #fff;
+    color: #111;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.09);
+  }
+  .settings-progress-track {
+    display: none;
+    margin-top: 6px;
+    height: 4px;
+    width: 100%;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+  }
+  [data-theme="light"] .settings-progress-track {
+    background: rgba(0, 0, 0, 0.08);
+  }
+  .settings-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #30d158;
+    border-radius: 999px;
+    transition: width 0.2s linear;
+  }
 
 
   [data-theme="light"] .top-icon-btn:hover {

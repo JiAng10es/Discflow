@@ -156,17 +156,12 @@
       apSwitch.checked = isAuto;
     }
 
-    const outSel = document.getElementById("audioOutputModeSelect");
-    if (outSel && prefs) {
+    if (prefs) {
       const mode = ["waveout", "wasapi_shared", "wasapi_exclusive"].includes(prefs.audioOutputMode)
         ? prefs.audioOutputMode
         : "waveout";
-      outSel.value = mode;
-    }
-
-    const ripSel = document.getElementById("ripFormatSelect");
-    if (ripSel && prefs) {
-      ripSel.value = prefs.ripFormat === "wav" ? "wav" : "flac";
+      applyAudioOutputModeUI(mode);
+      applyRipFormatUI(prefs.ripFormat === "wav" ? "wav" : "flac");
     }
 
     if (typeof recenterActiveLyric === "function") {
@@ -742,7 +737,10 @@ function toggleDiscflowMenu(event) {
       const dir = await window.pywebview.api.get_library_dir();
       if (!dir) return;
       const sub = document.getElementById("libraryPathSub");
-      if (sub) sub.textContent = "存储于：" + dir + " (离线无损免光驱畅播)";
+      if (sub) {
+        sub.textContent = dir;
+        sub.title = dir;
+      }
       const btn = document.getElementById("openLibraryFolderBtn");
       if (btn) btn.title = "在文件管理器中打开 " + dir;
     } catch (e) {
@@ -751,8 +749,42 @@ function toggleDiscflowMenu(event) {
   }
 
   // ================= Phase 3: 音频输出引擎 / FLAC 抓轨格式 / 旧 WAV 无损转换 =================
+  function applyAudioOutputModeUI(mode) {
+    const subs = {
+      waveout: "waveOut · 全设备稳定兼容",
+      wasapi_shared: "WASAPI 共享 · 低延迟系统混音",
+      wasapi_exclusive: "WASAPI 独占 · 绕过混音 (不支持时自动回退)"
+    };
+    const norm = ["waveout", "wasapi_shared", "wasapi_exclusive"].includes(mode) ? mode : "waveout";
+    const ctrl = document.getElementById("audioOutputModeControl");
+    if (ctrl) {
+      ctrl.querySelectorAll(".settings-seg-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.value === norm);
+      });
+    }
+    const sub = document.getElementById("audioOutputModeSub");
+    if (sub) sub.textContent = subs[norm] || subs.waveout;
+  }
+
+  function applyRipFormatUI(fmt) {
+    const norm = fmt === "wav" ? "wav" : "flac";
+    const ctrl = document.getElementById("ripFormatControl");
+    if (ctrl) {
+      ctrl.querySelectorAll(".settings-seg-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.value === norm);
+      });
+    }
+    const sub = document.getElementById("ripFormatSub");
+    if (sub) {
+      sub.textContent = norm === "flac"
+        ? "FLAC 无损压缩 · 省空间且内嵌封面"
+        : "WAV 原始无损 · 兼容传统设备";
+    }
+  }
+
   async function onAudioOutputModeChange(mode) {
     const norm = ["waveout", "wasapi_shared", "wasapi_exclusive"].includes(mode) ? mode : "waveout";
+    applyAudioOutputModeUI(norm);
     currentCustomPrefs.audioOutputMode = norm;
     try {
       localStorage.setItem("discflow_custom_prefs", JSON.stringify(currentCustomPrefs));
@@ -761,7 +793,7 @@ function toggleDiscflowMenu(event) {
       try {
         const res = await window.pywebview.api.set_audio_output_mode(norm);
         if (res && res.ok) {
-          alertToast(`音频输出引擎已切换为：${res.label || norm}`);
+          alertToast(`音频输出引擎：${res.label || norm}`);
         }
       } catch (e) {
         console.warn("set_audio_output_mode error:", e);
@@ -773,9 +805,10 @@ function toggleDiscflowMenu(event) {
 
   function onRipFormatChange(fmt) {
     const norm = fmt === "wav" ? "wav" : "flac";
+    applyRipFormatUI(norm);
     currentCustomPrefs.ripFormat = norm;
     saveCustomPrefs();
-    alertToast(norm === "flac" ? "CD 抓轨已设为 FLAC 无损压缩（默认）" : "CD 抓轨已设为 WAV 原始无损");
+    alertToast(norm === "flac" ? "抓轨格式已设为 FLAC 无损" : "抓轨格式已设为 WAV 原始");
   }
 
   let _wavMigrationTimer = null;
@@ -803,19 +836,21 @@ function toggleDiscflowMenu(event) {
       if (pWrap) pWrap.style.display = "none";
       if (stats.wavTrackCount > 0) {
         if (sub) {
-          sub.textContent = `检测到 ${stats.wavAlbumCount} 张专辑共 ${stats.wavTrackCount} 首旧 WAV（占 ${stats.wavTotalMb} MB），预计无损释放约 ${stats.estimatedSaveMb} MB`;
+          sub.textContent = `${stats.wavAlbumCount} 张专辑 (${stats.wavTotalMb} MB) · 预计省约 ${stats.estimatedSaveMb} MB`;
         }
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "一键转 FLAC";
+          btn.style.opacity = "";
+          btn.textContent = "一键转换";
         }
       } else {
         if (sub) {
-          sub.textContent = "当前资料库已全部为 FLAC 无损格式或暂无历史 WAV 音轨，无需转换";
+          sub.textContent = "已全部为 FLAC 无损格式";
         }
         if (btn) {
           btn.disabled = true;
-          btn.textContent = "全部已压缩";
+          btn.style.opacity = "0.5";
+          btn.textContent = "无需转换";
         }
       }
     } catch (e) {

@@ -1439,8 +1439,8 @@ setTimeout(function () {
         with open(os.path.join(base_dir, "Discflow.spec"), "r", encoding="utf-8") as f:
             spec = f.read()
 
-        self.assertIn('id="audioOutputModeSelect"', html)
-        self.assertIn('id="ripFormatSelect"', html)
+        self.assertIn('id="audioOutputModeControl"', html)
+        self.assertIn('id="ripFormatControl"', html)
         self.assertIn('id="wavMigrationBtn"', html)
         self.assertIn("function onAudioOutputModeChange(", js)
         self.assertIn("function onRipFormatChange(", js)
