@@ -1339,7 +1339,7 @@ class DiscflowController:
                 self.player.wait_reader_idle(timeout=1.0)
                 self.player.load_and_play(toc_ref.drive_letter, trk, track_index=trk_idx)
                 if resume_pos > 1.0:
-                    self.player.seek(resume_pos)
+                    self.player.seek_seconds(resume_pos)
             except Exception as e:
                 log_runtime_event("AUDIO", f"切换输出引擎热重启异常: {e}", level="WARNING")
 
@@ -2801,6 +2801,37 @@ class DiscflowJsApi:
 AppleMusicCdController = DiscflowController
 
 
+def _compact_initial_state_for_html(init_state: dict, library_manager: Optional[DiscflowLibraryManager] = None) -> dict:
+    """
+    防止首帧注入超大 Base64 封面导致 WebView2 NavigateToString() 超过长度限制而黑屏：
+    若 coverDataUrl > 64KB，首帧替换为轻量缩略图（或置空），并标记 metaVersion=-1，
+    让前端首帧秒开并在桥接就绪后第一轮同步自动拉取高清原图。
+    """
+    if not isinstance(init_state, dict):
+        return init_state
+    cov = str(init_state.get("coverDataUrl") or "")
+    if len(cov) <= 65536:
+        return init_state
+
+    compact = dict(init_state)
+    thumb_url = ""
+    disc_id = str(compact.get("discId") or "").strip()
+    if disc_id and library_manager is not None:
+        try:
+            alb_dir = library_manager.get_album_dir(disc_id)
+            thumb_path = os.path.join(alb_dir, "cover_thumb.jpg")
+            if os.path.isfile(thumb_path):
+                with open(thumb_path, "rb") as tf:
+                    thumb_b64 = base64.b64encode(tf.read()).decode("ascii")
+                if len(thumb_b64) <= 65536:
+                    thumb_url = f"data:image/jpeg;base64,{thumb_b64}"
+        except Exception:
+            thumb_url = ""
+    compact["coverDataUrl"] = thumb_url
+    compact["metaVersion"] = -1
+    return compact
+
+
 def main():
     _enable_dpi_awareness()
     controller = DiscflowController()
@@ -2809,7 +2840,10 @@ def main():
     controller._saved_maximized = win_max
     init_prefs = load_user_preferences()
     init_theme = "light" if init_prefs.get("themeMode") == "light" else "dark"
-    init_state = controller.poll_state(-1, -1, -1)
+    init_state = _compact_initial_state_for_html(
+        controller.poll_state(-1, -1, -1),
+        library_manager=controller.library_manager,
+    )
     init_html = render_frontend_html(init_prefs=init_prefs, init_state=init_state)
     win = webview.create_window(
         title=APP_NAME,

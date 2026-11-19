@@ -1541,6 +1541,14 @@ setTimeout(function () {
         self.assertEqual(meta.track_titles[2], "Real Track 2")
         self.assertIn("补全", meta.matched_source)
 
+    def test_compact_initial_state_prevents_webview2_oversize_black_screen(self):
+        import main
+        huge_cover = "data:image/png;base64," + ("A" * 1200000)
+        state = {"discId": "nonexistent", "metaVersion": 5, "coverDataUrl": huge_cover}
+        compact = main._compact_initial_state_for_html(state)
+        self.assertLessEqual(len(compact["coverDataUrl"]), 65536)
+        self.assertEqual(compact["metaVersion"], -1)
+
 
 if __name__ == "__main__":
     unittest.main()
