@@ -4,8 +4,8 @@
     --dock-border: rgba(255, 255, 255, 0.18);
     --dock-shadow: 0 20px 48px rgba(0, 0, 0, 0.45), inset 0 1px 1.5px rgba(255, 255, 255, 0.32), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
     --dock-liquid-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 45%, rgba(255, 255, 255, 0) 65%, rgba(255, 255, 255, 0.08) 100%);
-    --popover-bg: rgba(32, 34, 44, 0.68);
-    --popover-border: rgba(255, 255, 255, 0.18);
+    --popover-bg: rgba(44, 46, 56, 0.46);
+    --popover-border: rgba(255, 255, 255, 0.20);
     --popover-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), inset 0 1px 1.2px rgba(255, 255, 255, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.25);
     --scrubber-bg: rgba(255, 255, 255, 0.16);
     --scrubber-fill: var(--text-primary);
@@ -81,8 +81,8 @@
   :root,
   [data-theme="dark"] {
     --bg-base: #111217;
-    --bg-elevated-1: rgba(34, 36, 46, 0.54);
-    --bg-elevated-2: rgba(48, 50, 62, 0.62);
+    --bg-elevated-1: rgba(44, 46, 56, 0.46);
+    --bg-elevated-2: rgba(54, 56, 68, 0.54);
     --bg-pill: rgba(255, 255, 255, 0.09);
     --bg-pill-hover: rgba(255, 255, 255, 0.16);
     --bg-pill-active: rgba(255, 255, 255, 0.94);
@@ -792,9 +792,9 @@
     position: fixed;
     inset: 0;
     z-index: 100;
-    background: rgba(10, 12, 18, 0.18);
-    backdrop-filter: blur(14px) saturate(135%);
-    -webkit-backdrop-filter: blur(14px) saturate(135%);
+    background: rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     display: none;
     align-items: center;
     justify-content: center;
@@ -811,14 +811,14 @@
 
   .modal-dialog {
     width: clamp(340px, 42vw, 480px);
-    background: var(--bg-elevated-1);
-    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 45%, rgba(255, 255, 255, 0.09) 100%);
-    backdrop-filter: blur(48px) saturate(195%);
-    -webkit-backdrop-filter: blur(48px) saturate(195%);
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(44, 46, 56, 0.46);
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.08) 100%);
+    backdrop-filter: blur(40px) saturate(185%);
+    -webkit-backdrop-filter: blur(40px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.20);
     border-radius: var(--radius-dialog);
     padding: 16px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32), inset 0 1px 1.2px rgba(255, 255, 255, 0.34), inset 0 -1px 1px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34), inset 0 1px 1px rgba(255, 255, 255, 0.28);
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -3052,12 +3052,12 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: rgba(34, 36, 46, 0.68);
-    background-image: var(--dock-liquid-sheen);
-    backdrop-filter: blur(42px) saturate(190%);
-    -webkit-backdrop-filter: blur(42px) saturate(190%);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    box-shadow: var(--popover-shadow);
+    background: rgba(44, 46, 56, 0.46);
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.08) 100%);
+    backdrop-filter: blur(40px) saturate(185%);
+    -webkit-backdrop-filter: blur(40px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34), inset 0 1px 1px rgba(255, 255, 255, 0.28);
     border-radius: var(--radius-card);
     transform-origin: bottom center;
     opacity: 0;
@@ -3161,12 +3161,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    background: rgba(34, 36, 46, 0.68);
-    background-image: var(--dock-liquid-sheen);
-    backdrop-filter: blur(42px) saturate(190%);
-    -webkit-backdrop-filter: blur(42px) saturate(190%);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    box-shadow: var(--popover-shadow);
+    background: rgba(44, 46, 56, 0.46);
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.08) 100%);
+    backdrop-filter: blur(40px) saturate(185%);
+    -webkit-backdrop-filter: blur(40px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34), inset 0 1px 1px rgba(255, 255, 255, 0.28);
     border-radius: var(--radius-card);
     transform-origin: bottom center;
     opacity: 0;
@@ -3873,8 +3873,8 @@
     opacity: 0.20;
   }
   .settings-sidebar {
-    background: rgba(255, 255, 255, 0.045);
-    border-right: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.03);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
     padding: 16px;
     display: flex;
     flex-direction: column;
