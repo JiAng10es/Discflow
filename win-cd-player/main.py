@@ -2172,7 +2172,7 @@ class DiscflowController:
 
         with self._lock:
             self._load_token += 1
-            self.player.stop()
+            my_token = self._load_token
             self.current_toc = toc
             self.current_drive = ""
             self.album_title = target_album.title if target_album else (toc.cdtext_album or "Local Album")
@@ -2195,15 +2195,33 @@ class DiscflowController:
                             "source": getattr(t, "lyrics_source", "") or "",
                             "song_id": sid,
                         }
+            self.current_track_index = 0
+            self.elapsed_sec = 0.0
+            if toc.tracks:
+                first_trk = toc.tracks[0]
+                self.duration_sec = first_trk.duration_sec
+                self.current_lyrics = self.lyrics_cache.get(first_trk.track_number, [])
+            else:
+                self.duration_sec = 0.0
+                self.current_lyrics = []
             self.status_text = f"正在离线播放黑胶资料库: 《{self.album_title}》"
             self.is_loading = False
             self._bump_meta()
             self._bump_lyrics()
 
-        self._start_track(0)
+        def _async_start_local_album():
+            if self._closed or my_token != self._load_token:
+                return
+            self.player.stop()
+            if self._closed or my_token != self._load_token:
+                return
+            self._start_track(0)
+            if self._closed or my_token != self._load_token:
+                return
+            self._prefetch_lyrics_async(my_token)
+
         threading.Thread(
-            target=self._prefetch_lyrics_async,
-            args=(self._load_token,),
+            target=_async_start_local_album,
             daemon=True,
         ).start()
         return True

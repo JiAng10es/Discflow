@@ -1133,6 +1133,25 @@ setTimeout(function () {
         self.assertIn("corner-shape: round;", css)
         self.assertIn("border-radius: 50%;", css)
 
+    def test_library_playback_smooth_transition_and_async_start(self):
+        base_dir = os.path.dirname(__file__)
+        with open(os.path.join(base_dir, "ui", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+        with open(os.path.join(base_dir, "ui", "styles.css"), "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(os.path.join(base_dir, "main.py"), "r", encoding="utf-8") as f:
+            py = f.read()
+
+        anim_body = js[js.index("async function playLocalAlbumWithAnimation"):js.index("async function playLocalAlbum(")]
+        self.assertIn("applyOptimisticLocalAlbum(discId)", anim_body)
+        self.assertIn('applyRightPanelMode("queue")', anim_body)
+        self.assertNotIn("setTimeout(r, 460)", anim_body)
+        self.assertNotIn(", 280);", anim_body)
+        self.assertIn("window._libraryRenderSig", js)
+        self.assertIn('decoding="async"', js)
+        self.assertIn("@keyframes viewPageFadeIn", css)
+        self.assertIn("def _async_start_local_album():", py)
+
 
 if __name__ == "__main__":
     unittest.main()

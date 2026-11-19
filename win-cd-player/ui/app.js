@@ -1770,9 +1770,13 @@ function toggleDiscflowMenu(event) {
     }
   }
 
-  async function renderLibraryCards() {
+  async function renderLibraryCards(forceReload = false) {
     const grid = document.getElementById("libraryGrid");
-    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-tertiary); padding: 40px;">正在加载黑胶唱片...</div>`;
+    if (!grid) return;
+    const hasRenderedCards = Boolean(grid.querySelector(".vinyl-card"));
+    if (!hasRenderedCards) {
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-tertiary); padding: 40px;">正在加载黑胶唱片...</div>`;
+    }
 
     if (!window.pywebview || !window.pywebview.api) return;
     try {
@@ -1781,6 +1785,7 @@ function toggleDiscflowMenu(event) {
       const countEl = document.getElementById("libraryAlbumCount");
       if (countEl) countEl.textContent = albums && albums.length ? `${albums.length} 张专辑` : "";
       if (!albums || albums.length === 0) {
+        window._libraryRenderSig = "__empty__";
         grid.innerHTML = `
           <div class="library-empty">
             <div style="width: 72px; height: 72px; opacity: 0.35; margin-bottom: 8px;">
@@ -1796,6 +1801,17 @@ function toggleDiscflowMenu(event) {
         return;
       }
 
+      const nextSig = albums.map(a => {
+        const cov = a.cover_data_url || "";
+        const trkSig = (a.tracks || []).map(t => t.title || "").join("|");
+        return `${a.disc_id}::${a.title}::${a.artist}::${a.year || ""}::${(a.tracks || []).length}::${cov.length}:${cov.slice(-16)}::${trkSig}`;
+      }).join("||");
+
+      if (!forceReload && hasRenderedCards && window._libraryRenderSig === nextSig) {
+        return;
+      }
+      window._libraryRenderSig = nextSig;
+
       let html = "";
       albums.forEach(alb => {
         const coverSrc = alb.cover_data_url || "";
@@ -1809,12 +1825,12 @@ function toggleDiscflowMenu(event) {
             <div class="vinyl-stage">
               <!-- 纸质唱片封套 -->
               <div class="vinyl-sleeve">
-                ${coverSrc ? `<img src="${coverSrc}" alt="Cover" />` : createDiscflowIconMarkup(140)}
+                ${coverSrc ? `<img src="${coverSrc}" alt="Cover" decoding="async" />` : createDiscflowIconMarkup(140)}
               </div>
               <!-- 抽出的实体黑胶唱片 (带沟槽纹理与中心圆标) -->
               <div class="vinyl-disc">
                 <div class="vinyl-label">
-                  ${coverSrc ? `<img src="${coverSrc}" alt="Label" />` : ""}
+                  ${coverSrc ? `<img src="${coverSrc}" alt="Label" decoding="async" />` : ""}
                 </div>
               </div>
             </div>
@@ -1838,50 +1854,84 @@ function toggleDiscflowMenu(event) {
     }
   }
 
+  function applyOptimisticLocalAlbum(discId) {
+    const cache = window._libraryAlbumsCache || [];
+    const alb = cache.find(a => a && a.disc_id === discId);
+    if (!alb || typeof window.applyBackendState !== "function") return false;
+    const tracks = (alb.tracks || []).map((t, idx) => ({
+      trackNumber: t.track_number || (idx + 1),
+      title: t.title || `Track ${String(idx + 1).padStart(2, "0")}`,
+      artist: t.artist || alb.artist || "",
+      durationSec: Number(t.duration_sec || 0),
+      durationFormatted: formatTime(Number(t.duration_sec || 0)),
+      lyricsLocked: Boolean(t.lyrics_locked),
+      lyricsMissed: false,
+    }));
+    const first = tracks[0] || null;
+    window.applyBackendState({
+      discId: alb.disc_id,
+      drive: "",
+      albumTitle: alb.title || "Local Album",
+      artist: alb.artist || "Local Artist",
+      year: alb.year || "",
+      coverDataUrl: alb.cover_data_url || "",
+      tracks,
+      currentTrackIndex: 0,
+      elapsedSec: 0,
+      durationSec: first ? first.durationSec : 0,
+      isPlaying: true,
+      isPaused: false,
+      isLoading: false,
+      statusText: `正在离线播放黑胶资料库: 《${alb.title || ""}》`,
+    });
+    return true;
+  }
+
+  let _libraryPlaySeq = 0;
+
   async function playLocalAlbumWithAnimation(cardEl, discId) {
+    const mySeq = ++_libraryPlaySeq;
     if (cardEl) {
       cardEl.classList.add("is-pulling-out");
     }
-    let playPromise = null;
+
+    // 乐观 UI 预填：切回播放页首帧即为新专辑封面与曲目，消除旧专辑闪烁
+    applyOptimisticLocalAlbum(discId);
+
+    // 并行触发后端起播（不阻塞前端视图切换）
     if (window.pywebview && window.pywebview.api) {
-      playPromise = window.pywebview.api.play_local_album(discId);
+      window.pywebview.api.play_local_album(discId)
+        .then(() => {
+          if (mySeq === _libraryPlaySeq) triggerImmediatePoll();
+        })
+        .catch(e => console.warn("play_local_album error:", e));
     }
 
-    // 等待 460ms 享受拟物抽盘微交互
-    await new Promise(r => setTimeout(r, 460));
+    // 轻盈按压反馈后约 110ms 平滑切入播放视图
+    await new Promise(r => setTimeout(r, 110));
+    if (cardEl) cardEl.classList.remove("is-pulling-out");
+    if (mySeq !== _libraryPlaySeq) return;
 
-    if (playPromise) {
-      try {
-        await playPromise;
-      } catch (e) {
-        console.warn("play_local_album error:", e);
-      }
+    if (typeof isImmersiveMode !== "undefined" && isImmersiveMode) {
+      toggleImmersiveVinylMode(false);
     }
-
-    setTimeout(() => {
-      if (cardEl) cardEl.classList.remove("is-pulling-out");
-      triggerImmediatePoll();
-      // 路由修复：默认平滑导航至常规双栏播放界面，并确保关闭沉浸全屏
-      if (typeof isImmersiveMode !== "undefined" && isImmersiveMode) {
-        toggleImmersiveVinylMode(false);
-      }
-      switchMainView("cd");
-      // 从资料库进入时默认展开曲目栏，方便直接查看曲目并手动匹配专辑信息
-      applyRightPanelMode("queue");
-      renderQueueList();
-    }, 280);
+    switchMainView("cd");
+    // 从资料库进入时默认展开曲目栏，方便直接查看曲目并手动匹配专辑信息
+    applyRightPanelMode("queue");
+    renderQueueList();
   }
 
   async function playLocalAlbum(discId) {
     if (!window.pywebview || !window.pywebview.api) return;
+    applyOptimisticLocalAlbum(discId);
+    if (typeof isImmersiveMode !== "undefined" && isImmersiveMode) {
+      toggleImmersiveVinylMode(false);
+    }
+    switchMainView("cd");
     try {
       const ok = await window.pywebview.api.play_local_album(discId);
       if (ok) {
         triggerImmediatePoll();
-        if (typeof isImmersiveMode !== "undefined" && isImmersiveMode) {
-          toggleImmersiveVinylMode(false);
-        }
-        switchMainView("cd");
       }
     } catch (e) {
       console.warn("playLocalAlbum error:", e);

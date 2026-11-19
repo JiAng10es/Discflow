@@ -2029,25 +2029,23 @@
     transform: translateX(28px) rotate(26deg);
   }
 
-  /* 抽盘点击转场专属动效 (Vinyl Pull-out Transition) */
+  /* 抽盘点击轻盈反馈（纯 GPU 合成，零 box-shadow 重绘） */
   .vinyl-card.is-pulling-out {
     z-index: 120 !important;
     pointer-events: none;
-    transform: scale(1.06) translateY(-8px);
-    box-shadow: 0 24px 50px rgba(0, 0, 0, 0.65);
-    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.55s ease;
+    transform: scale(0.975);
+    opacity: 0.72;
+    transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.16s ease;
   }
 
   .vinyl-card.is-pulling-out .vinyl-disc {
-    transform: translateX(85px) translateY(-22px) rotate(75deg) scale(1.12) !important;
-    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.75), 0 0 30px rgba(255, 255, 255, 0.2);
-    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.55s ease;
+    transform: translateX(42px) rotate(24deg) !important;
+    transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .vinyl-card.is-pulling-out .vinyl-sleeve {
-    transform: translateY(4px) scale(0.97);
-    opacity: 0.85;
-    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.55s ease;
+    transform: scale(0.985);
+    transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .vinyl-info-title {
@@ -2715,6 +2713,18 @@
   .view-page.active {
     display: flex;
     flex-direction: column;
+    animation: viewPageFadeIn 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes viewPageFadeIn {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 6px, 0) scale(0.992);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
   }
 
   /* 视口内部实体 CD 主舞台重写 */
