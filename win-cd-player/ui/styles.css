@@ -1152,73 +1152,50 @@
     border-radius: clamp(12px, 1.5vh, 16px);
     cursor: pointer;
     transform-origin: left center;
-    transform: scale(0.95);
+    transform: scale(0.96) translate3d(0, 0, 0);
     opacity: 0.28;
     filter: blur(1.35px);
     transition:
-      transform 0.42s var(--spring-fluid),
-      opacity 0.36s ease-out,
-      filter 0.36s ease-out,
-      background-color 0.2s ease;
+      transform 0.32s linear,
+      opacity 0.32s linear,
+      filter 0.32s linear;
   }
 
   .lyric-item.near {
     opacity: 0.44;
     filter: blur(0.75px);
-    transform: scale(0.97);
+    transform: scale(0.98) translate3d(0, 0, 0);
   }
 
   .lyric-item.active {
     opacity: 1.0;
     filter: blur(0px);
     background: transparent;
-    transform: scale(1.05) translate3d(4px, -2px, 0);
-    animation: lyricActiveRise 0.48s var(--spring-fluid) both;
+    transform: scale(1.03) translate3d(4px, 0, 0);
   }
 
   .lyric-item.active .lyric-orig {
     text-shadow:
-      0 0 10px rgba(255, 255, 255, 0.56),
-      0 0 24px rgba(255, 255, 255, 0.28),
-      0 0 42px rgba(255, 255, 255, 0.14);
-  }
-
-  /* 逐字卡拉 OK 行：未唱出的字保持干净半透明，把发光聚焦给真正唱到的字 */
-  .lyric-item.active .lyric-orig:has(.lyric-word) {
-    text-shadow: none;
+      0 0 18px rgba(255, 255, 255, 0.22),
+      0 0 38px rgba(255, 255, 255, 0.12);
   }
 
   .lyric-item.active .lyric-trans {
-    color: rgba(255, 255, 255, 0.80);
-    text-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
+    color: rgba(255, 255, 255, 0.78);
+    text-shadow:
+      0 0 14px rgba(255, 255, 255, 0.14),
+      0 0 28px rgba(255, 255, 255, 0.08);
   }
 
   [data-theme="light"] .lyric-item.active .lyric-orig {
     text-shadow:
-      0 0 14px rgba(255, 255, 255, 0.96),
-      0 0 26px rgba(255, 255, 255, 0.78),
-      0 2px 10px rgba(0, 0, 0, 0.12);
-  }
-
-  [data-theme="light"] .lyric-item.active .lyric-orig:has(.lyric-word) {
-    text-shadow: none;
+      0 0 16px rgba(255, 255, 255, 0.78),
+      0 0 32px rgba(255, 255, 255, 0.45);
   }
 
   [data-theme="light"] .lyric-item.active .lyric-trans {
-    color: rgba(29, 29, 31, 0.78);
-    text-shadow: 0 0 12px rgba(255, 255, 255, 0.86);
-  }
-
-  @keyframes lyricActiveRise {
-    0% {
-      transform: scale(0.985) translate3d(0, 4px, 0);
-    }
-    55% {
-      transform: scale(1.058) translate3d(5px, -3px, 0);
-    }
-    100% {
-      transform: scale(1.05) translate3d(4px, -2px, 0);
-    }
+    color: rgba(29, 29, 31, 0.76);
+    text-shadow: 0 0 14px rgba(255, 255, 255, 0.65);
   }
 
   .lyric-item:hover {
@@ -1264,23 +1241,13 @@
     position: absolute;
     left: 0;
     top: 0;
-    width: 100%;
+    width: var(--wp, 0%);
     height: 100%;
-    clip-path: inset(-18px calc(100% - var(--wp, 0%)) -18px 0px);
+    overflow: hidden;
     white-space: pre;
     color: var(--karaoke-fill);
-    text-shadow:
-      0 0 10px rgba(255, 255, 255, 0.72),
-      0 0 24px rgba(255, 255, 255, 0.38),
-      0 0 42px rgba(255, 255, 255, 0.18);
+    text-shadow: none;
     pointer-events: none;
-  }
-
-  [data-theme="light"] .lyric-item.active .lyric-word::after {
-    text-shadow:
-      0 0 14px rgba(255, 255, 255, 0.96),
-      0 0 26px rgba(255, 255, 255, 0.78),
-      0 2px 10px rgba(0, 0, 0, 0.14);
   }
 
   .lyric-trans {

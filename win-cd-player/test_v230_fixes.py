@@ -1158,11 +1158,10 @@ setTimeout(function () {
         self.assertIn("window._libraryRenderSig", js)
         self.assertIn('decoding="async"', js)
         self.assertIn("@keyframes viewPageFadeIn", css)
-        self.assertIn("@keyframes lyricActiveRise", css)
         active_lyric_css = css[css.index(".lyric-item.active {"):css.index(".lyric-item.active .lyric-orig {")]
         self.assertIn("background: transparent;", active_lyric_css)
-        self.assertIn("clip-path: inset(-18px calc(100% - var(--wp, 0%)) -18px 0px);", css)
-        self.assertIn(".lyric-item.active .lyric-orig:has(.lyric-word)", css)
+        self.assertNotIn("lyricActiveRise", css)
+        self.assertIn("transform 0.32s linear", css)
         self.assertIn("def _async_start_local_album():", py)
 
 
