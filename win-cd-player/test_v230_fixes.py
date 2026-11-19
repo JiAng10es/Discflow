@@ -872,6 +872,7 @@ class TestCdRippingSpeedAndReliability(unittest.TestCase):
                 cover_data_url="",
                 lyrics_cache={},
                 library_mgr=mgr,
+                rip_format="wav",
             )
 
             sector_counts_seen = []
@@ -1241,6 +1242,212 @@ setTimeout(function () {
             "apply_staged_update_and_restart",
         ):
             self.assertTrue(hasattr(updater_service, fn_name), f"updater_service 缺少 {fn_name}")
+
+    def test_phase3_flac_default_ripping_tags_and_local_reader(self):
+        import base64
+        import ctypes
+        import io
+        from types import SimpleNamespace
+        from PIL import Image
+        from mutagen.flac import FLAC
+
+        tmp_dir = tempfile.mkdtemp(prefix="discflow_rip_flac_")
+        try:
+            mgr = library_service.DiscflowLibraryManager(base_dir=tmp_dir)
+            img = Image.new("RGB", (200, 200), color=(30, 90, 180))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG")
+            cover_data_url = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+
+            toc = SimpleNamespace(
+                disc_id="rip_flac_disc",
+                drive_letter="D:",
+                tracks=[
+                    SimpleNamespace(
+                        track_number=1, title="FLAC Song", artist="FLAC Artist",
+                        duration_sec=2.0, start_lba=0, end_lba=75, is_data_track=False,
+                    ),
+                ],
+            )
+            task = library_service.CdRipperTask(
+                toc=toc,
+                album_title="FLAC Album",
+                artist="FLAC Artist",
+                year="2026",
+                cover_data_url=cover_data_url,
+                lyrics_cache={},
+                library_mgr=mgr,
+            )
+            self.assertEqual(task.rip_format, "flac")
+
+            def fake_ioctl(h, code, in_ptr, in_sz, out_buf, out_sz, ret_ptr, overlapped):
+                ret_val = ctypes.cast(ret_ptr, ctypes.POINTER(ctypes.c_ulong))
+                ret_val.contents.value = out_sz
+                ctypes.memset(out_buf, 0x15, out_sz)
+                return 1
+
+            with patch.object(library_service.WindowsCdDriveManager, "open_drive_handle", return_value=12345), \
+                 patch.object(library_service.kernel32, "DeviceIoControl", side_effect=fake_ioctl), \
+                 patch.object(library_service.kernel32, "CloseHandle", return_value=1):
+                task.run()
+
+            prog = task.get_progress()
+            self.assertTrue(prog.is_completed, f"FLAC 抓轨应成功完成，实际：{prog}")
+
+            flac_path = os.path.join(tmp_dir, "rip_flac_disc", "track_01.flac")
+            self.assertTrue(os.path.isfile(flac_path))
+            expected_frames = 75 * 2352 // 4
+
+            # 验证 Vorbis Comment 标签与内嵌封面
+            meta = FLAC(flac_path)
+            self.assertEqual(meta["TITLE"], ["FLAC Song"])
+            self.assertEqual(meta["ARTIST"], ["FLAC Artist"])
+            self.assertEqual(meta["ALBUM"], ["FLAC Album"])
+            self.assertEqual(meta["DATE"], ["2026"])
+            self.assertEqual(meta["TRACKNUMBER"], ["1"])
+            self.assertEqual(meta["TRACKTOTAL"], ["1"])
+            self.assertEqual(len(meta.pictures), 1)
+            self.assertEqual(meta.pictures[0].type, 3)
+
+            # 验证 _LocalAudioReader 无缝读取与 Seek
+            reader = cd_engine._LocalAudioReader(flac_path)
+            try:
+                self.assertEqual(reader.getnframes(), expected_frames)
+                chunk = reader.readframes(588)
+                self.assertEqual(len(chunk), 588 * 4)
+                reader.setpos(1000)
+                chunk2 = reader.readframes(588)
+                self.assertEqual(len(chunk2), 588 * 4)
+            finally:
+                reader.close()
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_phase3_wav_to_flac_migration_and_stats(self):
+        import io
+        import json
+        import wave
+        from PIL import Image
+        from mutagen.flac import FLAC
+
+        tmp_dir = tempfile.mkdtemp(prefix="discflow_migrate_")
+        try:
+            alb_dir = os.path.join(tmp_dir, "old_wav_disc")
+            os.makedirs(alb_dir, exist_ok=True)
+            img = Image.new("RGB", (120, 120), color=(200, 60, 40))
+            cover_path = os.path.join(alb_dir, "cover.jpg")
+            img.save(cover_path, format="JPEG")
+
+            wav_path = os.path.join(alb_dir, "track_01.wav")
+            expected_frames = 44100  # 1 秒 44.1kHz 16-bit 立体声
+            pcm_bytes = (b"\x10\x02\xf0\xfd") * expected_frames
+            with wave.open(wav_path, "wb") as wf:
+                wf.setnchannels(2)
+                wf.setsampwidth(2)
+                wf.setframerate(44100)
+                wf.writeframes(pcm_bytes)
+
+            meta = {
+                "disc_id": "old_wav_disc",
+                "title": "Legacy WAV Album",
+                "artist": "Legacy Artist",
+                "year": "2024",
+                "cover_file": "cover.jpg",
+                "cover_data_url": "",
+                "ripped_at": 100.0,
+                "tracks": [
+                    {
+                        "track_number": 1,
+                        "title": "Legacy Track",
+                        "artist": "Legacy Artist",
+                        "duration_sec": 1.0,
+                        "file_name": "track_01.wav",
+                        "lyrics": [],
+                    }
+                ],
+            }
+            with open(os.path.join(alb_dir, "album.json"), "w", encoding="utf-8") as mf:
+                json.dump(meta, mf)
+
+            mgr = library_service.DiscflowLibraryManager(base_dir=tmp_dir)
+            stats_before = mgr.get_wav_stats()
+            self.assertEqual(stats_before["wavAlbumCount"], 1)
+            self.assertEqual(stats_before["wavTrackCount"], 1)
+            self.assertGreater(stats_before["wavTotalBytes"], 0)
+
+            res = mgr.convert_wav_albums_to_flac()
+            self.assertEqual(res["convertedAlbums"], 1)
+            self.assertEqual(res["convertedTracks"], 1)
+            self.assertEqual(res["errors"], [])
+
+            flac_path = os.path.join(alb_dir, "track_01.flac")
+            self.assertTrue(os.path.isfile(flac_path))
+            self.assertFalse(os.path.isfile(wav_path))
+
+            reader = cd_engine._LocalAudioReader(flac_path)
+            try:
+                self.assertEqual(reader.getnframes(), expected_frames)
+                decoded = reader.readframes(expected_frames)
+                self.assertEqual(decoded, pcm_bytes)
+            finally:
+                reader.close()
+
+            tags = FLAC(flac_path)
+            self.assertEqual(tags["TITLE"], ["Legacy Track"])
+            self.assertEqual(tags["ALBUM"], ["Legacy WAV Album"])
+            self.assertEqual(len(tags.pictures), 1)
+
+            stats_after = mgr.get_wav_stats()
+            self.assertEqual(stats_after["wavTrackCount"], 0)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_phase3_audio_output_mode_and_wasapi_fallback(self):
+        prefs = library_service.load_user_preferences()
+        self.assertIn(prefs.get("ripFormat"), ("flac", "wav"))
+        self.assertIn(prefs.get("audioOutputMode"), cd_engine.CddaWaveOutPlayer.VALID_OUTPUT_MODES)
+
+        fallback_msgs = []
+        player = cd_engine.CddaWaveOutPlayer(on_output_fallback=lambda m: fallback_msgs.append(m))
+        self.assertEqual(player.get_output_mode(), "waveout")
+        self.assertEqual(player.set_output_mode("wasapi_exclusive"), "wasapi_exclusive")
+        self.assertEqual(player.set_output_mode("invalid_mode"), "waveout")
+
+        # 100% 音量 Bit-Perfect 直通（原字节返回）；50% 音量衰减
+        raw = b"\x00\x20\x00\xe0"
+        self.assertEqual(cd_engine.CddaWaveOutPlayer._scale_pcm16_volume(raw, 1.0), raw)
+        scaled = cd_engine.CddaWaveOutPlayer._scale_pcm16_volume(raw, 0.5)
+        self.assertNotEqual(scaled, raw)
+        self.assertEqual(len(scaled), len(raw))
+
+        # 模拟 WASAPI 打开失败 -> 触发自动回退通知并返回 False（交由 waveOut 兜底）
+        dummy_trk = cd_engine.CdTrackInfo(
+            track_number=1, start_lba=0, end_lba=75, start_frame=150, duration_sec=1.0
+        )
+        with patch.object(player, "_open_wasapi_stream", side_effect=RuntimeError("mock busy")):
+            handled = player._run_wasapi_loop(player._session_id, "", dummy_trk, 0, exclusive=True)
+        self.assertFalse(handled)
+        self.assertEqual(len(fallback_msgs), 1)
+        self.assertIn("回退", fallback_msgs[0])
+
+    def test_phase3_ui_and_spec_wiring(self):
+        base_dir = os.path.dirname(__file__)
+        with open(os.path.join(base_dir, "ui", "index.html"), "r", encoding="utf-8") as f:
+            html = f.read()
+        with open(os.path.join(base_dir, "ui", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+        with open(os.path.join(base_dir, "Discflow.spec"), "r", encoding="utf-8") as f:
+            spec = f.read()
+
+        self.assertIn('id="audioOutputModeSelect"', html)
+        self.assertIn('id="ripFormatSelect"', html)
+        self.assertIn('id="wavMigrationBtn"', html)
+        self.assertIn("function onAudioOutputModeChange(", js)
+        self.assertIn("function onRipFormatChange(", js)
+        self.assertIn("function startWavToFlacMigration(", js)
+        self.assertIn("_soundfile_data", spec)
+        self.assertIn("_sounddevice_data", spec)
+        self.assertIn("mutagen.flac", spec)
 
 
 if __name__ == "__main__":

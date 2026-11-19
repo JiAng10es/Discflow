@@ -1,12 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 
+_sf_datas = [
+    item for item in collect_data_files('_soundfile_data')
+    if item[0].lower().endswith(('libsndfile_x64.dll', 'copying'))
+]
+_sd_datas = [
+    item for item in collect_data_files('_sounddevice_data')
+    if item[0].lower().endswith('libportaudio64bit.dll')
+]
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('ui', 'ui'), ('discflow.ico', '.')],
-    hiddenimports=[],
+    datas=[('ui', 'ui'), ('discflow.ico', '.')] + _sf_datas + _sd_datas,
+    hiddenimports=['_soundfile_data', '_sounddevice_data', 'soundfile', 'sounddevice', 'mutagen.flac'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

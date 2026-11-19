@@ -490,6 +490,22 @@
                 </label>
               </div>
 
+              <!-- 音频输出引擎 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col" style="padding-right: 12px;">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                    <span>音频输出引擎</span>
+                  </div>
+                  <div class="settings-item-sub" id="audioOutputModeSub">默认使用标准兼容模式；WASAPI 独占直通可绕过系统混音器（独占时其他软件静音，设备不支持时自动回退）</div>
+                </div>
+                <select id="audioOutputModeSelect" class="drive-select" style="height: 30px; font-size: 12px; flex-shrink: 0;" onchange="onAudioOutputModeChange(this.value)">
+                  <option value="waveout">标准兼容 (waveOut · 默认)</option>
+                  <option value="wasapi_shared">WASAPI 共享 (低延迟)</option>
+                  <option value="wasapi_exclusive">WASAPI 独占直通 (Bit-Perfect)</option>
+                </select>
+              </div>
+
               <!-- CD-DA 硬件引擎状态 -->
               <div class="settings-row-item">
                 <div class="settings-item-col">
@@ -497,7 +513,7 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="3"/></svg>
                     <span>CD-DA 原生无损音频直读</span>
                   </div>
-                  <div class="settings-item-sub">Win32 IOCTL RAW_READ & waveOut 零损双缓冲，标准 44.1kHz / 16-Bit</div>
+                  <div class="settings-item-sub">Win32 IOCTL RAW_READ & FLAC/WAV 无损流式播放，标准 44.1kHz / 16-Bit</div>
                 </div>
                 <span style="font-size: 12px; color: #30d158; font-weight: 600;">硬件就绪</span>
               </div>
@@ -523,6 +539,38 @@
                 <button class="pill-btn" onclick="openLibraryFolder()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   <span>在管理器中打开</span>
+                </button>
+              </div>
+
+              <!-- CD 抓轨归档格式 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col" style="padding-right: 12px;">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                    <span>CD 抓轨归档格式</span>
+                  </div>
+                  <div class="settings-item-sub">默认 FLAC 无损压缩（与 WAV 音质逐比特等价，节省约 45% 磁盘空间并自动内嵌封面与曲目标签）</div>
+                </div>
+                <select id="ripFormatSelect" class="drive-select" style="height: 30px; font-size: 12px; flex-shrink: 0;" onchange="onRipFormatChange(this.value)">
+                  <option value="flac">FLAC 无损压缩 (默认)</option>
+                  <option value="wav">WAV 原始无损</option>
+                </select>
+              </div>
+
+              <!-- 旧 WAV 专辑无损瘦身 -->
+              <div class="settings-row-item">
+                <div class="settings-item-col" style="padding-right: 12px; flex: 1; min-width: 0;">
+                  <div class="settings-item-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                    <span>旧 WAV 专辑无损转 FLAC</span>
+                  </div>
+                  <div class="settings-item-sub" id="wavMigrationSub">正在扫描资料库中的 WAV 音轨...</div>
+                  <div id="wavMigrationProgressWrap" style="display: none; margin-top: 6px; height: 4px; width: 100%; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden;">
+                    <div id="wavMigrationProgressBar" style="height: 100%; width: 0%; background: #30d158; border-radius: 999px; transition: width 0.2s linear;"></div>
+                  </div>
+                </div>
+                <button class="pill-btn" id="wavMigrationBtn" onclick="onWavMigrationButtonClick()" style="font-size: 12px; padding: 6px 14px; white-space: nowrap; flex-shrink: 0;">
+                  <span>一键转 FLAC</span>
                 </button>
               </div>
 

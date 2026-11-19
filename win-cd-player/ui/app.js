@@ -11,7 +11,9 @@
     topbarBlur: 2,
     themeMode: "dark",
     autoPlay: true,
-    showTranslation: true
+    showTranslation: true,
+    ripFormat: "flac",
+    audioOutputMode: "waveout"
   };
 
   let currentCustomPrefs = { ...DEFAULT_CUSTOM_PREFS };
@@ -154,6 +156,19 @@
       apSwitch.checked = isAuto;
     }
 
+    const outSel = document.getElementById("audioOutputModeSelect");
+    if (outSel && prefs) {
+      const mode = ["waveout", "wasapi_shared", "wasapi_exclusive"].includes(prefs.audioOutputMode)
+        ? prefs.audioOutputMode
+        : "waveout";
+      outSel.value = mode;
+    }
+
+    const ripSel = document.getElementById("ripFormatSelect");
+    if (ripSel && prefs) {
+      ripSel.value = prefs.ripFormat === "wav" ? "wav" : "flac";
+    }
+
     if (typeof recenterActiveLyric === "function") {
       recenterActiveLyric();
     }
@@ -192,6 +207,9 @@
     const body = document.querySelector(".settings-modal-body");
     if (body) {
       body.scrollTop = 0;
+    }
+    if (tabName === "storage") {
+      refreshWavMigrationStats();
     }
   }
 
@@ -732,6 +750,163 @@ function toggleDiscflowMenu(event) {
     }
   }
 
+  // ================= Phase 3: 音频输出引擎 / FLAC 抓轨格式 / 旧 WAV 无损转换 =================
+  async function onAudioOutputModeChange(mode) {
+    const norm = ["waveout", "wasapi_shared", "wasapi_exclusive"].includes(mode) ? mode : "waveout";
+    currentCustomPrefs.audioOutputMode = norm;
+    try {
+      localStorage.setItem("discflow_custom_prefs", JSON.stringify(currentCustomPrefs));
+    } catch (e) {}
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.set_audio_output_mode) {
+      try {
+        const res = await window.pywebview.api.set_audio_output_mode(norm);
+        if (res && res.ok) {
+          alertToast(`音频输出引擎已切换为：${res.label || norm}`);
+        }
+      } catch (e) {
+        console.warn("set_audio_output_mode error:", e);
+      }
+    } else {
+      saveCustomPrefs();
+    }
+  }
+
+  function onRipFormatChange(fmt) {
+    const norm = fmt === "wav" ? "wav" : "flac";
+    currentCustomPrefs.ripFormat = norm;
+    saveCustomPrefs();
+    alertToast(norm === "flac" ? "CD 抓轨已设为 FLAC 无损压缩（默认）" : "CD 抓轨已设为 WAV 原始无损");
+  }
+
+  let _wavMigrationTimer = null;
+  let _isWavMigrating = false;
+
+  async function refreshWavMigrationStats() {
+    const sub = document.getElementById("wavMigrationSub");
+    const btn = document.getElementById("wavMigrationBtn");
+    const pWrap = document.getElementById("wavMigrationProgressWrap");
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_wav_library_stats) return;
+    try {
+      if (window.pywebview.api.get_wav_migration_progress) {
+        const curProg = await window.pywebview.api.get_wav_migration_progress();
+        if (curProg && curProg.status === "running") {
+          _isWavMigrating = true;
+          renderWavMigrationProgress(curProg);
+          if (!_wavMigrationTimer) {
+            _wavMigrationTimer = setInterval(pollWavMigrationProgress, 400);
+          }
+          return;
+        }
+      }
+      const stats = await window.pywebview.api.get_wav_library_stats();
+      if (!stats) return;
+      if (pWrap) pWrap.style.display = "none";
+      if (stats.wavTrackCount > 0) {
+        if (sub) {
+          sub.textContent = `检测到 ${stats.wavAlbumCount} 张专辑共 ${stats.wavTrackCount} 首旧 WAV（占 ${stats.wavTotalMb} MB），预计无损释放约 ${stats.estimatedSaveMb} MB`;
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "一键转 FLAC";
+        }
+      } else {
+        if (sub) {
+          sub.textContent = "当前资料库已全部为 FLAC 无损格式或暂无历史 WAV 音轨，无需转换";
+        }
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "全部已压缩";
+        }
+      }
+    } catch (e) {
+      console.warn("refreshWavMigrationStats error:", e);
+    }
+  }
+
+  function renderWavMigrationProgress(prog) {
+    if (!prog) return;
+    const sub = document.getElementById("wavMigrationSub");
+    const btn = document.getElementById("wavMigrationBtn");
+    const pWrap = document.getElementById("wavMigrationProgressWrap");
+    const pBar = document.getElementById("wavMigrationProgressBar");
+    const pct = Math.min(100, Math.max(0, Number(prog.progressPct || 0)));
+
+    if (pWrap) {
+      pWrap.style.display = (prog.status === "running" || prog.status === "completed") ? "block" : "none";
+    }
+    if (pBar) pBar.style.width = `${pct}%`;
+    if (sub && prog.statusText) sub.textContent = prog.statusText;
+
+    if (prog.status === "running") {
+      _isWavMigrating = true;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "取消转换";
+      }
+    } else {
+      _isWavMigrating = false;
+      if (_wavMigrationTimer) {
+        clearInterval(_wavMigrationTimer);
+        _wavMigrationTimer = null;
+      }
+      if (prog.status === "completed") {
+        if (pBar) pBar.style.width = "100%";
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "转换完成";
+        }
+        alertToast(`无损转换完成：节省 ${prog.savedMb || 0} MB 空间`);
+        renderLibraryCards(true);
+      } else if (prog.status === "cancelled" || prog.status === "error") {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "一键转 FLAC";
+        }
+        if (prog.status === "cancelled") {
+          alertToast("已取消 WAV 转 FLAC 任务");
+        }
+      }
+    }
+  }
+
+  async function pollWavMigrationProgress() {
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.get_wav_migration_progress) return;
+    try {
+      const prog = await window.pywebview.api.get_wav_migration_progress();
+      renderWavMigrationProgress(prog);
+    } catch (e) {}
+  }
+
+  async function startWavToFlacMigration() {
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.start_wav_to_flac_migration) return;
+    if (!confirm("将资料库中的历史 WAV 音轨无损转换为 FLAC 格式：\n• 音质与原始 WAV 逐比特完全一致（无损压缩）\n• 每首均会进行采样帧数严格校验并内嵌高清封面与曲目标签\n• 校验通过且索引更新后才会删除原 WAV\n\n确定开始后台转换吗？")) {
+      return;
+    }
+    try {
+      const res = await window.pywebview.api.start_wav_to_flac_migration();
+      if (!res || !res.ok) {
+        alertToast((res && res.reason) || "无法启动 WAV 转 FLAC 任务");
+        return;
+      }
+      _isWavMigrating = true;
+      if (_wavMigrationTimer) clearInterval(_wavMigrationTimer);
+      _wavMigrationTimer = setInterval(pollWavMigrationProgress, 400);
+      pollWavMigrationProgress();
+    } catch (e) {
+      alertToast("启动转换失败：" + e);
+    }
+  }
+
+  async function onWavMigrationButtonClick() {
+    if (_isWavMigrating) {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.cancel_wav_to_flac_migration) {
+        await window.pywebview.api.cancel_wav_to_flac_migration();
+      }
+      return;
+    }
+    await startWavToFlacMigration();
+  }
+
   // 可编程复用的 Discflow 极简黑白 SVG 图标生成函数 (支持 24x24 或任意尺寸挂载)
   function createDiscflowIconMarkup(size = 24) {
     return `
@@ -777,6 +952,12 @@ function toggleDiscflowMenu(event) {
   function openModal(id) {
     const el = document.getElementById(id);
     if (el) el.classList.add("open");
+    if (id === "settingsModal") {
+      const storagePane = document.querySelector('.settings-tab-pane[data-tab-pane="storage"]');
+      if (storagePane && storagePane.classList.contains("active")) {
+        refreshWavMigrationStats();
+      }
+    }
   }
 
   function closeModal(id) {

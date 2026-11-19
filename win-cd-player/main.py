@@ -238,6 +238,7 @@ class DiscflowController:
             on_finished=self._on_player_finished,
             on_error=self._on_player_error,
             on_track_transition=self._on_player_track_transition,
+            on_output_fallback=self._on_audio_output_fallback,
         )
 
         # 启动后台全局媒体按键监听器 (后台/最小化时响应播放/暂停/上一曲/下一曲)
@@ -249,15 +250,32 @@ class DiscflowController:
         )
         self._media_keys.start()
 
-        # 启动时恢复上次保存的音量（preferences.json），并立即作用到播放引擎
+        # 启动时恢复上次保存的音量与音频输出模式（preferences.json），并立即作用到播放引擎
         try:
             init_prefs = load_user_preferences()
             self.volume_pct: int = int(max(0, min(100, int(init_prefs.get("volume", 80)))))
             self._ignored_update_version: str = str(init_prefs.get("ignoredUpdateVersion", "") or "")
+            init_audio_mode: str = str(init_prefs.get("audioOutputMode", "waveout") or "waveout")
         except Exception:
             self.volume_pct = 80
             self._ignored_update_version = ""
+            init_audio_mode = "waveout"
         self.player.set_volume(self.volume_pct / 100.0)
+        self.player.set_output_mode(init_audio_mode)
+
+        self._wav_migration_lock = threading.Lock()
+        self._wav_migration_cancel_event = threading.Event()
+        self._wav_migration_state: dict = {
+            "status": "idle",
+            "progressPct": 0.0,
+            "statusText": "",
+            "convertedAlbums": 0,
+            "convertedTracks": 0,
+            "totalTracks": 0,
+            "savedBytes": 0,
+            "savedMb": 0.0,
+            "errors": [],
+        }
 
         self._hwnd: int = 0
         self._is_maximized: bool = False
@@ -1122,6 +1140,11 @@ class DiscflowController:
             except Exception:
                 pass
 
+            try:
+                rip_fmt = str(load_user_preferences().get("ripFormat", "flac") or "flac").strip().lower()
+            except Exception:
+                rip_fmt = "flac"
+
             task = CdRipperTask(
                 toc=self.current_toc,
                 album_title=self.album_title,
@@ -1130,6 +1153,7 @@ class DiscflowController:
                 cover_data_url=self.cover_data_url,
                 lyrics_cache=dict(self.lyrics_cache),
                 library_mgr=self.library_manager,
+                rip_format=rip_fmt,
             )
             self.ripper_task = task
             threading.Thread(target=task.run, daemon=True).start()
@@ -1285,7 +1309,121 @@ class DiscflowController:
         return load_user_preferences()
 
     def save_preferences(self, prefs: dict) -> bool:
+        if isinstance(prefs, dict) and "audioOutputMode" in prefs:
+            applied = self.player.set_output_mode(str(prefs.get("audioOutputMode") or "waveout"))
+            prefs = dict(prefs)
+            prefs["audioOutputMode"] = applied
         return save_user_preferences(prefs)
+
+    def set_audio_output_mode(self, mode: str) -> dict:
+        applied = self.player.set_output_mode(mode)
+        save_user_preferences({"audioOutputMode": applied})
+        log_runtime_event("AUDIO", f"切换音频输出引擎 mode={applied}")
+
+        # 若当前正在播放曲目，平滑按新引擎重启并定位回原播放进度
+        was_playing = False
+        resume_pos = 0.0
+        toc_ref = None
+        trk_idx = 0
+        with self._lock:
+            if self.current_toc and self.current_toc.tracks and self.player.is_playing():
+                was_playing = True
+                resume_pos = max(0.0, float(self.elapsed_sec or 0.0))
+                toc_ref = self.current_toc
+                trk_idx = self.current_track_index
+
+        if was_playing and toc_ref and 0 <= trk_idx < len(toc_ref.tracks):
+            trk = toc_ref.tracks[trk_idx]
+            try:
+                self.player.stop()
+                self.player.wait_reader_idle(timeout=1.0)
+                self.player.load_and_play(toc_ref.drive_letter, trk, track_index=trk_idx)
+                if resume_pos > 1.0:
+                    self.player.seek(resume_pos)
+            except Exception as e:
+                log_runtime_event("AUDIO", f"切换输出引擎热重启异常: {e}", level="WARNING")
+
+        label_map = {
+            "waveout": "标准兼容 (waveOut)",
+            "wasapi_shared": "WASAPI 共享模式",
+            "wasapi_exclusive": "WASAPI 独占直通 (Bit-Perfect)",
+        }
+        return {"ok": True, "mode": applied, "label": label_map.get(applied, applied)}
+
+    def get_wav_library_stats(self) -> dict:
+        return self.library_manager.get_wav_stats()
+
+    def start_wav_to_flac_migration(self) -> dict:
+        if self._is_ripping():
+            return {"ok": False, "reason": "正在执行 CD 抓轨，请等待抓轨完成后再转换"}
+        with self._wav_migration_lock:
+            if self._wav_migration_state.get("status") == "running":
+                return {"ok": False, "reason": "已有 WAV 转 FLAC 任务正在后台执行"}
+            stats = self.library_manager.get_wav_stats()
+            if stats.get("wavTrackCount", 0) <= 0:
+                return {"ok": False, "reason": "资料库中已全部为 FLAC 或暂无可转换的 WAV 音轨"}
+
+            self._wav_migration_cancel_event.clear()
+            self._wav_migration_state = {
+                "status": "running",
+                "progressPct": 0.0,
+                "statusText": f"正在准备转换 {stats['wavTrackCount']} 首 WAV 音轨...",
+                "convertedAlbums": 0,
+                "convertedTracks": 0,
+                "totalTracks": stats["wavTrackCount"],
+                "savedBytes": 0,
+                "savedMb": 0.0,
+                "errors": [],
+            }
+
+        # 若当前正在播放本地专辑，先停播并释放文件句柄，避免 Windows 锁定旧 WAV 文件
+        active_local_disc_id = ""
+        with self._lock:
+            if self.current_toc and getattr(self.current_toc, "is_local", False):
+                active_local_disc_id = str(getattr(self.current_toc, "disc_id", "") or "")
+        if active_local_disc_id:
+            try:
+                self.player.stop()
+                self.player.wait_reader_idle(timeout=1.5)
+            except Exception:
+                pass
+
+        def _worker():
+            def _on_prog(info: dict):
+                with self._wav_migration_lock:
+                    self._wav_migration_state.update(info)
+
+            try:
+                res = self.library_manager.convert_wav_albums_to_flac(
+                    on_progress=_on_prog,
+                    should_cancel=self._wav_migration_cancel_event.is_set,
+                )
+                with self._wav_migration_lock:
+                    self._wav_migration_state["status"] = "cancelled" if res.get("cancelled") else "completed"
+                # 刷新当前正在载入的本地专辑 TOC，确保后续播放指向新 .flac 文件
+                if active_local_disc_id:
+                    new_toc = self.library_manager.get_album_toc(active_local_disc_id)
+                    if new_toc:
+                        with self._lock:
+                            if self.current_toc and getattr(self.current_toc, "disc_id", "") == active_local_disc_id:
+                                self.current_toc = new_toc
+                self._bump_meta()
+            except Exception as e:
+                log_runtime_event("MIGRATE", f"WAV 转 FLAC 后台任务异常: {e}", level="ERROR")
+                with self._wav_migration_lock:
+                    self._wav_migration_state["status"] = "error"
+                    self._wav_migration_state["statusText"] = f"转换异常: {e}"
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return {"ok": True, "totalTracks": stats["wavTrackCount"], "wavAlbumCount": stats["wavAlbumCount"]}
+
+    def cancel_wav_to_flac_migration(self) -> dict:
+        self._wav_migration_cancel_event.set()
+        return {"ok": True}
+
+    def get_wav_migration_progress(self) -> dict:
+        with self._wav_migration_lock:
+            return dict(self._wav_migration_state)
 
     def search_album_candidates_for_current(self, title: str = "", artist: str = "") -> list:
         """按输入（缺省用当前专辑名/艺术家）三源并发检索专辑候选"""
@@ -2454,6 +2592,13 @@ class DiscflowController:
         else:
             self.next_track()
 
+    def _on_audio_output_fallback(self, reason: str):
+        if self._closed:
+            return
+        log_runtime_event("AUDIO", reason, level="WARNING")
+        self.status_text = reason
+        self._bump_meta()
+
     def _on_player_error(self, msg: str):
         if self._closed:
             return
@@ -2596,6 +2741,21 @@ class DiscflowJsApi:
 
     def save_preferences(self, prefs: dict) -> bool:
         return self._ctrl.save_preferences(prefs)
+
+    def set_audio_output_mode(self, mode: str) -> dict:
+        return self._ctrl.set_audio_output_mode(mode)
+
+    def get_wav_library_stats(self) -> dict:
+        return self._ctrl.get_wav_library_stats()
+
+    def start_wav_to_flac_migration(self) -> dict:
+        return self._ctrl.start_wav_to_flac_migration()
+
+    def cancel_wav_to_flac_migration(self) -> dict:
+        return self._ctrl.cancel_wav_to_flac_migration()
+
+    def get_wav_migration_progress(self) -> dict:
+        return self._ctrl.get_wav_migration_progress()
 
     def get_library_dir(self) -> str:
         return self._ctrl.get_library_dir()

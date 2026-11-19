@@ -307,6 +307,8 @@ def load_user_preferences() -> dict:
         "ignoredUpdateVersion": "",
         "lastSession": {},
         "lyricOffsets": {},
+        "ripFormat": "flac",
+        "audioOutputMode": "waveout",
     }
     path = get_preferences_file_path()
     if os.path.isfile(path):
@@ -852,9 +854,344 @@ class DiscflowLibraryManager:
             is_local=True,
         )
 
+    def get_wav_stats(self) -> dict:
+        """统计资料库中仍为 WAV 格式的专辑数、曲目数与总大小（MB）。"""
+        albums = self.list_albums(force_refresh=True)
+        wav_albums = 0
+        wav_tracks = 0
+        wav_bytes = 0
+        for alb in albums:
+            alb_dir = self.get_album_dir(alb.disc_id)
+            if not os.path.isdir(alb_dir):
+                alb_dir = os.path.join(self.base_dir, alb.disc_id)
+            has_wav = False
+            for t in (alb.tracks or []):
+                fname = str(getattr(t, "file_name", "") or "")
+                if fname.lower().endswith(".wav"):
+                    fpath = os.path.join(alb_dir, fname)
+                    if os.path.isfile(fpath):
+                        has_wav = True
+                        wav_tracks += 1
+                        try:
+                            wav_bytes += os.path.getsize(fpath)
+                        except OSError:
+                            pass
+            if has_wav:
+                wav_albums += 1
+        wav_mb = round(wav_bytes / (1024.0 * 1024.0), 1)
+        estimated_save_mb = round((wav_bytes * 0.45) / (1024.0 * 1024.0), 1)
+        return {
+            "wavAlbums": wav_albums,
+            "wavTracks": wav_tracks,
+            "wavBytes": wav_bytes,
+            "wavMb": wav_mb,
+            "wavAlbumCount": wav_albums,
+            "wavTrackCount": wav_tracks,
+            "wavTotalBytes": wav_bytes,
+            "wavTotalMb": wav_mb,
+            "estimatedSaveMb": estimated_save_mb,
+        }
+
+    def convert_wav_albums_to_flac(
+        self,
+        on_progress: Optional[Callable[[dict], None]] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+    ) -> dict:
+        """
+        将资料库中旧 WAV 音轨逐轨无损转码为 FLAC 并写入元数据/内嵌封面：
+        严格先校验新 FLAC 帧数与原 WAV 一致，原子更新 album.json 后再删除旧 WAV。
+        """
+        import soundfile as sf
+
+        stats = self.get_wav_stats()
+        total_tracks = int(stats.get("wavTracks", 0))
+        result = {
+            "ok": True,
+            "convertedAlbums": 0,
+            "convertedTracks": 0,
+            "totalTracks": total_tracks,
+            "savedBytes": 0,
+            "savedMb": 0.0,
+            "errors": [],
+            "cancelled": False,
+        }
+        if total_tracks <= 0:
+            if on_progress:
+                on_progress({
+                    "status": "completed",
+                    "progressPct": 100.0,
+                    "statusText": "资料库中没有需要转换的 WAV 音轨",
+                    **result,
+                })
+            return result
+
+        log_runtime_event("MIGRATE", f"开始 WAV -> FLAC 无损转换 albums={stats['wavAlbums']} tracks={total_tracks}")
+        albums = self.list_albums(force_refresh=True)
+        done_tracks = 0
+
+        for alb in albums:
+            if should_cancel and should_cancel():
+                result["cancelled"] = True
+                break
+            alb_dir = self.get_album_dir(alb.disc_id)
+            if not os.path.isdir(alb_dir):
+                alb_dir = os.path.join(self.base_dir, alb.disc_id)
+            meta_path = os.path.join(alb_dir, "album.json")
+            if not os.path.isfile(meta_path):
+                continue
+
+            # 读取高清封面字节用于内嵌至 FLAC
+            cover_bytes = b""
+            cover_mime = "image/jpeg"
+            if alb.cover_file:
+                cp = os.path.join(alb_dir, alb.cover_file)
+                if os.path.isfile(cp):
+                    try:
+                        with open(cp, "rb") as cf:
+                            cover_bytes = cf.read()
+                        if alb.cover_file.lower().endswith(".png"):
+                            cover_mime = "image/png"
+                    except Exception:
+                        pass
+            if not cover_bytes and alb.cover_data_url and "," in alb.cover_data_url:
+                try:
+                    hdr, b64 = alb.cover_data_url.split(",", 1)
+                    cover_bytes = base64.b64decode(b64)
+                    if "png" in hdr.lower():
+                        cover_mime = "image/png"
+                except Exception:
+                    pass
+
+            try:
+                with open(meta_path, "r", encoding="utf-8") as mf:
+                    meta_data = json.load(mf)
+            except Exception as e:
+                result["errors"].append(f"{alb.title}: 读取 album.json 失败 ({e})")
+                continue
+
+            meta_tracks = meta_data.get("tracks") or []
+            album_converted_any = False
+            total_in_album = len(meta_tracks)
+
+            for trk_dict in meta_tracks:
+                if should_cancel and should_cancel():
+                    result["cancelled"] = True
+                    break
+                fname = str(trk_dict.get("file_name") or "")
+                if not fname.lower().endswith(".wav"):
+                    continue
+                wav_path = os.path.join(alb_dir, fname)
+                if not os.path.isfile(wav_path):
+                    continue
+
+                flac_name = os.path.splitext(fname)[0] + ".flac"
+                flac_path = os.path.join(alb_dir, flac_name)
+                tmp_flac_path = flac_path + ".tmp"
+                trk_title = str(trk_dict.get("title") or fname)
+
+                if on_progress:
+                    on_progress({
+                        "status": "running",
+                        "progressPct": round((done_tracks / max(1, total_tracks)) * 100.0, 1),
+                        "statusText": f"正在无损转换 ({done_tracks + 1}/{total_tracks}): {alb.title} - {trk_title}",
+                        "convertedTracks": result["convertedTracks"],
+                        "totalTracks": total_tracks,
+                        "savedMb": round(result["savedBytes"] / (1024.0 * 1024.0), 1),
+                    })
+
+                try:
+                    wav_size = os.path.getsize(wav_path)
+                    with wave.open(wav_path, "rb") as wf:
+                        n_channels = wf.getnchannels()
+                        sampwidth = wf.getsampwidth()
+                        framerate = wf.getframerate()
+                        expected_frames = wf.getnframes()
+                        if sampwidth != 2:
+                            raise RuntimeError(f"暂不支持 {sampwidth * 8}-bit WAV 转换")
+                        with sf.SoundFile(
+                            tmp_flac_path,
+                            mode="w",
+                            samplerate=framerate,
+                            channels=n_channels,
+                            subtype="PCM_16",
+                            format="FLAC",
+                        ) as sf_out:
+                            while True:
+                                chunk = wf.readframes(65536)
+                                if not chunk:
+                                    break
+                                sf_out.buffer_write(chunk, dtype="int16")
+
+                    # 帧数严格校验：确认无损转换一帧未丢
+                    info = sf.info(tmp_flac_path)
+                    if int(info.frames) != int(expected_frames):
+                        raise RuntimeError(f"帧数校验不一致 ({info.frames} != {expected_frames})")
+
+                    write_flac_tags(
+                        tmp_flac_path,
+                        title=trk_title,
+                        artist=str(trk_dict.get("artist") or alb.artist or ""),
+                        album=str(alb.title or ""),
+                        year=str(alb.year or ""),
+                        track_number=int(trk_dict.get("track_number") or 0),
+                        total_tracks=total_in_album,
+                        cover_bytes=cover_bytes,
+                        cover_mime=cover_mime,
+                    )
+
+                    os.replace(tmp_flac_path, flac_path)
+                    flac_size = os.path.getsize(flac_path)
+                    trk_dict["file_name"] = flac_name
+
+                    # 先持久化 album.json 再删除旧 WAV，断电也不丢音轨
+                    with open(meta_path, "w", encoding="utf-8") as mf:
+                        json.dump(meta_data, mf, ensure_ascii=False, indent=2)
+                    try:
+                        os.remove(wav_path)
+                    except OSError:
+                        pass
+
+                    result["convertedTracks"] += 1
+                    result["savedBytes"] += max(0, wav_size - flac_size)
+                    result["savedMb"] = round(result["savedBytes"] / (1024.0 * 1024.0), 1)
+                    album_converted_any = True
+                except Exception as e:
+                    try:
+                        if os.path.isfile(tmp_flac_path):
+                            os.remove(tmp_flac_path)
+                    except OSError:
+                        pass
+                    result["errors"].append(f"{alb.title}/{fname}: {e}")
+                    log_runtime_event("MIGRATE", f"转换失败 {alb.title}/{fname}: {e}", level="ERROR")
+                finally:
+                    done_tracks += 1
+
+            if album_converted_any:
+                result["convertedAlbums"] += 1
+
+        with self._lock:
+            self._cached_albums = None
+        self.list_albums(force_refresh=True)
+
+        log_runtime_event(
+            "MIGRATE",
+            f"WAV -> FLAC 转换结束 albums={result['convertedAlbums']} tracks={result['convertedTracks']} saved={result['savedMb']}MB errs={len(result['errors'])}",
+        )
+        if on_progress:
+            on_progress({
+                "status": "cancelled" if result["cancelled"] else "completed",
+                "progressPct": 100.0 if not result["cancelled"] else round((done_tracks / max(1, total_tracks)) * 100.0, 1),
+                "statusText": (
+                    f"已取消转换（已完成 {result['convertedTracks']} 首，释放 {result['savedMb']} MB）"
+                    if result["cancelled"]
+                    else f"转换完成：共压缩 {result['convertedTracks']} 首音轨，节省 {result['savedMb']} MB 空间"
+                ),
+                **result,
+            })
+        return result
+
+
+def write_flac_tags(
+    flac_path: str,
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    year: str = "",
+    track_number: int = 0,
+    total_tracks: int = 0,
+    cover_bytes: bytes = b"",
+    cover_mime: str = "image/jpeg",
+) -> bool:
+    """向 FLAC 文件写入标准 Vorbis Comment 标签与高清内嵌封面（Picture）。"""
+    try:
+        from mutagen.flac import FLAC, Picture
+
+        audio = FLAC(flac_path)
+        if title:
+            audio["TITLE"] = [str(title)]
+        if artist:
+            audio["ARTIST"] = [str(artist)]
+        if album:
+            audio["ALBUM"] = [str(album)]
+        if year:
+            audio["DATE"] = [str(year)]
+        if track_number > 0:
+            audio["TRACKNUMBER"] = [str(int(track_number))]
+        if total_tracks > 0:
+            audio["TRACKTOTAL"] = [str(int(total_tracks))]
+        if cover_bytes:
+            pic = Picture()
+            pic.type = 3  # Front Cover
+            pic.mime = cover_mime or "image/jpeg"
+            pic.desc = "Front Cover"
+            pic.data = cover_bytes
+            audio.clear_pictures()
+            audio.add_picture(pic)
+        audio.save()
+        return True
+    except Exception:
+        return False
+
+
+class _TrackAudioWriter:
+    """统一抓轨无损流式写入器：支持 FLAC（零拷贝 buffer_write）与 WAV（1MB 缓冲 writeframesraw）。"""
+
+    def __init__(self, filepath: str, fmt: str = "flac"):
+        self.filepath = filepath
+        self.fmt = "wav" if str(fmt or "").strip().lower() == "wav" else "flac"
+        self._f_wav = None
+        self._wf = None
+        self._sf = None
+
+    def __enter__(self):
+        if self.fmt == "wav":
+            self._f_wav = open(self.filepath, "wb", buffering=1024 * 1024)
+            self._wf = wave.open(self._f_wav, "wb")
+            self._wf.setnchannels(2)
+            self._wf.setsampwidth(2)
+            self._wf.setframerate(44100)
+        else:
+            import soundfile as sf
+            self._sf = sf.SoundFile(
+                self.filepath,
+                mode="w",
+                samplerate=44100,
+                channels=2,
+                subtype="PCM_16",
+                format="FLAC",
+            )
+        return self
+
+    def write_pcm(self, pcm_buf) -> None:
+        if self._wf is not None:
+            self._wf.writeframesraw(pcm_buf)
+        elif self._sf is not None:
+            self._sf.buffer_write(pcm_buf, dtype="int16")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._wf is not None:
+            try:
+                self._wf.close()
+            except Exception:
+                pass
+            self._wf = None
+        if self._f_wav is not None:
+            try:
+                self._f_wav.close()
+            except Exception:
+                pass
+            self._f_wav = None
+        if self._sf is not None:
+            try:
+                self._sf.close()
+            except Exception:
+                pass
+            self._sf = None
+        return False
+
 
 class CdRipperTask:
-    """零损 CD-DA 原始 PCM 扇区抓轨并编码为标准 WAV 的后台任务"""
+    """零损 CD-DA 原始 PCM 扇区抓轨并编码为 FLAC（默认）或标准 WAV 的后台任务"""
 
     def __init__(
         self,
@@ -866,6 +1203,7 @@ class CdRipperTask:
         lyrics_cache: Dict[int, List[dict]],
         library_mgr: DiscflowLibraryManager,
         on_progress: Optional[Callable[[RippingProgress], None]] = None,
+        rip_format: str = "flac",
     ):
         self.toc = toc
         self.album_title = album_title or "Audio CD"
@@ -875,6 +1213,7 @@ class CdRipperTask:
         self.lyrics_cache = lyrics_cache or {}
         self.library_mgr = library_mgr
         self.on_progress = on_progress
+        self.rip_format = "wav" if str(rip_format or "").strip().lower() == "wav" else "flac"
 
         self._cancelled = False
         self._progress = RippingProgress()
@@ -910,12 +1249,16 @@ class CdRipperTask:
 
         # 保存高清封面图
         cover_file = ""
+        cover_raw_bytes = b""
+        cover_mime = "image/jpeg"
         if self.cover_data_url:
             try:
                 if "," in self.cover_data_url:
                     header, b64_data = self.cover_data_url.split(",", 1)
                     raw_img = base64.b64decode(b64_data)
                     ext = "png" if "png" in header else "jpg"
+                    cover_mime = "image/png" if ext == "png" else "image/jpeg"
+                    cover_raw_bytes = raw_img
                     cover_file = f"cover.{ext}"
                     with open(os.path.join(target_dir, cover_file), "wb") as f_cov:
                         f_cov.write(raw_img)
@@ -935,7 +1278,7 @@ class CdRipperTask:
 
         log_runtime_event(
             "RIP",
-            f"开始抓轨 drive={self.toc.drive_letter} disc_id={self.toc.disc_id} album=《{self.album_title}》 tracks={len(audio_tracks)}",
+            f"开始抓轨 drive={self.toc.drive_letter} disc_id={self.toc.disc_id} album=《{self.album_title}》 tracks={len(audio_tracks)} format={self.rip_format}",
         )
 
         # 自适应批次读取（v1.11 提速 + 零拷贝/流式写入优化）：
@@ -975,122 +1318,134 @@ class CdRipperTask:
                 if self.on_progress:
                     self.on_progress(self._progress)
 
-                wav_filename = f"track_{trk.track_number:02d}.wav"
-                wav_path = os.path.join(target_dir, wav_filename)
+                ext = "wav" if self.rip_format == "wav" else "flac"
+                track_filename = f"track_{trk.track_number:02d}.{ext}"
+                track_path = os.path.join(target_dir, track_filename)
 
                 cur_lba = trk.start_lba
                 end_lba = trk.end_lba
                 track_total_sectors = max(1, end_lba - cur_lba)
 
-                with open(wav_path, "wb", buffering=1024 * 1024) as f_wav:
-                    with wave.open(f_wav, "wb") as wf:
-                        wf.setnchannels(2)
-                        wf.setsampwidth(2)
-                        wf.setframerate(44100)
+                with _TrackAudioWriter(track_path, fmt=self.rip_format) as writer:
+                    last_progress_ts = 0.0
+                    while cur_lba < end_lba:
+                        if self._cancelled:
+                            break
 
-                        last_progress_ts = 0.0
-                        while cur_lba < end_lba:
-                            if self._cancelled:
-                                break
+                        batch_count = min(sectors_per_batch, end_lba - cur_lba)
+                        required_bytes = batch_count * CD_SECTOR_RAW_BYTES
 
-                            batch_count = min(sectors_per_batch, end_lba - cur_lba)
-                            required_bytes = batch_count * CD_SECTOR_RAW_BYTES
+                        raw_info.DiskOffset = cur_lba * 2048
+                        raw_info.SectorCount = batch_count
+                        raw_info.TrackMode = CDDA_TRACK_MODE
 
-                            raw_info.DiskOffset = cur_lba * 2048
-                            raw_info.SectorCount = batch_count
-                            raw_info.TrackMode = CDDA_TRACK_MODE
+                        ok = kernel32.DeviceIoControl(
+                            h_drive,
+                            IOCTL_CDROM_RAW_READ,
+                            ctypes.byref(raw_info),
+                            ctypes.sizeof(raw_info),
+                            raw_buffer,
+                            required_bytes,
+                            ctypes.byref(bytes_returned),
+                            None,
+                        )
 
-                            ok = kernel32.DeviceIoControl(
-                                h_drive,
-                                IOCTL_CDROM_RAW_READ,
-                                ctypes.byref(raw_info),
-                                ctypes.sizeof(raw_info),
-                                raw_buffer,
-                                required_bytes,
-                                ctypes.byref(bytes_returned),
-                                None,
-                            )
+                        if ok and bytes_returned.value >= required_bytes:
+                            batch_succeeded_once = True
+                            consecutive_hardware_errors = 0
+                            writer.write_pcm(raw_mv[:required_bytes])
+                        else:
+                            # 仅在驱动尚未成功过时永久降档探测硬件单次传输上限；
+                            # 若已稳定跑通当前档位，则视为局部划痕，仅对当前批单扇区重读而不降速整碟
+                            if not batch_succeeded_once and batch_count >= sectors_per_batch:
+                                lower_candidates = [c for c in BATCH_CANDIDATES if c < sectors_per_batch]
+                                if lower_candidates:
+                                    sectors_per_batch = lower_candidates[0]
+                                    continue
+                                sub_lower = [c for c in SUB_BATCH_CANDIDATES if c < sectors_per_batch]
+                                if sub_lower:
+                                    sectors_per_batch = sub_lower[0]
+                                    continue
 
-                            if ok and bytes_returned.value >= required_bytes:
-                                batch_succeeded_once = True
-                                consecutive_hardware_errors = 0
-                                wf.writeframesraw(raw_mv[:required_bytes])
-                            else:
-                                # 仅在驱动尚未成功过时永久降档探测硬件单次传输上限；
-                                # 若已稳定跑通当前档位，则视为局部划痕，仅对当前批单扇区重读而不降速整碟
-                                if not batch_succeeded_once and batch_count >= sectors_per_batch:
-                                    lower_candidates = [c for c in BATCH_CANDIDATES if c < sectors_per_batch]
-                                    if lower_candidates:
-                                        sectors_per_batch = lower_candidates[0]
-                                        continue
-                                    sub_lower = [c for c in SUB_BATCH_CANDIDATES if c < sectors_per_batch]
-                                    if sub_lower:
-                                        sectors_per_batch = sub_lower[0]
-                                        continue
-
-                                # 降级为单扇区逐一读取尝试，兼容老旧光盘或局部划痕介质
-                                fallback_pcm = bytearray()
-                                for sub_lba in range(cur_lba, cur_lba + batch_count):
-                                    if self._cancelled:
-                                        break
-                                    single_info.DiskOffset = sub_lba * 2048
-                                    single_info.SectorCount = 1
-                                    single_info.TrackMode = CDDA_TRACK_MODE
-                                    single_ok = kernel32.DeviceIoControl(
-                                        h_drive,
-                                        IOCTL_CDROM_RAW_READ,
-                                        ctypes.byref(single_info),
-                                        ctypes.sizeof(single_info),
-                                        single_buf,
-                                        CD_SECTOR_RAW_BYTES,
-                                        ctypes.byref(single_ret),
-                                        None,
-                                    )
-                                    if single_ok and single_ret.value >= CD_SECTOR_RAW_BYTES:
-                                        consecutive_hardware_errors = 0
-                                        fallback_pcm.extend(single_mv)
-                                    else:
-                                        consecutive_hardware_errors += 1
-                                        if consecutive_hardware_errors >= 80:
-                                            raise RuntimeError(f"光驱扇区持续读取失败 (错误码 {kernel32.GetLastError()})，请检查光驱或光盘")
-                                        fallback_pcm.extend(b"\x00" * CD_SECTOR_RAW_BYTES)
+                            # 降级为单扇区逐一读取尝试，兼容老旧光盘或局部划痕介质
+                            fallback_pcm = bytearray()
+                            for sub_lba in range(cur_lba, cur_lba + batch_count):
                                 if self._cancelled:
                                     break
-                                wf.writeframesraw(fallback_pcm)
+                                single_info.DiskOffset = sub_lba * 2048
+                                single_info.SectorCount = 1
+                                single_info.TrackMode = CDDA_TRACK_MODE
+                                single_ok = kernel32.DeviceIoControl(
+                                    h_drive,
+                                    IOCTL_CDROM_RAW_READ,
+                                    ctypes.byref(single_info),
+                                    ctypes.sizeof(single_info),
+                                    single_buf,
+                                    CD_SECTOR_RAW_BYTES,
+                                    ctypes.byref(single_ret),
+                                    None,
+                                )
+                                if single_ok and single_ret.value >= CD_SECTOR_RAW_BYTES:
+                                    consecutive_hardware_errors = 0
+                                    fallback_pcm.extend(single_mv)
+                                else:
+                                    consecutive_hardware_errors += 1
+                                    if consecutive_hardware_errors >= 80:
+                                        raise RuntimeError(f"光驱扇区持续读取失败 (错误码 {kernel32.GetLastError()})，请检查光驱或光盘")
+                                    fallback_pcm.extend(b"\x00" * CD_SECTOR_RAW_BYTES)
+                            if self._cancelled:
+                                break
+                            writer.write_pcm(fallback_pcm)
 
-                            cur_lba += batch_count
-                            sectors_ripped_so_far += batch_count
+                        cur_lba += batch_count
+                        sectors_ripped_so_far += batch_count
 
-                            track_pct = round(((cur_lba - trk.start_lba) / track_total_sectors) * 100, 1)
-                            overall_pct = round((sectors_ripped_so_far / max(1, total_audio_sectors)) * 100, 1)
-                            self._progress.track_progress_pct = min(100.0, track_pct)
-                            self._progress.overall_progress_pct = min(100.0, overall_pct)
-                            # 进度回调节流：最多每 120ms 唤醒一次 UI，避免大批量传输时被跨线程刷新拖慢
-                            now_ts = time.time()
-                            elapsed_rip = max(0.05, time.perf_counter() - rip_start_ts)
-                            speed_x = (sectors_ripped_so_far / 75.0) / elapsed_rip
-                            mb_s = (sectors_ripped_so_far * CD_SECTOR_RAW_BYTES) / (1024.0 * 1024.0 * elapsed_rip)
-                            self._progress.status_text = (
-                                f"正在抓取 ({idx + 1}/{len(audio_tracks)}) · "
-                                f"{speed_x:.1f}x ({mb_s:.2f} MB/s) · 批{sectors_per_batch}扇区"
-                            )
-                            if self.on_progress and (
-                                now_ts - last_progress_ts >= PROGRESS_MIN_INTERVAL or cur_lba >= end_lba
-                            ):
-                                last_progress_ts = now_ts
-                                self.on_progress(self._progress)
+                        track_pct = round(((cur_lba - trk.start_lba) / track_total_sectors) * 100, 1)
+                        overall_pct = round((sectors_ripped_so_far / max(1, total_audio_sectors)) * 100, 1)
+                        self._progress.track_progress_pct = min(100.0, track_pct)
+                        self._progress.overall_progress_pct = min(100.0, overall_pct)
+                        # 进度回调节流：最多每 120ms 唤醒一次 UI，避免大批量传输时被跨线程刷新拖慢
+                        now_ts = time.time()
+                        elapsed_rip = max(0.05, time.perf_counter() - rip_start_ts)
+                        speed_x = (sectors_ripped_so_far / 75.0) / elapsed_rip
+                        mb_s = (sectors_ripped_so_far * CD_SECTOR_RAW_BYTES) / (1024.0 * 1024.0 * elapsed_rip)
+                        fmt_label = "FLAC" if self.rip_format == "flac" else "WAV"
+                        self._progress.status_text = (
+                            f"正在抓取 ({idx + 1}/{len(audio_tracks)}) · {fmt_label} · "
+                            f"{speed_x:.1f}x ({mb_s:.2f} MB/s) · 批{sectors_per_batch}扇区"
+                        )
+                        if self.on_progress and (
+                            now_ts - last_progress_ts >= PROGRESS_MIN_INTERVAL or cur_lba >= end_lba
+                        ):
+                            last_progress_ts = now_ts
+                            self.on_progress(self._progress)
 
                 if self._cancelled:
                     break
+
+                track_title = trk.title or f"Track {trk.track_number:02d}"
+                track_artist = trk.artist or self.artist
+                if self.rip_format == "flac":
+                    write_flac_tags(
+                        track_path,
+                        title=track_title,
+                        artist=track_artist,
+                        album=self.album_title,
+                        year=self.year,
+                        track_number=trk.track_number,
+                        total_tracks=len(audio_tracks),
+                        cover_bytes=cover_raw_bytes,
+                        cover_mime=cover_mime,
+                    )
 
                 lyrics_data = self.lyrics_cache.get(trk.track_number, [])
                 saved_tracks.append(
                     LocalTrackInfo(
                         track_number=trk.track_number,
-                        title=trk.title or f"Track {trk.track_number:02d}",
-                        artist=trk.artist or self.artist,
+                        title=track_title,
+                        artist=track_artist,
                         duration_sec=trk.duration_sec,
-                        file_name=wav_filename,
+                        file_name=track_filename,
                         lyrics=lyrics_data,
                     )
                 )
@@ -1118,7 +1473,7 @@ class CdRipperTask:
                 avg_mb_s = (sectors_ripped_so_far * CD_SECTOR_RAW_BYTES) / (1024.0 * 1024.0 * total_rip_sec)
                 log_runtime_event(
                     "RIP",
-                    f"抓轨完成 album=《{self.album_title}》 tracks={len(saved_tracks)} batch={sectors_per_batch} elapsed={total_rip_sec:.1f}s speed={avg_speed_x:.1f}x ({avg_mb_s:.2f} MB/s)",
+                    f"抓轨完成 album=《{self.album_title}》 format={self.rip_format} tracks={len(saved_tracks)} batch={sectors_per_batch} elapsed={total_rip_sec:.1f}s speed={avg_speed_x:.1f}x ({avg_mb_s:.2f} MB/s)",
                 )
 
                 self._progress.is_ripping = False
