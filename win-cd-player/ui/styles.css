@@ -25,6 +25,13 @@
     --spring-fluid: cubic-bezier(0.22, 1, 0.36, 1);
     --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 
+    /* 统一递进式嵌套圆角 Token（严格遵循 4px 网格与 r = R - p 同心规则） */
+    --radius-dialog: 28px;   /* 顶层弹窗外壳 (padding: 16px -> 内层面板 12px) */
+    --radius-card: 20px;     /* 资料库黑胶卡片、悬浮菜单、竖向音量气泡 */
+    --radius-panel: 12px;    /* 弹窗内分组卡片、横幅、候选条目、输入条、菜单项、侧栏 Tab */
+    --radius-control: 8px;   /* 常规矩形按钮、下拉框、窗口控制键、封套、缩略图、App 图标徽章 */
+    --radius-chip: 4px;      /* 最内层徽章、数值角标、来源标签、小图、快捷键 kbd (不低于 4px) */
+
     /* 动态封面提取的 3 组主色调 */
     --mesh-c1: #3b2d54;
     --mesh-c2: #1f3a5f;
@@ -184,11 +191,11 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 3px 10px 3px 6px;
+    padding: 4px 12px 4px 4px;
     margin-right: 4px;
     border-right: 1px solid var(--border-hairline);
     cursor: pointer;
-    border-radius: 9px;
+    border-radius: var(--radius-panel);
     transition: background-color 0.2s ease, transform 0.2s var(--spring-bounce);
   }
 
@@ -204,7 +211,7 @@
   .discflow-app-icon-badge {
     width: 28px;
     height: 28px;
-    border-radius: 7px;
+    border-radius: var(--radius-control);
     background-color: var(--app-icon-bg);
     color: var(--app-icon-fg);
     border: 1px solid var(--app-icon-border);
@@ -423,7 +430,7 @@
     width: 30px;
     height: 30px;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     background: transparent;
     color: var(--text-primary);
     opacity: 0.48;
@@ -462,9 +469,9 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 10px;
+    padding: 4px 12px;
     background: rgba(0, 0, 0, 0.28);
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
@@ -547,8 +554,8 @@
     align-items: stretch;
     gap: 0;
     margin-bottom: 12px;
-    padding: 12px 14px;
-    border-radius: 13px;
+    padding: 12px 16px;
+    border-radius: var(--radius-panel);
     background: rgba(48, 209, 88, 0.11);
     border: 1px solid rgba(48, 209, 88, 0.30);
   }
@@ -621,8 +628,8 @@
     -webkit-backdrop-filter: blur(40px) saturate(185%);
     border: 1px solid rgba(255, 255, 255, 0.20);
     box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34), inset 0 1px 1px rgba(255, 255, 255, 0.28);
-    border-radius: 18px;
-    padding: 6px;
+    border-radius: var(--radius-card);
+    padding: 8px;
     display: none;
     flex-direction: column;
     gap: 4px;
@@ -645,8 +652,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 14px;
-    border-radius: 12px;
+    padding: 8px 12px;
+    border-radius: var(--radius-panel);
     font-size: 13.5px;
     font-weight: 500;
     color: var(--text-primary);
@@ -705,8 +712,8 @@
     background: var(--bg-pill);
     color: var(--text-primary);
     border: 1px solid var(--border-hairline);
-    border-radius: 10px;
-    padding: 5px 28px 5px 12px;
+    border-radius: var(--radius-control);
+    padding: 4px 28px 4px 12px;
     font-family: var(--font-sans);
     font-size: clamp(11.5px, 1.15vw, 13.5px);
     font-weight: 600;
@@ -730,10 +737,10 @@
   .pill-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     height: clamp(28px, 3.4vh, 34px);
     padding: 0 clamp(10px, 1.1vw, 16px);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     border: 1px solid transparent;
     background: var(--bg-pill);
     color: var(--text-primary);
@@ -803,8 +810,8 @@
     backdrop-filter: blur(44px) saturate(175%);
     -webkit-backdrop-filter: blur(44px) saturate(175%);
     border: 1px solid rgba(255, 255, 255, 0.20);
-    border-radius: 20px;
-    padding: clamp(18px, 2.4vw, 28px);
+    border-radius: var(--radius-dialog);
+    padding: 16px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.36), inset 0 1px 1.2px rgba(255, 255, 255, 0.32), inset 0 -1px 1px rgba(0, 0, 0, 0.15);
     display: flex;
     flex-direction: column;
@@ -858,8 +865,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 14px;
-    border-radius: 12px;
+    padding: 12px 16px;
+    border-radius: var(--radius-panel);
     background: var(--bg-pill);
     color: var(--text-primary);
     font-size: 13.5px;
@@ -954,7 +961,7 @@
     z-index: 1;
     width: 100%;
     height: 100%;
-    border-radius: clamp(18px, 2.4vw, 32px);
+    border-radius: clamp(20px, 2.4vw, 32px);
     overflow: hidden;
     background: var(--bg-elevated-2);
     border: 1px solid var(--border-hairline);
@@ -1142,7 +1149,7 @@
   .lyric-item {
     padding: var(--lyric-item-pad-y) var(--lyric-item-pad-x);
     margin-bottom: clamp(6px, 1.0vh, 14px);
-    border-radius: clamp(12px, 1.5vh, 18px);
+    border-radius: clamp(12px, 1.5vh, 16px);
     cursor: pointer;
     transform-origin: left center;
     transform: scale(0.95);
@@ -1314,7 +1321,7 @@
     align-items: center;
     gap: clamp(10px, 1.2vw, 18px);
     padding: var(--queue-item-pad-y) var(--queue-item-pad-x);
-    border-radius: clamp(10px, 1.3vh, 16px);
+    border-radius: clamp(12px, 1.3vh, 16px);
     cursor: pointer;
     transition: background-color 0.2s ease, transform 0.2s var(--spring-fluid);
   }
@@ -1473,8 +1480,8 @@
   .match-meta-input {
     width: 100%;
     box-sizing: border-box;
-    padding: 10px 12px;
-    border-radius: 10px;
+    padding: 8px 12px;
+    border-radius: var(--radius-panel);
     border: 1px solid var(--border-hairline);
     background: var(--bg-pill);
     color: var(--text-primary);
@@ -1495,7 +1502,7 @@
     width: 24px;
     height: 24px;
     margin-left: 8px;
-    border-radius: 6px;
+    border-radius: var(--radius-chip);
     border: 1px solid var(--border-hairline);
     background: transparent;
     color: var(--text-tertiary);
@@ -1538,8 +1545,8 @@
   .lyric-miss-badge {
     display: inline-block;
     margin-left: 8px;
-    padding: 1px 6px;
-    border-radius: 4px;
+    padding: 0 8px;
+    border-radius: var(--radius-chip);
     border: 1px dashed var(--text-tertiary);
     color: var(--text-tertiary);
     font-size: 10px;
@@ -1562,8 +1569,8 @@
   .lyric-cand {
     background: rgba(255, 255, 255, 0.055);
     border: 1px solid rgba(255, 255, 255, 0.13);
-    border-radius: 10px;
-    padding: 9px 11px;
+    border-radius: var(--radius-panel);
+    padding: 8px 12px;
     cursor: pointer;
     transition: background-color 0.16s ease, border-color 0.16s ease;
   }
@@ -1584,8 +1591,9 @@
   .lyric-cand-src {
     flex-shrink: 0;
     font-size: 10.5px;
-    padding: 1px 6px;
-    border-radius: 4px;
+    padding: 0 8px;
+    line-height: 20px;
+    border-radius: var(--radius-chip);
     background: var(--bg-pill);
     color: var(--text-secondary);
   }
@@ -1649,8 +1657,8 @@
     gap: 12px;
     background: rgba(255, 255, 255, 0.055);
     border: 1px solid rgba(255, 255, 255, 0.13);
-    border-radius: 10px;
-    padding: 9px 11px;
+    border-radius: var(--radius-panel);
+    padding: 8px 12px;
     cursor: pointer;
     transition: background-color 0.16s ease, border-color 0.16s ease;
   }
@@ -1663,7 +1671,7 @@
   .album-cand-cover {
     width: 48px;
     height: 48px;
-    border-radius: 6px;
+    border-radius: var(--radius-chip);
     object-fit: cover;
     flex-shrink: 0;
     background: var(--bg-pill);
@@ -1685,8 +1693,9 @@
   .album-cand-src {
     flex-shrink: 0;
     font-size: 10.5px;
-    padding: 1px 6px;
-    border-radius: 4px;
+    padding: 0 8px;
+    line-height: 20px;
+    border-radius: var(--radius-chip);
     background: var(--bg-pill);
     color: var(--text-secondary);
   }
@@ -1879,8 +1888,8 @@
     min-width: 0;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 16px;
-    padding: clamp(10px, 1.1vw, 14px);
+    border-radius: var(--radius-card);
+    padding: 12px;
     display: flex;
     flex-direction: column;
     cursor: pointer;
@@ -1920,7 +1929,7 @@
     position: relative;
     width: 100%;
     aspect-ratio: 1 / 1;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -1933,7 +1942,7 @@
     z-index: 2;
     width: 82%;
     height: 82%;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     overflow: hidden;
     box-shadow: 0 12px 26px rgba(0, 0, 0, 0.48);
     background: #18181A;
@@ -2086,8 +2095,8 @@
     background: transparent;
     color: var(--text-tertiary);
     cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 5px;
+    padding: 4px 8px;
+    border-radius: var(--radius-chip);
     font-size: 10.5px;
     transition: color 0.2s ease, background-color 0.2s ease;
   }
@@ -2963,7 +2972,7 @@
     transform: translateX(50%) translateY(8px);
     width: 52px;
     height: 180px;
-    padding: 12px 8px 10px 8px;
+    padding: 12px 8px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -2975,7 +2984,7 @@
     -webkit-backdrop-filter: blur(40px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: var(--popover-shadow);
-    border-radius: 22px;
+    border-radius: var(--radius-card);
     transform-origin: bottom center;
     opacity: 0;
     pointer-events: none;
@@ -3024,7 +3033,7 @@
     height: 100%;
     background: rgba(255, 255, 255, 0.12);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
+    border-radius: var(--radius-panel);
     overflow: hidden;
     position: relative;
     display: flex;
@@ -3053,7 +3062,7 @@
     width: 100%;
     height: 80%;
     background: #FFFFFF;
-    border-radius: 12px;
+    border-radius: var(--radius-panel);
     box-shadow: 0 -2px 10px rgba(255, 255, 255, 0.3);
     transition: height 0.05s linear;
   }
@@ -3098,7 +3107,7 @@
   .dock-artwork-thumb {
     width: 40px;
     height: 40px;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     background: #18181a;
     object-fit: cover;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
@@ -3541,8 +3550,8 @@
     flex-direction: column;
     gap: 12px;
     background: var(--bg-elevated-2, rgba(255, 255, 255, 0.04));
-    padding: 14px 16px;
-    border-radius: 12px;
+    padding: 12px 16px;
+    border-radius: var(--radius-panel);
     border: 1px solid var(--border-hairline);
   }
 
@@ -3571,8 +3580,9 @@
   .custom-val-badge {
     font-size: 12px;
     font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 6px;
+    padding: 0 8px;
+    line-height: 20px;
+    border-radius: var(--radius-chip);
     background: var(--bg-pill-hover, rgba(255, 255, 255, 0.1));
     color: var(--color-accent);
   }
@@ -3630,7 +3640,7 @@
   #discflowAppBtn .discflow-app-icon-badge {
     width: 32px;
     height: 32px;
-    border-radius: 7px;
+    border-radius: var(--radius-control);
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -3666,7 +3676,7 @@
     display: grid !important;
     grid-template-columns: 186px 1fr !important;
     padding: 0 !important;
-    border-radius: 22px !important;
+    border-radius: var(--radius-dialog) !important;
     overflow: hidden;
     box-sizing: border-box !important;
     transition: transform 0.24s var(--spring-fluid), opacity 0.18s ease;
@@ -3682,11 +3692,14 @@
   .settings-sidebar {
     background: rgba(0, 0, 0, 0.22);
     border-right: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 18px 12px 16px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     min-height: 0;
+  }
+  .settings-sidebar .pill-btn {
+    border-radius: var(--radius-panel);
   }
   [data-theme="light"] .settings-sidebar {
     background: rgba(0, 0, 0, 0.035);
@@ -3694,7 +3707,7 @@
   }
   .settings-sidebar-footer {
     margin-top: auto;
-    padding-top: 10px;
+    padding-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.06);
     display: flex;
     flex-direction: column;
@@ -3708,7 +3721,7 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: 18px 22px;
+    padding: 16px 12px 16px 16px;
   }
   .settings-modal-header {
     display: flex;
@@ -3739,9 +3752,9 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 9px;
-    padding: 9px 12px;
-    border-radius: 10px;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-panel);
     background: transparent;
     border: none;
     color: var(--text-secondary);
@@ -3777,7 +3790,7 @@
     overflow-x: hidden;
     scrollbar-gutter: stable;
     box-sizing: border-box;
-    padding-right: 6px;
+    padding-right: 4px;
   }
   .settings-tab-pane {
     display: none;
@@ -3793,7 +3806,7 @@
   .settings-card-group {
     background: rgba(255, 255, 255, 0.075);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 14px;
+    border-radius: var(--radius-panel);
     overflow: hidden;
     margin-bottom: 12px;
   }
@@ -3805,7 +3818,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 13px 18px;
+    padding: 12px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
   [data-theme="light"] .settings-row-item {
@@ -4028,6 +4041,54 @@
     background-image: none;
     border-color: rgba(0, 0, 0, 0.06);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+  }
+
+  /* 连续曲率圆角（Continuous Corners / Squircle）渐进增强 */
+  @supports (corner-shape: superellipse(1.25)) {
+    :where(*) {
+      corner-shape: superellipse(1.25);
+    }
+
+    /* 胶囊形 (pills) 与正圆形 (circles) 强制保持纯圆曲率 */
+    .bottom-dock-player,
+    .update-notice-pill,
+    .play-mode-group,
+    .mode-pill-btn,
+    .library-search-box-wrap,
+    .scrubber-track,
+    .scrubber-fill,
+    .vol-track,
+    .vol-fill,
+    .dock-scrubber-track,
+    .dock-scrubber-fill,
+    .dock-vol-track:not(.vertical),
+    .dock-vol-fill:not(.vertical),
+    .ios-slider,
+    .ios-slider::before,
+    .top-icon-btn,
+    .topbar-preview-btn,
+    .update-notice-dot,
+    .status-dot,
+    .modal-close-btn,
+    .dock-icon-btn,
+    .dock-play-pause-btn,
+    .dock-vol-popover-icon,
+    .dock-vol-knob,
+    .artwork-ambient-shadow,
+    .mesh-blob,
+    .vinyl-disc,
+    .vinyl-disc::before,
+    .vinyl-label,
+    .vinyl-label::after,
+    #openLibraryFolderBtn,
+    #aboutUpdateProgressWrap,
+    #aboutUpdateProgressBar,
+    #ripOverallBar,
+    #ripTrackBar,
+    [style*="border-radius: 999px"],
+    [style*="border-radius: 50%"] {
+      corner-shape: round;
+    }
   }
 
   /* 系统级减弱动态效果支持 (Accessibility: prefers-reduced-motion) */

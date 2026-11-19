@@ -352,7 +352,7 @@
         <!-- 左侧导航栏 -->
         <aside class="settings-sidebar">
           <div class="settings-header-brand">
-            <span class="discflow-app-icon-badge" style="width: 24px; height: 24px; border-radius: 6px;">
+            <span class="discflow-app-icon-badge" style="width: 24px; height: 24px; border-radius: var(--radius-control);">
               __DISCFLOW_ICON_SVG_24__
             </span>
             <h2 class="modal-title" style="font-size: 14.5px; font-weight: 700;">系统设置</h2>
@@ -503,7 +503,7 @@
               </div>
             </div>
 
-            <div style="margin-top: 12px; padding: 12px 14px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-tertiary); line-height: 1.5;">
+            <div style="margin-top: 12px; padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: var(--radius-panel); border: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-tertiary); line-height: 1.5;">
               💡 纯粹聆听提示：若遇到部分老旧或磨损光盘读取缓慢，可在顶部操作栏点击「读盘」按钮触发多重扇区安全重试。
             </div>
           </div>
@@ -542,7 +542,7 @@
             </div>
 
             <!-- 独立危险操作隔离区 (Danger Zone) -->
-            <div class="settings-card-group settings-danger-card" style="margin-top: 12px; padding: 14px 18px; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.22); border-radius: 14px;">
+            <div class="settings-card-group settings-danger-card" style="margin-top: 12px; padding: 12px 16px; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.22); border-radius: var(--radius-panel);">
               <div class="settings-row-item" style="padding: 0; border: none;">
                 <div class="settings-item-col">
                   <div class="settings-item-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
@@ -563,7 +563,7 @@
           <div class="settings-tab-pane" data-tab-pane="about">
             <div style="text-align: center; padding: 14px 0 16px 0;">
               <div class="discflow-brand" style="display: inline-flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                <span class="discflow-app-icon-badge" style="width: 34px; height: 34px; border-radius: 8px;">
+                <span class="discflow-app-icon-badge" style="width: 34px; height: 34px; border-radius: var(--radius-control);">
                   __DISCFLOW_ICON_SVG_24__
                 </span>
                 <span class="discflow-wordmark" style="font-size: 20px; font-weight: 700; color: var(--text-primary);">__APP_NAME__</span>
@@ -648,12 +648,12 @@
             <div class="settings-card-group" style="padding: 12px 16px;">
               <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">常用快捷键速查</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 12px; color: var(--text-secondary);">
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>播放 / 暂停</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">Space</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>上一曲 / 下一曲</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">← / →</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>调节音量</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">↑ / ↓</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>双语歌词切换</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">T</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词延后 / 提前</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">[ / ]</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词时间轴归零</span><kbd style="padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">\</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>播放 / 暂停</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">Space</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>上一曲 / 下一曲</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">← / →</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>调节音量</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">↑ / ↓</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>双语歌词切换</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">T</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词延后 / 提前</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">[ / ]</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词时间轴归零</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">\</kbd></div>
               </div>
             </div>
           </div>
@@ -664,7 +664,7 @@
 
     <!-- 支持作者弹窗 (Apple 极简磨砂卡片) -->
     <div id="supportAuthorModal" class="popup-modal-overlay" style="z-index: 120;" onclick="closeModalOnBackdrop(event, 'supportAuthorModal')">
-      <div class="modal-dialog" style="max-width: 420px; align-items: center; text-align: center; border-radius: 20px; padding: 22px 24px 26px;">
+      <div class="modal-dialog" style="max-width: 420px; align-items: center; text-align: center; padding: 16px 20px 20px;">
         <div class="modal-header" style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           <div style="display: flex; align-items: center; gap: 8px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff375f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
@@ -676,7 +676,7 @@
           <p style="font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); text-align: center; margin: 0 4px;">
             Discflow 永久免费，制作不易，如果您实在想支持本项目，就在此处给开发者买杯咖啡吧
           </p>
-          <div style="width: 220px; height: 220px; background: #ffffff; padding: 10px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
+          <div style="width: 220px; height: 220px; background: #ffffff; padding: 8px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
             <img src="__ALIPAY_QR_BASE64__" style="width: 100%; height: 100%; display: block; border-radius: 8px; object-fit: contain;" alt="支付宝收款码" />
           </div>
           <div style="font-size: 12px; color: var(--text-tertiary); letter-spacing: 0.02em;">
@@ -702,7 +702,7 @@
           <h2 class="modal-title">手动匹配歌词</h2>
           <button class="modal-close-btn" onclick="closeModal('lyricMatchModal')">✕</button>
         </div>
-        <div class="modal-body" style="padding: 16px 22px; display: flex; flex-direction: column; gap: 12px;">
+        <div class="modal-body" style="padding: 0; display: flex; flex-direction: column; gap: 12px;">
           <div id="lyricMatchTrackInfo" class="modal-item-sub"></div>
           <div style="display: flex; gap: 8px;">
             <input id="lyricMatchTitle" class="match-meta-input" style="flex: 1.4;" placeholder="歌名" />
@@ -727,7 +727,7 @@
           <h2 class="modal-title" style="display: flex; align-items: center; gap: 8px;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="7"></circle><path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path></svg><span>手动匹配专辑信息</span></h2>
           <button class="modal-close-btn" onclick="closeModal('matchMetadataModal')">✕</button>
         </div>
-        <div class="modal-body" style="padding: 18px 24px; display: flex; flex-direction: column; gap: 14px;">
+        <div class="modal-body" style="padding: 0; display: flex; flex-direction: column; gap: 12px;">
           <div id="matchMetaHint" class="modal-item-sub" style="line-height: 1.65;">
             填写专辑名后点「搜索」，从 QQ 音乐 / iTunes / 网易云 三源并发检索，选中一条即可整张套用。
           </div>
@@ -751,7 +751,7 @@
           <h2 class="modal-title">编辑本地专辑信息</h2>
           <button class="modal-close-btn" onclick="closeModal('editLocalAlbumModal')">✕</button>
         </div>
-        <div class="modal-body" style="padding: 14px 20px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex: 1;">
+        <div class="modal-body" style="padding: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1;">
           <input type="hidden" id="editLocalDiscId" />
           <div style="display: grid; grid-template-columns: 1.5fr 1.2fr 0.7fr; gap: 8px;">
             <input id="editLocalTitle" class="match-meta-input" placeholder="专辑名称" />
@@ -780,7 +780,7 @@
       </div>
       <div style="padding: 10px 0 6px 0; display: flex; flex-direction: column; gap: 14px;">
         <div style="display: flex; gap: 14px; align-items: center;">
-          <img id="ripCoverImg" src="" style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover; background: #222;" />
+          <img id="ripCoverImg" src="" style="width: 60px; height: 60px; border-radius: var(--radius-panel); object-fit: cover; background: #222;" />
           <div style="flex: 1; min-width: 0;">
             <div id="ripAlbumTitle" style="font-weight: 700; font-size: 14.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</div>
             <div id="ripArtist" style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">--</div>
@@ -817,7 +817,7 @@
 
   <!-- 7. 全局搜索弹窗 (#searchModal) -->
   <div id="searchModal" class="popup-modal-overlay">
-    <div class="modal-dialog" style="max-width: 540px; border-radius: 18px; padding: 22px 24px;">
+    <div class="modal-dialog" style="max-width: 540px; padding: 16px;">
       <div class="modal-header" style="margin-bottom: 14px;">
         <div style="display: flex; align-items: center; gap: 8px;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;">
@@ -830,7 +830,7 @@
       </div>
 
       <!-- 搜索输入条 -->
-      <div style="display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-hairline); border-radius: 12px; padding: 8px 14px;">
+      <div style="display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-hairline); border-radius: var(--radius-panel); padding: 4px 4px 4px 12px;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;">
           <circle cx="10.5" cy="10.5" r="7"></circle>
           <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>

@@ -1114,6 +1114,25 @@ setTimeout(function () {
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    def test_nested_continuous_corners_tokens_and_supports_block(self):
+        styles_path = os.path.join(os.path.dirname(__file__), "ui", "styles.css")
+        with open(styles_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        for token in (
+            "--radius-dialog: 28px;",
+            "--radius-card: 20px;",
+            "--radius-panel: 12px;",
+            "--radius-control: 8px;",
+            "--radius-chip: 4px;",
+        ):
+            self.assertIn(token, css, f"缺少递进式圆角 Token: {token}")
+
+        self.assertIn("@supports (corner-shape: superellipse(1.25))", css)
+        self.assertIn("corner-shape: superellipse(1.25);", css)
+        self.assertIn("corner-shape: round;", css)
+        self.assertIn("border-radius: 50%;", css)
+
 
 if __name__ == "__main__":
     unittest.main()

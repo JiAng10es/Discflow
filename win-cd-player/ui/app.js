@@ -1676,11 +1676,11 @@ function toggleDiscflowMenu(event) {
         : "";
 
       html += `
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-hairline);">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-hairline);">
           <div style="display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1;">
             ${coverSrc
-              ? `<img src="${coverSrc}" style="width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0;" />`
-              : `<div style="width: 44px; height: 44px; border-radius: 6px; background: #222; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">💿</div>`
+              ? `<img src="${coverSrc}" style="width: 44px; height: 44px; border-radius: var(--radius-chip); object-fit: cover; flex-shrink: 0;" />`
+              : `<div style="width: 44px; height: 44px; border-radius: var(--radius-chip); background: #222; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">💿</div>`
             }
             <div style="min-width: 0; flex: 1;">
               <div style="font-weight: 600; font-size: 13.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
