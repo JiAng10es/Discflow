@@ -97,7 +97,7 @@ def sync_native_window_theme(
                     ctypes.windll.dwmapi.DwmSetWindowAttribute(
                         hwnd, 20, ctypes.byref(dark_pref), ctypes.sizeof(dark_pref)
                     )
-                bg = SD.ColorTranslator.FromHtml("#F5F5F7" if norm == "light" else "#000000")
+                bg = SD.ColorTranslator.FromHtml("#F5F5F7" if norm == "light" else "#111217")
                 native.BackColor = bg
                 if hasattr(native, "browser") and getattr(native.browser, "webview", None):
                     native.browser.webview.DefaultBackgroundColor = bg
@@ -137,6 +137,86 @@ def begin_native_window_resize(
         native.BeginInvoke(System.Action(_do_resize))
     except Exception:
         pass
+
+
+def set_native_window_fullscreen(
+    native,
+    enable: bool,
+    state_cache: dict,
+    on_hwnd: Optional[Callable[[int], None]] = None,
+) -> bool:
+    """
+    在 WinForms UI 线程切换无边框真全屏（铺满当前显示器并覆盖任务栏）：
+    - 进入全屏时缓存原 WindowState / Bounds / Screen，关闭 Win11 圆角与外边框；
+    - 退出全屏时无损还原原位置、尺寸与最大化状态，并恢复 Win11 原生圆角。
+    """
+    target = bool(enable)
+    if native is None:
+        return target
+    try:
+        import System
+        import System.Windows.Forms as WinForms
+
+        def _apply():
+            try:
+                hwnd = int(native.Handle.ToInt64()) if hasattr(native, "Handle") else 0
+                if hwnd and on_hwnd:
+                    on_hwnd(hwnd)
+                user32 = ctypes.windll.user32
+                dwmapi = ctypes.windll.dwmapi
+
+                if target:
+                    if not state_cache.get("active", False):
+                        state_cache["old_state"] = native.WindowState
+                        state_cache["old_bounds"] = native.Bounds
+                        state_cache["old_screen"] = WinForms.Screen.FromControl(native)
+                        state_cache["active"] = True
+                    scr = WinForms.Screen.FromControl(native)
+                    b = scr.Bounds
+                    if native.WindowState == WinForms.FormWindowState.Maximized:
+                        native.WindowState = WinForms.FormWindowState.Normal
+                    native.FormBorderStyle = getattr(WinForms.FormBorderStyle, "None")
+                    native.Bounds = b
+                    if hwnd:
+                        # SWP_SHOWWINDOW (0x0040) | SWP_NOZORDER (0x0004) | SWP_FRAMECHANGED (0x0020)
+                        user32.SetWindowPos(
+                            ctypes.c_void_p(hwnd),
+                            None,
+                            int(b.X),
+                            int(b.Y),
+                            int(b.Width),
+                            int(b.Height),
+                            0x0064,
+                        )
+                        no_round = ctypes.c_int(1)  # DWMWCP_DONOTROUND
+                        dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(no_round), ctypes.sizeof(no_round))
+                        no_border = ctypes.c_uint(0xFFFFFFFE)  # DWMWA_COLOR_NONE
+                        dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(no_border), ctypes.sizeof(no_border))
+                else:
+                    if state_cache.get("active", False):
+                        old_state = state_cache.get("old_state")
+                        old_bounds = state_cache.get("old_bounds")
+                        state_cache["active"] = False
+                        native.WindowState = WinForms.FormWindowState.Normal
+                        if old_bounds is not None:
+                            native.Bounds = old_bounds
+                        if old_state == WinForms.FormWindowState.Maximized:
+                            native.WindowState = WinForms.FormWindowState.Maximized
+                    if hwnd:
+                        round_pref = ctypes.c_int(2)  # DWMWCP_ROUND
+                        dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(round_pref), ctypes.sizeof(round_pref))
+                        def_border = ctypes.c_uint(0xFFFFFFFF)  # DWMWA_COLOR_DEFAULT
+                        dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(def_border), ctypes.sizeof(def_border))
+            except Exception:
+                pass
+
+        if getattr(native, "InvokeRequired", False):
+            native.Invoke(System.Action(_apply))
+        else:
+            _apply()
+    except Exception:
+        pass
+    return target
 
 
 class GlobalMediaKeyListener:

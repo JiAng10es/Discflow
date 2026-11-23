@@ -1549,6 +1549,45 @@ setTimeout(function () {
         self.assertLessEqual(len(compact["coverDataUrl"]), 65536)
         self.assertEqual(compact["metaVersion"], -1)
 
+    def test_fullscreen_immersive_and_merged_lyrics_popover(self):
+        import main
+        import win_native
+
+        self.assertTrue(hasattr(win_native, "set_native_window_fullscreen"))
+        ctrl = _make_controller()
+        try:
+            api = main.DiscflowJsApi(ctrl)
+            self.assertTrue(callable(getattr(api, "toggle_fullscreen_window", None)))
+            self.assertTrue(callable(getattr(api, "set_fullscreen_window", None)))
+            # 无窗口环境下切换状态安全无异常，且全屏时不覆写 windowBounds
+            self.assertTrue(ctrl.set_fullscreen_window(True))
+            with patch.object(main, "save_user_preferences") as mock_save:
+                ctrl._save_window_bounds()
+                mock_save.assert_not_called()
+            self.assertFalse(ctrl.set_fullscreen_window(False))
+        finally:
+            ctrl.shutdown()
+
+        base_dir = os.path.dirname(__file__)
+        with open(os.path.join(base_dir, "ui", "index.html"), "r", encoding="utf-8") as f:
+            html = f.read()
+        with open(os.path.join(base_dir, "ui", "styles.css"), "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(os.path.join(base_dir, "ui", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+
+        self.assertIn('id="dockFullscreenBtn"', html)
+        self.assertIn('onclick="toggleFullscreenImmersive()"', html)
+        # 确认双语翻译与歌词对齐已整合进 dockLyricOffsetPopover 内
+        pop_slice = html[html.index('id="dockLyricOffsetPopover"'):html.index('id="dockVolumeWrap"')]
+        self.assertIn('id="dockTransBtn"', pop_slice)
+        self.assertIn('id="dockLyricOffsetVal"', pop_slice)
+
+        for token in ("is-fullscreen-immersive", "is-hud-hidden", "dock-trans-row", "dock-mini-switch"):
+            self.assertIn(token, css)
+        for token in ("function toggleFullscreenImmersive(", "function scheduleFullscreenHudHide(", 'e.key === "F11"'):
+            self.assertIn(token, js)
+
 
 if __name__ == "__main__":
     unittest.main()

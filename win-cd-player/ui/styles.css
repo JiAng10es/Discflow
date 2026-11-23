@@ -2854,7 +2854,7 @@
     flex-shrink: 0;
     white-space: nowrap;
     box-sizing: border-box;
-    transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, opacity 0.3s ease;
+    transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, opacity 0.35s ease, transform 0.35s var(--spring-fluid);
   }
 
   .bottom-dock-player.is-compact {
@@ -3047,8 +3047,8 @@
     bottom: calc(100% + 14px);
     left: 50%;
     transform: translateX(-50%) translateY(8px);
-    min-width: 176px;
-    padding: 10px 11px;
+    min-width: 210px;
+    padding: 11px 12px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -3071,6 +3071,91 @@
     opacity: 1;
     pointer-events: auto;
     transform: translateX(-50%) translateY(0);
+  }
+
+  /* 歌词浮层内上半区：双语翻译开关整行 */
+  .dock-trans-row {
+    appearance: none;
+    border: none;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 6px;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.16s ease, opacity 0.2s ease;
+  }
+
+  .dock-trans-row:hover {
+    background: rgba(255, 255, 255, 0.09);
+  }
+
+  [data-theme="light"] .dock-trans-row:hover {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  .dock-trans-row-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .dock-trans-row.is-off {
+    opacity: 0.72;
+  }
+
+  .dock-mini-switch {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    border-radius: 999px;
+    background: #30d158;
+    transition: background-color 0.22s ease;
+    flex-shrink: 0;
+  }
+
+  .dock-mini-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+    transform: translateX(14px);
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dock-trans-row.is-off .dock-mini-switch {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  [data-theme="light"] .dock-trans-row.is-off .dock-mini-switch {
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  .dock-trans-row.is-off .dock-mini-switch::after {
+    transform: translateX(0);
+  }
+
+  .dock-popover-divider {
+    height: 1px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.11);
+    margin: 1px 0;
+  }
+
+  [data-theme="light"] .dock-popover-divider {
+    background: rgba(0, 0, 0, 0.08);
   }
 
   [data-theme="light"] .dock-lyric-offset-popover {
@@ -4321,6 +4406,8 @@
     .dock-vol-fill:not(.vertical),
     .ios-slider,
     .ios-slider::before,
+    .dock-mini-switch,
+    .dock-mini-switch::after,
     .top-icon-btn,
     .topbar-preview-btn,
     .update-notice-dot,
@@ -4358,4 +4445,36 @@
     .mesh-blob {
       animation: none !important;
     }
+  }
+
+  /* ========================================================================
+     真全屏沉浸模式 (Immersive Fullscreen + 3秒静止自动隐藏 HUD)
+     ======================================================================== */
+  html.is-fullscreen-immersive {
+    --artwork-size: clamp(300px, min(36vw, 54vh), 540px);
+    --lyric-orig-size: clamp(26px, 2.7vw, 42px);
+    --lyric-trans-size: clamp(15px, 1.5vw, 23px);
+    --stage-gap: clamp(44px, 5vw, 88px);
+    --left-col-max: clamp(400px, 40vw, 640px);
+  }
+
+  html.is-fullscreen-immersive .top-bar,
+  html.is-fullscreen-immersive .win-resize-edge {
+    display: none !important;
+  }
+
+  html.is-fullscreen-immersive .app-shell {
+    padding: clamp(24px, 4vh, 48px) clamp(32px, 5vw, 72px);
+    gap: 0;
+  }
+
+  html.is-fullscreen-immersive.is-hud-hidden .bottom-dock-player {
+    opacity: 0;
+    transform: translateX(-50%) translateY(18px);
+    pointer-events: none;
+  }
+
+  html.is-fullscreen-immersive.is-hud-hidden,
+  html.is-fullscreen-immersive.is-hud-hidden * {
+    cursor: none !important;
   }

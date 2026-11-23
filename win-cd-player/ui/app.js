@@ -606,6 +606,81 @@
     // 底部控制栏音量滑块展开/收起
   let isDockVolumeSliderOpen = false;
   let isDockLyricOffsetOpen = false;
+  let isFullscreenImmersive = false;
+  let _fsHudTimer = null;
+
+  function applyFullscreenImmersiveUI(active) {
+    isFullscreenImmersive = !!active;
+    document.documentElement.classList.toggle("is-fullscreen-immersive", isFullscreenImmersive);
+    if (!isFullscreenImmersive) {
+      document.documentElement.classList.remove("is-hud-hidden");
+    }
+    const enterIcon = document.getElementById("dockFsEnterIcon");
+    const exitIcon = document.getElementById("dockFsExitIcon");
+    if (enterIcon) enterIcon.style.display = isFullscreenImmersive ? "none" : "block";
+    if (exitIcon) exitIcon.style.display = isFullscreenImmersive ? "block" : "none";
+    const btn = document.getElementById("dockFullscreenBtn");
+    if (btn) {
+      btn.setAttribute("aria-pressed", isFullscreenImmersive ? "true" : "false");
+      btn.title = isFullscreenImmersive ? "退出全屏沉浸模式 (Esc / F11)" : "进入全屏沉浸模式 (F11)";
+    }
+  }
+
+  function scheduleFullscreenHudHide() {
+    if (_fsHudTimer) {
+      clearTimeout(_fsHudTimer);
+      _fsHudTimer = null;
+    }
+    if (!isFullscreenImmersive) return;
+    _fsHudTimer = setTimeout(() => {
+      if (!isFullscreenImmersive) return;
+      const dockEl = document.getElementById("bottomDockPlayer");
+      const hoveringDock = !!(dockEl && dockEl.matches && dockEl.matches(":hover"));
+      const hasOpenModal = !!document.querySelector(".popup-modal-overlay.open");
+      if (hoveringDock || isDockLyricOffsetOpen || isDockVolumeSliderOpen || hasOpenModal) {
+        scheduleFullscreenHudHide();
+        return;
+      }
+      document.documentElement.classList.add("is-hud-hidden");
+    }, 3000);
+  }
+
+  function wakeFullscreenHud() {
+    if (!isFullscreenImmersive) return;
+    document.documentElement.classList.remove("is-hud-hidden");
+    scheduleFullscreenHudHide();
+  }
+
+  function toggleFullscreenImmersive(forceState = null) {
+    const next = forceState === null ? !isFullscreenImmersive : !!forceState;
+    if (next && typeof switchMainView === "function") {
+      switchMainView("cd");
+      if (typeof applyRightPanelMode === "function") {
+        applyRightPanelMode("lyrics");
+      }
+    }
+    applyFullscreenImmersiveUI(next);
+    if (next) {
+      scheduleFullscreenHudHide();
+    } else if (_fsHudTimer) {
+      clearTimeout(_fsHudTimer);
+      _fsHudTimer = null;
+    }
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.set_fullscreen_window) {
+      window.pywebview.api.set_fullscreen_window(next).catch(() => {});
+    }
+    if (typeof recenterActiveLyric === "function") {
+      setTimeout(() => recenterActiveLyric(), 90);
+    }
+  }
+
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    ["mousemove", "mousedown", "wheel", "touchstart"].forEach(evtName => {
+      document.addEventListener(evtName, () => {
+        if (isFullscreenImmersive) wakeFullscreenHud();
+      }, { passive: true });
+    });
+  }
 
   function toggleDockVolumeSlider(event) {
     if (event) {
@@ -2471,11 +2546,19 @@ function toggleDiscflowMenu(event) {
     setPlayMode(nextMode);
   }
 
-    // 全局键盘快捷键与多媒体键全面支持 (Stage 4)
+  // 全局键盘快捷键与多媒体键全面支持 (Stage 4)
   window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
       e.preventDefault();
       openSearchModal();
+      return;
+    }
+    if (typeof isFullscreenImmersive !== "undefined" && isFullscreenImmersive) {
+      wakeFullscreenHud();
+    }
+    if (e.key === "F11" || e.code === "F11") {
+      e.preventDefault();
+      toggleFullscreenImmersive();
       return;
     }
     // 忽略在输入框、下拉框或可编辑区域内的按键
@@ -2493,7 +2576,9 @@ function toggleDiscflowMenu(event) {
     }
 
     if (e.key === "Escape") {
-      if (isImmersiveMode) {
+      if (isFullscreenImmersive) {
+        toggleFullscreenImmersive(false);
+      } else if (isImmersiveMode) {
         toggleImmersiveVinylMode(false);
       } else if (currentMainView === "library") {
         // 资源库页按 Esc 直接回到播放页

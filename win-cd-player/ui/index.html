@@ -300,18 +300,33 @@
         </div>
       </div>
 
-      <!-- 3. 右侧：声音控制 (固定宽度 170px，点击展开浮动音量条，位置比例固定) -->
+      <!-- 3. 右侧：歌词设置（翻译+对齐）、音量调节与全屏沉浸模式 (共 3 个纯图标) -->
       <div class="dock-right-actions">
-        <!-- 歌词时间轴微调：点击展开悬浮微调胶囊 -->
+        <!-- 1) 歌词设置：点击展开二合一悬浮卡片（双语翻译开关 + 歌词时间轴微调） -->
         <div class="dock-lyric-offset-wrap" id="dockLyricOffsetWrap">
-          <button id="dockLyricOffsetBtn" class="dock-action-btn dock-lyric-offset-btn" onclick="toggleDockLyricOffsetPopover(event)" title="歌词时间轴微调 (快捷键 [ ] \)">
+          <button id="dockLyricOffsetBtn" class="dock-action-btn dock-lyric-offset-btn" onclick="toggleDockLyricOffsetPopover(event)" title="歌词设置 · 翻译与对齐 (快捷键 [ ] \)">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="8.5"></circle>
-              <polyline points="12 7.8 12 12 15.2 13.6"></polyline>
+              <path d="M4 6.5h13"></path>
+              <path d="M4 12h16"></path>
+              <path d="M4 17.5h9.5"></path>
+              <circle cx="18.5" cy="17.5" r="2" fill="currentColor" stroke="none"></circle>
             </svg>
             <span class="dock-offset-dot"></span>
           </button>
           <div class="dock-lyric-offset-popover" id="dockLyricOffsetPopover" onclick="event.stopPropagation()">
+            <button type="button" id="dockTransBtn" class="dock-trans-row dock-trans-btn" onclick="toggleBilingualLyrics()" title="双语翻译：已开启（点击关闭）" aria-pressed="true">
+              <span class="dock-trans-row-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M7.4 3.2v2.1M3.2 5.3h8.4"></path>
+                  <path d="M9.5 5.3c-.5 3.6-2.6 6.4-6.1 8.3"></path>
+                  <path d="M5.0 7.3c1.6 2.5 3.7 4.6 6.3 6.1"></path>
+                  <path d="M13.2 20.2l3.8-9.2 3.8 9.2M14.5 17.2h5.2"></path>
+                </svg>
+                <span>双语翻译</span>
+              </span>
+              <span class="dock-mini-switch" aria-hidden="true"></span>
+            </button>
+            <div class="dock-popover-divider"></div>
             <div class="dock-offset-head">
               <span>歌词对齐</span>
               <span class="dock-offset-keys">[  ]  \</span>
@@ -323,15 +338,7 @@
             </div>
           </div>
         </div>
-        <!-- 双语翻译开关：随时切换歌词译文显示 -->
-        <button id="dockTransBtn" class="dock-action-btn dock-trans-btn" onclick="toggleBilingualLyrics()" title="双语翻译：已开启（点击关闭）" aria-pressed="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M7.4 3.2v2.1M3.2 5.3h8.4"></path>
-            <path d="M9.5 5.3c-.5 3.6-2.6 6.4-6.1 8.3"></path>
-            <path d="M5.0 7.3c1.6 2.5 3.7 4.6 6.3 6.1"></path>
-            <path d="M13.2 20.2l3.8-9.2 3.8 9.2M14.5 17.2h5.2"></path>
-          </svg>
-        </button>
+        <!-- 2) 音量调节 -->
         <div class="dock-volume-wrap" id="dockVolumeWrap">
           <button id="dockVolBtn" class="dock-action-btn" onclick="toggleDockVolumeSlider(event)" title="音量调节（滚轮可微调）">
             <svg id="dockVolBtnIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -354,6 +361,21 @@
             </button>
           </div>
         </div>
+        <!-- 3) 真全屏沉浸模式切换 -->
+        <button id="dockFullscreenBtn" class="dock-action-btn" onclick="toggleFullscreenImmersive()" title="进入全屏沉浸模式 (F11)" aria-pressed="false">
+          <svg id="dockFsEnterIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 4 20 4 20 9"></polyline>
+            <polyline points="9 20 4 20 4 15"></polyline>
+            <line x1="20" y1="4" x2="14.5" y2="9.5"></line>
+            <line x1="4" y1="20" x2="9.5" y2="14.5"></line>
+          </svg>
+          <svg id="dockFsExitIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <polyline points="4 14 10 14 10 20"></polyline>
+            <polyline points="20 10 14 10 14 4"></polyline>
+            <line x1="14" y1="10" x2="20.5" y2="3.5"></line>
+            <line x1="3.5" y1="20.5" x2="10" y2="14"></line>
+          </svg>
+        </button>
       </div>
       <!-- 隐藏兼容属性 (保留给旧测试用例或备用) -->
       <div style="display:none;">

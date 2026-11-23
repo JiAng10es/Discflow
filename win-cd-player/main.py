@@ -75,6 +75,7 @@ from win_native import (
     begin_native_window_resize as _win_begin_resize,
     enable_dpi_awareness as _enable_dpi_awareness,
     get_dpi_scale as _get_dpi_scale,
+    set_native_window_fullscreen as _win_set_fullscreen,
     sync_native_window_theme as _win_sync_native_theme,
 )
 
@@ -279,6 +280,8 @@ class DiscflowController:
 
         self._hwnd: int = 0
         self._is_maximized: bool = False
+        self._is_fullscreen: bool = False
+        self._fullscreen_restore_state: dict = {}
         self._last_normal_bounds: dict = {}
         self._bounds_save_timer: Optional[threading.Timer] = None
         self._bounds_lock = threading.Lock()
@@ -417,7 +420,7 @@ class DiscflowController:
 
     def _on_window_moved(self, x, y):
         try:
-            if self._is_maximized:
+            if self._is_maximized or self._is_fullscreen:
                 return
             hwnd = self._hwnd
             if hwnd:
@@ -432,7 +435,7 @@ class DiscflowController:
 
     def _on_window_resized(self, width, height):
         try:
-            if self._is_maximized:
+            if self._is_maximized or self._is_fullscreen:
                 return
             hwnd = self._hwnd
             if hwnd:
@@ -446,15 +449,21 @@ class DiscflowController:
             pass
 
     def _on_window_maximized(self):
+        if self._is_fullscreen:
+            return
         self._is_maximized = True
         self._schedule_bounds_save()
 
     def _on_window_restored(self):
+        if self._is_fullscreen:
+            return
         self._is_maximized = False
         self._schedule_bounds_save()
 
     def _save_window_bounds(self):
         """将当前窗口尺寸/坐标（96-DPI 逻辑像素）与最大化状态持久化到 preferences.json"""
+        if self._is_fullscreen:
+            return
         with self._bounds_lock:
             if self._bounds_save_timer is not None:
                 try:
@@ -577,6 +586,9 @@ class DiscflowController:
     def toggle_maximize_window(self) -> bool:
         if not self._window:
             return False
+        if self._is_fullscreen:
+            self.set_fullscreen_window(False)
+            return bool(getattr(self, "_is_maximized", False))
         try:
             if getattr(self, "_is_maximized", False):
                 self._window.restore()
@@ -588,6 +600,29 @@ class DiscflowController:
         except Exception:
             pass
         return bool(getattr(self, "_is_maximized", False))
+
+    def set_fullscreen_window(self, enabled: Optional[bool] = None) -> bool:
+        target = (not self._is_fullscreen) if enabled is None else bool(enabled)
+        if not self._window:
+            self._is_fullscreen = target
+            return self._is_fullscreen
+        if target and not self._is_fullscreen:
+            # 进入全屏前先持久化一次当前正常窗口几何状态
+            self._save_window_bounds()
+        self._is_fullscreen = target
+        try:
+            _win_set_fullscreen(
+                getattr(self._window, "native", None),
+                target,
+                self._fullscreen_restore_state,
+                on_hwnd=lambda h: setattr(self, "_hwnd", h),
+            )
+        except Exception:
+            pass
+        return bool(self._is_fullscreen)
+
+    def toggle_fullscreen_window(self) -> bool:
+        return self.set_fullscreen_window(None)
 
     def close_window(self):
         self.exit_app()
@@ -2641,6 +2676,12 @@ class DiscflowJsApi:
 
     def toggle_maximize_window(self) -> bool:
         return self._ctrl.toggle_maximize_window()
+
+    def toggle_fullscreen_window(self) -> bool:
+        return self._ctrl.toggle_fullscreen_window()
+
+    def set_fullscreen_window(self, enabled: bool) -> bool:
+        return self._ctrl.set_fullscreen_window(bool(enabled))
 
     def close_window(self):
         self._ctrl.close_window()
