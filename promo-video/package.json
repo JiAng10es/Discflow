@@ -1,0 +1,15 @@
+{
+  "name": "discflow-promo-video",
+  "version": "2.4.1",
+  "private": true,
+  "type": "module",
+  "description": "Discflow v2.4.1 40s 1080p 60fps promo video generator",
+  "scripts": {
+    "keyframes": "node render_video.mjs --keyframes-only",
+    "render": "node render_video.mjs"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ws": "^8.18.0"
+  }
+}

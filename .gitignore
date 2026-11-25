@@ -55,3 +55,7 @@ app.asar
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# ---------- 宣传片制作产物与依赖 ----------
+promo-video/node_modules/
+promo-video/out/
