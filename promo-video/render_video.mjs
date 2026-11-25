@@ -10,11 +10,11 @@ import ffmpegPath from "ffmpeg-static";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const FPS = 60;
-const TOTAL_FRAMES = 2400; // 40.0s * 60fps
+const TOTAL_FRAMES = 1440; // 24.0s * 60fps
 const WIDTH = 1920;
 const HEIGHT = 1080;
 
-const KEYFRAME_SECONDS = [2.5, 8.5, 14.5, 17.5, 22.8, 30.0, 35.0, 38.2];
+const KEYFRAME_SECONDS = [1.6, 5.2, 8.2, 10.4, 14.0, 17.8, 21.1, 22.9];
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
@@ -167,7 +167,7 @@ async function renderSingleFrame(cdp, frameIndex) {
   await cdp.send("Runtime.evaluate", {
     expression: `new Promise((resolve) => {
       window.__renderFrame(${frameIndex}, ${FPS});
-      requestAnimationFrame(() => requestAnimationFrame(resolve));
+      requestAnimationFrame(resolve);
     })`,
     awaitPromise: true,
   });
@@ -272,7 +272,7 @@ async function main() {
         "-profile:v", "high",
         "-pix_fmt", "yuv420p",
         "-crf", "16",
-        "-preset", "slow",
+        "-preset", "medium",
         "-c:a", "aac",
         "-b:a", "320k",
         "-ar", "48000",

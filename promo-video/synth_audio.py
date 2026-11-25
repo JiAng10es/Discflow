@@ -4,12 +4,12 @@ import soundfile as sf
 
 OUT_WAV = r"F:\Discflow1.0\promo-video\out\discflow_promo_bgm.wav"
 SR = 48000
-DURATION = 40.0
+DURATION = 24.0
 N_SAMPLES = int(SR * DURATION)
-BPM = 96.0
-BEAT_SEC = 60.0 / BPM      # 0.625s
-BAR_SEC = BEAT_SEC * 4.0   # 2.500s
-TOTAL_BARS = 16            # 40.000s
+BPM = 120.0
+BEAT_SEC = 60.0 / BPM      # 0.500s
+BAR_SEC = BEAT_SEC * 4.0   # 2.000s
+TOTAL_BARS = 12            # 24.000s
 
 
 def midi_to_hz(midi: float) -> float:
@@ -225,101 +225,109 @@ def main():
     drum_bus = np.zeros((N_SAMPLES, 2), dtype=np.float64)
     sfx_bus = np.zeros((N_SAMPLES, 2), dtype=np.float64)
 
-    # 1. Rhodes + Pad + Bass + Drums 按 16 小节编排
+    # 1. Rhodes + Pad + Bass + Drums 按 12 小节 (120 BPM, 2.0s/小节, 共 24.0s) 编排
     for bar in range(TOTAL_BARS):
         bar_t = bar * BAR_SEC
         chord_name, bass_midi, voicing = chords[bar % 4]
 
-        # 场景能量分段：
-        # Scene 1 (0..5s, bars 0-1): 柔和开篇
-        # Scene 2 (5..12.5s, bars 2-4): 鼓组+Sub-bass进入
-        # Scene 3 (12.5..20s, bars 5-7): 完整律动 + 柔和旋律点缀
-        # Scene 4 (20..25s, bars 8-9): 清亮色彩升华
-        # Scene 5 (25..32.5s, bars 10-12): 推进感，准备过渡
-        # Scene 6 (32.5..36.5s, bars 13-14): 抽离鼓组，仅留 Rhodes + Pad 沉浸
-        # Scene 7 (36.5..40s, bar 14.6-15): 自然收敛余韵
+        # 场景能量分段（24.0s 快节奏版）：
+        # Scene 1 (0..3s, Bar 0-1.5): 柔和亮丽开篇，Bar 1 后半轻快 Shaker 预告
+        # Scene 2 (3..7s, Bar 1.5-3.5): 3.0s 起 Sub-bass + 120 BPM 鼓组进入
+        # Scene 3 (7..12s, Bar 3.5-6): 饱满律动 + 高位分解琶音
+        # Scene 4 (12..15s, Bar 6-7.5): 清亮色彩升华
+        # Scene 5 (15..19s, Bar 7.5-9.5): 推进感，准备 19.0s 抽离
+        # Scene 6 (19..22s, Bar 9.5-11): 19.0s 精确抽离鼓组，仅留 Rhodes + Pad 全屏沉浸
+        # Scene 7 (22..24s, Bar 11): 温暖终结和弦余韵自然衰减
 
-        if bar <= 1:
-            rhodes_vel = 0.58 if bar == 0 else 0.68
-        elif bar <= 12:
-            rhodes_vel = 0.78
-        elif bar <= 14:
+        if bar == 0:
+            rhodes_vel = 0.60
+        elif bar == 1:
+            rhodes_vel = 0.72
+        elif bar <= 8:
+            rhodes_vel = 0.80
+        elif bar <= 10:
             rhodes_vel = 0.72
         else:
-            rhodes_vel = 0.52
+            rhodes_vel = 0.54
 
-        # Rhodes 和弦轻柔滚奏 (strum 22ms 错峰，最后一小节延长自然衰减)
-        chord_dur = 3.6 if bar == 15 else 2.95
+        # Rhodes 和弦轻柔滚奏 (strum 18ms 错峰，最后一小节延长自然衰减)
+        chord_dur = 2.8 if bar == 11 else 2.35
         for idx, note_midi in enumerate(voicing):
-            strum = idx * 0.022
+            strum = idx * 0.018
             pan = -0.25 + 0.5 * (idx / max(1, len(voicing) - 1))
             note_sig = synth_rhodes_note(midi_to_hz(note_midi), chord_dur, vel=rhodes_vel * 0.24)
             place_mono(rhodes_bus, bar_t + strum, note_sig, pan=pan)
 
         # 第 2 拍半与第 4 拍轻柔 Rhodes 分解点缀（丰富第 2-6 幕音乐性）
-        if 2 <= bar <= 14:
+        if 1 <= bar <= 10:
             arp_notes = [voicing[-1], voicing[-2], voicing[-3]]
             arp_times = [bar_t + 1.5 * BEAT_SEC, bar_t + 2.5 * BEAT_SEC, bar_t + 3.25 * BEAT_SEC]
             for j, (am, at) in enumerate(zip(arp_notes, arp_times)):
-                if at < 37.5:
-                    vel_a = 0.14 if bar < 13 else 0.16
+                if 2.8 <= at < 22.0:
+                    vel_a = 0.14 if at < 19.0 else 0.16
                     place_mono(
                         rhodes_bus,
                         at,
-                        synth_rhodes_note(midi_to_hz(am + 12), 1.6, vel=vel_a),
+                        synth_rhodes_note(midi_to_hz(am + 12), 1.35, vel=vel_a),
                         pan=0.28 * (-1 if j % 2 else 1),
                     )
 
         # 温暖氛围 Pad（全片铺底，立体声微失谐叠加）
-        pad_n = int((BAR_SEC + 0.6) * SR)
+        pad_n = int((BAR_SEC + 0.5) * SR)
         pt = np.arange(pad_n, dtype=np.float64) / SR
-        pad_env = np.sin(np.pi * np.clip(pt / (BAR_SEC + 0.6), 0, 1)) ** 0.75
+        pad_env = np.sin(np.pi * np.clip(pt / (BAR_SEC + 0.5), 0, 1)) ** 0.75
         pad_l = np.zeros(pad_n, dtype=np.float64)
         pad_r = np.zeros(pad_n, dtype=np.float64)
         for nm in voicing[:4]:
             f0 = midi_to_hz(nm)
             pad_l += 0.25 * np.sin(2 * np.pi * f0 * 0.9985 * pt) + 0.08 * np.sin(2 * np.pi * f0 * 2.0 * pt)
             pad_r += 0.25 * np.sin(2 * np.pi * f0 * 1.0015 * pt) + 0.08 * np.sin(2 * np.pi * f0 * 2.0 * pt)
-        pad_gain = 0.085 if bar < 2 else (0.12 if bar < 13 else (0.14 if bar < 15 else 0.09))
+        pad_gain = 0.085 if bar == 0 else (0.12 if bar <= 8 else (0.14 if bar <= 10 else 0.09))
         place_stereo(pad_bus, bar_t, np.stack([pad_l * pad_env, pad_r * pad_env], axis=1) * pad_gain)
 
-        # Sub-bass（5.0s 起进入，到 36.5s 减弱淡出）
-        if 2 <= bar <= 14:
-            sub_dur = 2.45 if bar < 13 else 2.7
-            sub_vel = 0.42 if bar < 13 else 0.32
+        # Sub-bass（3.0s 起进入，到 22.0s 收敛淡出）
+        if bar == 1:
+            # Bar 1 后半 (3.0s) 起进入 Sub-bass
+            place_mono(bass_bus, 3.0, synth_sub_bass(midi_to_hz(bass_midi), 1.35, vel=0.40), pan=0.0)
+        elif 2 <= bar <= 10:
+            sub_dur = 1.95 if bar <= 8 else 2.2
+            sub_vel = 0.42 if bar <= 8 else 0.30
             place_mono(bass_bus, bar_t, synth_sub_bass(midi_to_hz(bass_midi), sub_dur, vel=sub_vel), pan=0.0)
-            if 3 <= bar <= 12:
-                # 第 3 拍半轻柔呼吸低音过门
+            if 2 <= bar <= 8:
                 place_mono(
                     bass_bus,
                     bar_t + 2.5 * BEAT_SEC,
-                    synth_sub_bass(midi_to_hz(bass_midi + 7), 0.9, vel=0.22),
+                    synth_sub_bass(midi_to_hz(bass_midi + 7), 0.75, vel=0.22),
                     pan=0.0,
                 )
 
-        # 鼓组（5.0s 起进入，32.5s 精确抽离！）
-        # 5.0s = bar 2, 32.5s = bar 13
-        if 2 <= bar <= 12:
-            # Kick: 第 1 拍、第 3 拍半（柔和 R&B / Lo-fi 呼吸律动）
+        # 鼓组（3.0s 起进入，19.0s 精确抽离！）
+        if bar == 1:
+            # Bar 1 前半仅轻柔 Shaker 预告，3.0s (kb=2.0) 随 Scene 2 踩点进 Kick/Rimshot
+            for sb in [1.0, 1.5]:
+                place_mono(drum_bus, bar_t + sb * BEAT_SEC, synth_shaker(rng, 0.08), pan=0.16)
+            place_mono(drum_bus, 3.0, synth_kick(0.56), pan=0.0)
+            place_mono(drum_bus, 3.5, synth_rimshot(0.24), pan=-0.12)
+            for sb in [2.0, 2.5, 3.0, 3.5]:
+                st = bar_t + sb * BEAT_SEC + (0.012 if int(sb * 2) % 2 == 1 else 0.0)
+                place_mono(drum_bus, st, synth_shaker(rng, 0.14 if int(sb * 2) % 2 == 0 else 0.09), pan=0.18)
+        elif 2 <= bar <= 9:
+            # Kick: 第 1 拍、第 3 拍半
             for kb in [0.0, 2.5]:
                 kt = bar_t + kb * BEAT_SEC
-                if kt < 32.35:
+                if kt < 18.85:
                     place_mono(drum_bus, kt, synth_kick(0.56 if kb == 0.0 else 0.44), pan=0.0)
             # Rimshot: 第 2 拍、第 4 拍
             for rb in [1.0, 3.0]:
                 rt = bar_t + rb * BEAT_SEC
-                if rt < 32.35:
+                if rt < 18.85:
                     place_mono(drum_bus, rt, synth_rimshot(0.24), pan=-0.12)
             # Shaker: 8 分音符微摇摆
             for sb in np.arange(0.0, 4.0, 0.5):
-                st = bar_t + sb * BEAT_SEC + (0.014 if int(sb * 2) % 2 == 1 else 0.0)
-                if st < 32.35:
+                st = bar_t + sb * BEAT_SEC + (0.012 if int(sb * 2) % 2 == 1 else 0.0)
+                if st < 18.85:
                     s_vel = 0.14 if int(sb * 2) % 2 == 0 else 0.09
                     place_mono(drum_bus, st, synth_shaker(rng, s_vel), pan=0.18)
-        elif bar == 1:
-            # 第 2 小节仅轻柔 Shaker 预告入场
-            for sb in [2.0, 2.5, 3.0, 3.5]:
-                place_mono(drum_bus, bar_t + sb * BEAT_SEC, synth_shaker(rng, 0.08), pan=0.16)
 
     # 2. Rhodes 2.4Hz 立体声 Tremolo
     trem_l = 1.0 - 0.18 * (0.5 + 0.5 * np.sin(2.0 * np.pi * 2.4 * t_all))
@@ -329,9 +337,8 @@ def main():
 
     # 3. 极轻微黑胶颗粒感（Warm Vinyl Crackle）
     vinyl_base = one_pole_lp(rng.standard_normal((N_SAMPLES, 2)), 1400.0) * 0.0045
-    # 稀疏微尘颗粒
     crackles = np.zeros((N_SAMPLES, 2), dtype=np.float64)
-    n_pops = 260
+    n_pops = 160
     pop_idx = rng.integers(0, N_SAMPLES - 64, size=n_pops)
     for idx in pop_idx:
         ch = rng.integers(0, 2)
@@ -339,16 +346,16 @@ def main():
         crackles[idx : idx + 6, ch] += amp * np.exp(-np.arange(6) / 1.8)
     vinyl_bus = vinyl_base + one_pole_lp(crackles, 4800.0)
 
-    # 4. 8 个分镜交互踩点微音效 (-14dB ~ -18dB)
+    # 4. 8 个快节奏分镜交互踩点微音效 (-14dB ~ -18dB)
     sfx_events = [
-        (0.6, "sparkle"),
-        (5.0, "whoosh_lift"),
-        (12.5, "sparkle"),
-        (15.5, "popover"),
-        (20.0, "wipe"),
-        (25.0, "popover"),
-        (28.2, "modal_pop"),
-        (32.5, "click_immerse"),
+        (0.35, "sparkle"),
+        (3.0, "whoosh_lift"),
+        (7.0, "sparkle"),
+        (9.0, "popover"),
+        (12.0, "wipe"),
+        (15.0, "popover"),
+        (16.6, "modal_pop"),
+        (19.0, "click_immerse"),
     ]
     for ts, kind in sfx_events:
         place_stereo(sfx_bus, ts, synth_ui_sfx(kind))
@@ -359,11 +366,11 @@ def main():
 
     mix = musical_wet + bass_bus + drum_bus * 0.88 + vinyl_bus + sfx_wet
 
-    # 6. 首尾包络：0.0s 18ms 淡入，36.5s–40.0s 自然衰减归零
+    # 6. 首尾包络：0.0s 18ms 淡入，22.2s–24.0s 自然衰减归零
     fade_in_n = int(0.018 * SR)
     mix[:fade_in_n] *= np.linspace(0.0, 1.0, fade_in_n)[:, None]
 
-    tail_start = int(36.5 * SR)
+    tail_start = int(22.2 * SR)
     tail_len = N_SAMPLES - tail_start
     tail_curve = np.cos(0.5 * np.pi * np.linspace(0.0, 1.0, tail_len)) ** 1.35
     mix[tail_start:] *= tail_curve[:, None]

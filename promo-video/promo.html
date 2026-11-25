@@ -1707,14 +1707,14 @@
   <!-- 交互浏览微控条 -->
   <div class="preview-hud" id="previewHud">
     <button class="hud-btn" id="hudPlayBtn" title="播放 / 暂停">❚❚</button>
-    <input class="hud-range" id="hudRange" type="range" min="0" max="2400" value="0" />
-    <span class="hud-time" id="hudTime">00.0s / 40.0s</span>
+    <input class="hud-range" id="hudRange" type="range" min="0" max="1440" value="0" />
+    <span class="hud-time" id="hudTime">00.0s / 24.0s</span>
   </div>
 
   <script>
     const FPS = 60;
-    const TOTAL_DURATION = 40.0;
-    const TOTAL_FRAMES = 2400;
+    const TOTAL_DURATION = 24.0;
+    const TOTAL_FRAMES = 1440;
     const isCapture = new URLSearchParams(window.location.search).get("capture") === "1";
     if (isCapture) {
       document.documentElement.classList.add("is-capture");
@@ -1817,85 +1817,85 @@
       const gy = ((frame * 53) % 64) - 32;
       document.getElementById("filmGrain").style.transform = `translate(${gx}px, ${gy}px)`;
 
-      // ---------------- SCENE 1: 0.0s - 5.0s ----------------
-      const s1In = easeOutCubic(norm(t, 0.0, 0.45));
-      const s1Out = 1 - easeInOutCubic(norm(t, 4.45, 5.0));
-      const s1Op = t <= 5.05 ? s1In * s1Out : 0;
+      // ---------------- SCENE 1: 0.0s - 3.0s ----------------
+      const s1In = easeOutCubic(norm(t, 0.0, 0.28));
+      const s1Out = 1 - easeInOutCubic(norm(t, 2.68, 3.02));
+      const s1Op = t <= 3.05 ? s1In * s1Out : 0;
       setSceneVisible(elScene1, s1Op);
       if (s1Op > 0) {
-        const drawP = easeInOutCubic(norm(t, 0.15, 1.85));
+        const drawP = easeInOutCubic(norm(t, 0.08, 1.15));
         svgPaths.forEach(({ el, len }, i) => {
           const localP = easeOutCubic(norm(drawP, i * 0.06, 0.72 + i * 0.05));
           el.style.strokeDashoffset = `${(len * (1 - localP)).toFixed(2)}`;
         });
-        document.getElementById("s1Dot").style.opacity = easeOutCubic(norm(t, 1.1, 1.55)).toFixed(3);
-        const spinOp = easeOutCubic(norm(t, 0.7, 1.7));
+        document.getElementById("s1Dot").style.opacity = easeOutCubic(norm(t, 0.65, 0.95)).toFixed(3);
+        const spinOp = easeOutCubic(norm(t, 0.4, 1.05));
         document.getElementById("s1Halo").style.opacity = (spinOp * 0.85).toFixed(3);
-        document.getElementById("s1Halo").style.transform = `rotate(${(t * 28).toFixed(2)}deg)`;
+        document.getElementById("s1Halo").style.transform = `rotate(${(t * 42).toFixed(2)}deg)`;
         document.getElementById("s1Shimmer").style.opacity = (spinOp * 0.75).toFixed(3);
-        document.getElementById("s1Shimmer").style.transform = `rotate(${(t * 48).toFixed(2)}deg)`;
+        document.getElementById("s1Shimmer").style.transform = `rotate(${(t * 68).toFixed(2)}deg)`;
 
-        const titleP = easeOutExpo(norm(t, 0.85, 1.9));
-        const subP = easeOutExpo(norm(t, 1.25, 2.25));
-        const badgeP = easeOutCubic(norm(t, 1.65, 2.35));
+        const titleP = easeOutExpo(norm(t, 0.45, 1.15));
+        const subP = easeOutExpo(norm(t, 0.72, 1.38));
+        const badgeP = easeOutCubic(norm(t, 0.95, 1.45));
         document.getElementById("s1Title").style.opacity = titleP.toFixed(3);
         document.getElementById("s1Title").style.transform = `translateY(${lerp(24, 0, titleP).toFixed(2)}px)`;
         document.getElementById("s1Sub").style.opacity = subP.toFixed(3);
         document.getElementById("s1Sub").style.transform = `translateY(${lerp(20, 0, subP).toFixed(2)}px)`;
         document.getElementById("s1Badge").style.opacity = badgeP.toFixed(3);
 
-        const exitScale = lerp(1.0, 1.04, easeInOutCubic(norm(t, 4.45, 5.0)));
+        const exitScale = lerp(1.0, 1.045, easeInOutCubic(norm(t, 2.68, 3.02)));
         document.getElementById("s1Lockup").style.transform = `scale(${exitScale.toFixed(4)})`;
       }
 
-      // ---------------- SCENE 2: 5.0s - 12.5s ----------------
-      const s2In = easeOutCubic(norm(t, 4.85, 5.45));
-      const s2Out = 1 - easeInOutCubic(norm(t, 11.95, 12.55));
-      const s2Op = t >= 4.8 && t <= 12.6 ? s2In * s2Out : 0;
+      // ---------------- SCENE 2: 3.0s - 7.0s ----------------
+      const s2In = easeOutCubic(norm(t, 2.90, 3.25));
+      const s2Out = 1 - easeInOutCubic(norm(t, 6.68, 7.05));
+      const s2Op = t >= 2.85 && t <= 7.1 ? s2In * s2Out : 0;
       setSceneVisible(elScene2, s2Op);
       if (s2Op > 0) {
-        const headP = easeOutExpo(norm(t, 5.05, 5.95));
+        const headP = easeOutExpo(norm(t, 3.00, 3.55));
         document.getElementById("s2Header").style.opacity = headP.toFixed(3);
         document.getElementById("s2Header").style.transform = `translateY(${lerp(22, 0, headP).toFixed(2)}px)`;
 
-        const liftP = easeOutExpo(norm(t, 5.0, 6.75));
-        const rotX = lerp(22, 7.5, liftP) + Math.sin((t - 5.0) * 0.7) * 1.4;
-        const rotY = lerp(-14, -4.5, liftP) + Math.cos((t - 5.0) * 0.55) * 2.6;
+        const liftP = easeOutExpo(norm(t, 3.00, 4.05));
+        const rotX = lerp(22, 7.5, liftP) + Math.sin((t - 3.0) * 1.1) * 1.4;
+        const rotY = lerp(-14, -4.5, liftP) + Math.cos((t - 3.0) * 0.9) * 2.6;
         const transY = lerp(65, 0, liftP);
         const scale3d = lerp(0.88, 1.0, liftP);
         document.getElementById("s2Frame").style.transform =
           `translateY(${transY.toFixed(2)}px) scale(${scale3d.toFixed(4)}) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg)`;
 
-        const sheenX = lerp(-90, 120, easeInOutCubic(norm(t, 5.4, 10.6)));
+        const sheenX = lerp(-90, 120, easeInOutCubic(norm(t, 3.25, 6.20)));
         document.getElementById("s2Sheen").style.transform = `translateX(${sheenX.toFixed(1)}%)`;
 
         [
-          { id: "s2Pill1", start: 5.85 },
-          { id: "s2Pill2", start: 6.15 },
-          { id: "s2Pill3", start: 6.45 },
+          { id: "s2Pill1", start: 3.45 },
+          { id: "s2Pill2", start: 3.62 },
+          { id: "s2Pill3", start: 3.79 },
         ].forEach(({ id, start }) => {
-          const p = springOut(norm(t, start, start + 0.85), 8.5, 11);
+          const p = springOut(norm(t, start, start + 0.55), 8.5, 12.5);
           const el = document.getElementById(id);
           el.style.opacity = clamp(p * 1.2, 0, 1).toFixed(3);
-          el.style.transform = `translateY(${lerp(28, 0, p).toFixed(2)}px) scale(${lerp(0.92, 1, p).toFixed(4)})`;
+          el.style.transform = `translateY(${lerp(26, 0, p).toFixed(2)}px) scale(${lerp(0.92, 1, p).toFixed(4)})`;
         });
       }
 
-      // ---------------- SCENE 3: 12.5s - 20.0s ----------------
-      const s3In = easeOutCubic(norm(t, 12.35, 12.95));
-      const s3Out = 1 - easeInOutCubic(norm(t, 19.45, 20.05));
-      const s3Op = t >= 12.3 && t <= 20.1 ? s3In * s3Out : 0;
+      // ---------------- SCENE 3: 7.0s - 12.0s ----------------
+      const s3In = easeOutCubic(norm(t, 6.90, 7.25));
+      const s3Out = 1 - easeInOutCubic(norm(t, 11.68, 12.05));
+      const s3Op = t >= 6.85 && t <= 12.1 ? s3In * s3Out : 0;
       setSceneVisible(elScene3, s3Op);
       if (s3Op > 0) {
-        const winEnter = easeOutExpo(norm(t, 12.45, 13.3));
+        const winEnter = easeOutExpo(norm(t, 6.95, 7.50));
         document.getElementById("s3Window").style.transform = `scale(${lerp(0.95, 1.0, winEnter).toFixed(4)})`;
-        document.getElementById("s3Caption").style.opacity = easeOutCubic(norm(t, 12.6, 13.2)).toFixed(3);
+        document.getElementById("s3Caption").style.opacity = easeOutCubic(norm(t, 7.05, 7.45)).toFixed(3);
 
         // 左侧封面光晕缓慢旋转
-        document.getElementById("s3CoverAura").style.transform = `rotate(${((t - 12.5) * 26).toFixed(2)}deg)`;
+        document.getElementById("s3CoverAura").style.transform = `rotate(${((t - 7.0) * 38).toFixed(2)}deg)`;
 
-        // 歌词时间轴：12.5-16.1s Line A 逐字扫描，16.0s 滚动切换至 Line B
-        const scrollP = easeInOutCubic(norm(t, 15.85, 16.55));
+        // 歌词时间轴：7.18-8.95s Line A 逐字扫描，8.92-9.38s 滚动切换至 Line B
+        const scrollP = easeInOutCubic(norm(t, 8.92, 9.38));
         const baseOffsetY = -108;
         const nextOffsetY = -224;
         document.getElementById("s3LyricsTrack").style.transform =
@@ -1911,13 +1911,13 @@
           lineB.classList.add("is-active");
         }
 
-        const sweepA = norm(t, 12.85, 15.85);
-        const sweepB = norm(t, 16.35, 19.55);
+        const sweepA = norm(t, 7.18, 8.95);
+        const sweepB = norm(t, 9.22, 11.55);
         updateWordSweep(lineA, sweepA);
         updateWordSweep(lineB, sweepB);
 
         // 进度条与时间
-        const secPlay = Math.floor(113 + (t - 12.5));
+        const secPlay = Math.floor(113 + (t - 7.0));
         const mm = Math.floor(secPlay / 60);
         const ss = String(secPlay % 60).padStart(2, "0");
         document.getElementById("s3Elapsed").textContent = `${mm}:${ss}`;
@@ -1925,10 +1925,10 @@
         const rmm = Math.floor(secRem / 60);
         const rss = String(secRem % 60).padStart(2, "0");
         document.getElementById("s3Remaining").textContent = `-${rmm}:${rss}`;
-        document.getElementById("s3ProgFill").style.width = `${(35.3 + (t - 12.5) * 0.48).toFixed(2)}%`;
+        document.getElementById("s3ProgFill").style.width = `${(35.3 + (t - 7.0) * 0.72).toFixed(2)}%`;
 
-        // 15.5s 弹出 v2.4.1 整合版「译词 & 校准」液态玻璃浮窗
-        const popP = springOut(norm(t, 15.5, 16.25), 7.8, 11.5);
+        // 9.00s 弹出 v2.4.1 整合版「译词 & 校准」液态玻璃浮窗
+        const popP = springOut(norm(t, 9.00, 9.48), 8.2, 12.2);
         const popEl = document.getElementById("s3Popover");
         const lyricBtn = document.getElementById("s3LyricBtn");
         popEl.style.opacity = clamp(popP * 1.25, 0, 1).toFixed(3);
@@ -1936,43 +1936,43 @@
         if (popP > 0.1) lyricBtn.classList.add("is-highlighted");
         else lyricBtn.classList.remove("is-highlighted");
 
-        // 演示 [ / ] ±50ms 校准数值跳变：16.4s (+50ms) -> 17.2s (+100ms) -> 18.6s (+50ms)
+        // 演示 [ / ] ±50ms 校准数值跳变：9.55s (+50ms) -> 10.15s (+100ms) -> 11.00s (+50ms)
         const valEl = document.getElementById("s3OffsetVal");
         const plusBtn = document.getElementById("s3StepPlus");
         const minusBtn = document.getElementById("s3StepMinus");
         plusBtn.classList.remove("is-pressed");
         minusBtn.classList.remove("is-pressed");
 
-        if (t < 16.4) {
+        if (t < 9.55) {
           valEl.textContent = "0ms";
-        } else if (t < 17.2) {
+        } else if (t < 10.15) {
           valEl.textContent = "+50ms";
-          if (t < 16.72) plusBtn.classList.add("is-pressed");
-        } else if (t < 18.6) {
+          if (t < 9.81) plusBtn.classList.add("is-pressed");
+        } else if (t < 11.00) {
           valEl.textContent = "+100ms";
-          if (t < 17.55) plusBtn.classList.add("is-pressed");
+          if (t < 10.42) plusBtn.classList.add("is-pressed");
         } else {
           valEl.textContent = "+50ms";
-          if (t < 18.92) minusBtn.classList.add("is-pressed");
+          if (t < 11.26) minusBtn.classList.add("is-pressed");
         }
       }
 
-      // ---------------- SCENE 4: 20.0s - 25.0s ----------------
-      const s4In = easeOutCubic(norm(t, 19.85, 20.45));
-      const s4Out = 1 - easeInOutCubic(norm(t, 24.45, 25.05));
-      const s4Op = t >= 19.8 && t <= 25.1 ? s4In * s4Out : 0;
+      // ---------------- SCENE 4: 12.0s - 15.0s ----------------
+      const s4In = easeOutCubic(norm(t, 11.90, 12.25));
+      const s4Out = 1 - easeInOutCubic(norm(t, 14.68, 15.05));
+      const s4Op = t >= 11.85 && t <= 15.1 ? s4In * s4Out : 0;
       setSceneVisible(elScene4, s4Op);
       if (s4Op > 0) {
-        const headP = easeOutExpo(norm(t, 20.0, 20.85));
+        const headP = easeOutExpo(norm(t, 12.00, 12.50));
         document.getElementById("s4Header").style.opacity = headP.toFixed(3);
         document.getElementById("s4Header").style.transform = `translateY(${lerp(20, 0, headP).toFixed(2)}px)`;
 
-        // 从左到右扫过 (0 -> 0.88) 再优雅回弹至 0.50 对称定格 (22.8s 正好精准 50%)
+        // 从左到右干脆扫过 (0.04 -> 0.88) 再优雅回弹至 0.50 对称定格 (13.85s 到位，14.0s 正好对称定格)
         let splitRatio = 0.0;
-        if (t < 21.55) {
-          splitRatio = lerp(0.04, 0.88, easeInOutCubic(norm(t, 20.15, 21.55)));
+        if (t < 13.05) {
+          splitRatio = lerp(0.04, 0.88, easeInOutCubic(norm(t, 12.10, 13.05)));
         } else {
-          splitRatio = lerp(0.88, 0.50, easeOutCubic(norm(t, 21.55, 22.65)));
+          splitRatio = lerp(0.88, 0.50, easeOutCubic(norm(t, 13.05, 13.85)));
         }
         const pct = (splitRatio * 100).toFixed(3);
         const rightClip = ((1 - splitRatio) * 100).toFixed(3);
@@ -1983,37 +1983,37 @@
         document.getElementById("s4TagDark").style.opacity = clamp((0.85 - splitRatio) * 3, 0, 1).toFixed(3);
       }
 
-      // ---------------- SCENE 5: 25.0s - 32.5s ----------------
-      const s5In = easeOutCubic(norm(t, 24.85, 25.45));
-      const s5Out = 1 - easeInOutCubic(norm(t, 31.95, 32.55));
-      const s5Op = t >= 24.8 && t <= 32.6 ? s5In * s5Out : 0;
+      // ---------------- SCENE 5: 15.0s - 19.0s ----------------
+      const s5In = easeOutCubic(norm(t, 14.90, 15.25));
+      const s5Out = 1 - easeInOutCubic(norm(t, 18.68, 19.05));
+      const s5Op = t >= 14.85 && t <= 19.1 ? s5In * s5Out : 0;
       setSceneVisible(elScene5, s5Op);
       if (s5Op > 0) {
-        // 唱片架背景优雅推进漫游（起始完整保留顶栏不裁切，随后平滑缩放推进 + 28.2s 景深虚化）
-        const roamP = easeInOutCubic(norm(t, 25.0, 32.5));
+        // 唱片架背景推进漫游（起始完整保留顶栏不裁切，随后平滑缩放推进 + 16.55s 景深虚化）
+        const roamP = easeInOutCubic(norm(t, 15.0, 19.0));
         const bgScale = lerp(1.0, 1.10, roamP);
         const bgY = lerp(58, -36, roamP);
-        const blurP = easeInOutCubic(norm(t, 28.15, 28.85));
+        const blurP = easeInOutCubic(norm(t, 16.55, 17.05));
         const bgImg = document.getElementById("s5BgImg");
         bgImg.style.transform = `translateY(${bgY.toFixed(2)}px) scale(${bgScale.toFixed(4)})`;
         bgImg.style.filter = `blur(${(blurP * 14).toFixed(2)}px) brightness(${lerp(1.0, 0.54, blurP).toFixed(3)})`;
         document.getElementById("s5Scrim").style.background = `rgba(8, 9, 13, ${(blurP * 0.42).toFixed(3)})`;
 
         // 顶部提示条在弹窗进入时淡出避免重叠
-        const pillIn = easeOutCubic(norm(t, 25.15, 25.75));
-        const pillOut = 1 - easeOutCubic(norm(t, 28.0, 28.45));
+        const pillIn = easeOutCubic(norm(t, 15.10, 15.48));
+        const pillOut = 1 - easeOutCubic(norm(t, 16.35, 16.65));
         document.getElementById("s5TopPill").style.opacity = (pillIn * pillOut).toFixed(3);
 
-        // 28.2s 弹簧弹出 CD 无损抓轨弹窗
-        const modalP = springOut(norm(t, 28.2, 29.05), 7.5, 11.2);
+        // 16.60s 弹簧弹出 CD 无损抓轨弹窗
+        const modalP = springOut(norm(t, 16.60, 17.15), 8.0, 12.0);
         const modalEl = document.getElementById("s5Modal");
         modalEl.style.opacity = clamp(modalP * 1.3, 0, 1).toFixed(3);
         modalEl.style.transform = `scale(${lerp(0.84, 1.0, modalP).toFixed(4)}) translateY(${lerp(28, 0, modalP).toFixed(2)}px)`;
 
-        // 抓轨进度 38% -> 100% (28.35s - 31.65s)
-        const ripP = easeInOutCubic(norm(t, 28.35, 31.65));
+        // 抓轨进度 38% -> 100% (16.70s - 18.55s)
+        const ripP = easeInOutCubic(norm(t, 16.70, 18.55));
         const ripVal = Math.round(lerp(38, 100, ripP));
-        const encVal = Math.round(lerp(42, 100, easeInOutCubic(norm(t, 28.45, 31.55))));
+        const encVal = Math.round(lerp(42, 100, easeInOutCubic(norm(t, 16.76, 18.48))));
         const trackNum = Math.min(11, 7 + Math.floor(ripP * 4.99));
 
         document.getElementById("s5RipPct").textContent = `${ripVal}%`;
@@ -2035,48 +2035,48 @@
         }
       }
 
-      // ---------------- SCENE 6: 32.5s - 36.5s ----------------
-      const s6In = easeOutCubic(norm(t, 32.35, 32.85));
-      const s6Out = 1 - easeInOutCubic(norm(t, 36.05, 36.6));
-      const s6Op = t >= 32.3 && t <= 36.65 ? s6In * s6Out : 0;
+      // ---------------- SCENE 6: 19.0s - 22.0s ----------------
+      const s6In = easeOutCubic(norm(t, 18.90, 19.22));
+      const s6Out = 1 - easeInOutCubic(norm(t, 21.68, 22.05));
+      const s6Op = t >= 18.85 && t <= 22.1 ? s6In * s6Out : 0;
       setSceneVisible(elScene6, s6Op);
       if (s6Op > 0) {
-        // 32.55-32.95s 底部 Dock 全屏按钮点击波纹
-        const rippleP = norm(t, 32.55, 33.15);
+        // 19.05-19.48s 底部 Dock 全屏按钮点击波纹
+        const rippleP = norm(t, 19.05, 19.48);
         const rippleEl = document.getElementById("s6Ripple");
         rippleEl.style.opacity = rippleP > 0 && rippleP < 1 ? (1 - rippleP).toFixed(3) : "0";
         rippleEl.style.transform = `translate(-50%, -50%) scale(${lerp(0.4, 2.35, easeOutCubic(rippleP)).toFixed(3)})`;
 
-        // 32.75-33.75s 无缝铺满 1920x1080 全屏画布
-        const fsExpand = easeInOutCubic(norm(t, 32.75, 33.75));
+        // 19.22-19.88s 无缝铺满 1920x1080 全屏画布
+        const fsExpand = easeInOutCubic(norm(t, 19.22, 19.88));
         const shellEl = document.getElementById("s6Shell");
         shellEl.style.width = `${lerp(1640, 1920, fsExpand).toFixed(1)}px`;
         shellEl.style.height = `${lerp(920, 1080, fsExpand).toFixed(1)}px`;
         shellEl.style.borderRadius = `${lerp(22, 0, fsExpand).toFixed(1)}px`;
         shellEl.style.borderColor = `rgba(255, 255, 255, ${lerp(0.14, 0.0, fsExpand).toFixed(3)})`;
 
-        // 33.8s-35.0s 顶栏和 Dock 渐隐至 opacity: 0
-        const hudFade = 1 - easeInOutCubic(norm(t, 33.8, 35.0));
+        // 19.90s-20.62s 顶栏和 Dock 渐隐至 opacity: 0
+        const hudFade = 1 - easeInOutCubic(norm(t, 19.90, 20.62));
         document.getElementById("s6Topbar").style.opacity = hudFade.toFixed(3);
         document.getElementById("s6DockWrap").style.opacity = hudFade.toFixed(3);
         document.getElementById("s6DockWrap").style.transform = `translateX(-50%) translateY(${lerp(18, 0, hudFade).toFixed(2)}px)`;
 
         // 全屏沉浸后大封面与歌词微呼吸
-        const breathe = lerp(1.0, 1.045, easeOutCubic(norm(t, 33.4, 36.2)));
+        const breathe = lerp(1.0, 1.045, easeOutCubic(norm(t, 19.60, 21.85)));
         document.getElementById("s6CoverBox").style.transform = `scale(${breathe.toFixed(4)})`;
-        document.getElementById("s6LyricsBox").style.transform = `translateY(${lerp(10, -14, norm(t, 33.2, 36.3)).toFixed(2)}px)`;
+        document.getElementById("s6LyricsBox").style.transform = `translateY(${lerp(10, -14, norm(t, 19.50, 21.90)).toFixed(2)}px)`;
 
-        const labelIn = easeOutCubic(norm(t, 34.4, 35.1));
+        const labelIn = easeOutCubic(norm(t, 20.35, 20.85));
         document.getElementById("s6QuietLabel").style.opacity = (labelIn * 0.85).toFixed(3);
       }
 
-      // ---------------- SCENE 7: 36.5s - 40.0s ----------------
-      const s7In = easeOutExpo(norm(t, 36.4, 37.35));
-      const s7FadeOut = 1 - easeInOutCubic(norm(t, 39.05, 40.0));
-      const s7Op = t >= 36.35 ? s7In * s7FadeOut : 0;
+      // ---------------- SCENE 7: 22.0s - 24.0s ----------------
+      const s7In = easeOutExpo(norm(t, 21.95, 22.55));
+      const s7FadeOut = 1 - easeInOutCubic(norm(t, 23.42, 24.00));
+      const s7Op = t >= 21.90 ? s7In * s7FadeOut : 0;
       setSceneVisible(elScene7, s7Op);
       if (s7Op > 0) {
-        const settle = easeOutExpo(norm(t, 36.4, 37.5));
+        const settle = easeOutExpo(norm(t, 21.95, 22.65));
         document.getElementById("s7Card").style.transform =
           `translateY(${lerp(24, 0, settle).toFixed(2)}px) scale(${lerp(0.96, 1.0, settle).toFixed(4)})`;
       }
@@ -2112,7 +2112,7 @@
       hudRange.addEventListener("input", () => {
         currentFrame = Number(hudRange.value);
         window.__renderFrame(currentFrame, FPS);
-        hudTime.textContent = `${(currentFrame / FPS).toFixed(1).padStart(4, "0")}s / 40.0s`;
+        hudTime.textContent = `${(currentFrame / FPS).toFixed(1).padStart(4, "0")}s / 24.0s`;
       });
 
       function tick(now) {
@@ -2122,7 +2122,7 @@
           currentFrame = (currentFrame + dt * FPS) % TOTAL_FRAMES;
           window.__renderFrame(currentFrame, FPS);
           hudRange.value = Math.round(currentFrame);
-          hudTime.textContent = `${(currentFrame / FPS).toFixed(1).padStart(4, "0")}s / 40.0s`;
+          hudTime.textContent = `${(currentFrame / FPS).toFixed(1).padStart(4, "0")}s / 24.0s`;
         } else {
           lastTs = now;
         }
