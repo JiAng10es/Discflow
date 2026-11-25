@@ -310,17 +310,32 @@ async function main() {
       console.log(`[render] Complete! ${mp4Path} (${stat.size} bytes)`);
     }
   } finally {
-    if (cdp) cdp.close();
-    if (chromeProc && !chromeProc.killed) {
+    if (cdp) {
       try {
-        chromeProc.kill("SIGKILL");
+        await Promise.race([
+          cdp.send("Browser.close"),
+          new Promise((r) => setTimeout(r, 1000)),
+        ]);
       } catch {}
+      cdp.close();
+    }
+    if (chromeProc) {
+      if (!chromeProc.killed) {
+        try {
+          chromeProc.kill("SIGKILL");
+        } catch {}
+      }
+      await new Promise((r) => {
+        if (chromeProc.exitCode !== null || chromeProc.signalCode !== null) return r();
+        chromeProc.once("exit", r);
+        setTimeout(r, 1500);
+      });
     }
     if (server) {
       await new Promise((r) => server.close(() => r()));
     }
     try {
-      fs.rmSync(userDataDir, { recursive: true, force: true });
+      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
     } catch {}
   }
 }
