@@ -7,8 +7,10 @@ Discflow GitHub Releases 应用内版本探测、流式下载校验与自更新�
 3. 打包运行态生成静默批处理脚本等待退出并覆盖重启
 """
 
+import errno
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,10 +23,27 @@ from library_service import log_runtime_event
 
 
 def parse_version_tuple(ver_str: str) -> tuple:
-    nums = [int(x) for x in re.findall(r"\d+", str(ver_str or ""))]
-    while len(nums) < 3:
+    raw = str(ver_str or "").strip().lstrip("vV")
+    raw = raw.split("+", 1)[0].strip()
+    if "-" in raw:
+        core_part, pre_part = raw.split("-", 1)
+    else:
+        core_part, pre_part = raw, ""
+    nums = [int(x) for x in re.findall(r"\d+", core_part)]
+    while len(nums) < 4:
         nums.append(0)
-    return tuple(nums[:4])
+    core_tuple = tuple(nums[:4])
+    is_stable = 1 if not pre_part.strip() else 0
+    pre_tokens = []
+    if pre_part.strip():
+        for tok in pre_part.strip().split("."):
+            if not tok:
+                continue
+            if tok.isdigit():
+                pre_tokens.append((0, int(tok)))
+            else:
+                pre_tokens.append((1, tok.lower()))
+    return core_tuple + (is_stable, tuple(pre_tokens))
 
 
 def resolve_update_target_exe(anchor_file: str) -> str:
@@ -36,8 +55,8 @@ def resolve_update_target_exe(anchor_file: str) -> str:
 
 def build_self_update_script(pid: int, staged_exe: str, target_exe: str) -> str:
     """生成静默自更新批处理脚本：等待旧进程退出 -> 覆盖目标 EXE -> 重启新版 -> 自删"""
-    src = staged_exe.replace('"', "")
-    dst = target_exe.replace('"', "")
+    src = staged_exe.replace('"', "").replace("%", "%%")
+    dst = target_exe.replace('"', "").replace("%", "%%")
     return (
         "@echo off\r\n"
         "chcp 65001 >nul\r\n"
@@ -50,7 +69,7 @@ def build_self_update_script(pid: int, staged_exe: str, target_exe: str) -> str:
         "if not errorlevel 1 (\r\n"
         "    set /a wait_cnt+=1\r\n"
         "    if %wait_cnt% GEQ 25 goto moveloop\r\n"
-        "    timeout /t 1 /nobreak >NUL\r\n"
+        "    ping -n 2 127.0.0.1 >NUL\r\n"
         "    goto waitloop\r\n"
         ")\r\n"
         "set /a tries=0\r\n"
@@ -59,7 +78,7 @@ def build_self_update_script(pid: int, staged_exe: str, target_exe: str) -> str:
         "if not errorlevel 1 goto launch\r\n"
         "set /a tries+=1\r\n"
         "if %tries% GEQ 15 goto finish\r\n"
-        "timeout /t 1 /nobreak >NUL\r\n"
+        "ping -n 2 127.0.0.1 >NUL\r\n"
         "goto moveloop\r\n"
         ":launch\r\n"
         'start "" "%DST%"\r\n'
@@ -77,6 +96,7 @@ def check_for_updates_info(
     requests_mod=None,
 ) -> dict:
     req = requests_mod or requests
+    base_releases_page = str(releases_page or "").split("?", 1)[0].split("#", 1)[0].rstrip("/")
     res = {
         "ok": False,
         "currentVersion": app_version,
@@ -90,6 +110,7 @@ def check_for_updates_info(
         "publishedAt": "",
         "error": "",
     }
+    api_err_msg = ""
     try:
         r = req.get(
             releases_api,
@@ -122,8 +143,8 @@ def check_for_updates_info(
             if not download_url:
                 download_url = fallback_url
                 asset_size = fallback_size
-            if not download_url and has_upd and raw_tag:
-                download_url = f"https://github.com/JiAng10es/Discflow/releases/download/{raw_tag}/Discflow.exe"
+            if not download_url and has_upd and raw_tag and base_releases_page:
+                download_url = f"{base_releases_page}/download/{raw_tag}/Discflow.exe"
 
             res.update({
                 "ok": True,
@@ -139,30 +160,39 @@ def check_for_updates_info(
             log_runtime_event("UPDATE", f"API 检查成功 latest={tag or app_version} hasUpdate={has_upd}")
             return res
 
+        api_err_msg = f"HTTP {r.status_code}"
         log_runtime_event("UPDATE", f"GitHub API 返回 HTTP {r.status_code}，尝试网页重定向兜底", level="WARNING")
+    except Exception as api_exc:
+        api_err_msg = str(api_exc)
+        log_runtime_event("UPDATE", f"GitHub API 请求异常（{api_exc}），尝试网页重定向兜底", level="WARNING")
+
+    try:
         web_r = req.get(
-            f"{releases_page}/latest",
+            f"{base_releases_page}/latest",
             headers={"User-Agent": f"{app_name}/{app_version}"},
             allow_redirects=True,
             timeout=6,
         )
-        final_url = str(getattr(web_r, "url", "") or "")
+        raw_final_url = str(getattr(web_r, "url", "") or "")
+        final_url = raw_final_url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
         if web_r.status_code == 200 and "/releases/tag/" in final_url:
-            raw_tag = final_url.rstrip("/").rsplit("/", 1)[-1].strip()
+            raw_tag = final_url.rsplit("/", 1)[-1].strip()
             tag = raw_tag.lstrip("vV").strip()
             has_upd = bool(tag and parse_version_tuple(tag) > parse_version_tuple(app_version))
             log_runtime_event("UPDATE", f"网页兜底检查成功 latest={tag or app_version} hasUpdate={has_upd}")
-            download_url = f"https://github.com/JiAng10es/Discflow/releases/download/{raw_tag}/Discflow.exe"
+            cand_url = f"{base_releases_page}/download/{raw_tag}/Discflow.exe" if base_releases_page else ""
+            download_url = ""
             asset_size = 0
-            if has_upd:
+            if has_upd and cand_url:
                 try:
                     hr = req.head(
-                        download_url,
+                        cand_url,
                         headers={"User-Agent": f"{app_name}/{app_version}"},
                         allow_redirects=True,
                         timeout=4,
                     )
                     if hr.status_code == 200:
+                        download_url = cand_url
                         asset_size = int(hr.headers.get("Content-Length") or 0)
                 except Exception:
                     pass
@@ -172,16 +202,34 @@ def check_for_updates_info(
                 "hasUpdate": has_upd,
                 "ignored": bool(has_upd and tag == ignored_version),
                 "releaseUrl": final_url,
-                "downloadUrl": download_url if has_upd else "",
+                "downloadUrl": download_url,
                 "assetSize": asset_size,
             })
             return res
 
-        res["error"] = f"HTTP {r.status_code}"
+        res["error"] = api_err_msg or f"HTTP {web_r.status_code}"
         return res
     except Exception as e:
-        res["error"] = str(e)
+        res["error"] = api_err_msg or str(e)
     return res
+
+
+def _ensure_writable_dir(preferred_dir: str) -> str:
+    candidate = preferred_dir or tempfile.gettempdir()
+    try:
+        os.makedirs(candidate, exist_ok=True)
+        probe = os.path.join(candidate, f".discflow_write_probe_{os.getpid()}_{threading_ident()}")
+        with open(probe, "wb") as fp:
+            fp.write(b"1")
+        os.remove(probe)
+        return candidate
+    except Exception:
+        return tempfile.gettempdir()
+
+
+def threading_ident() -> int:
+    import threading
+    return threading.get_ident()
 
 
 def download_and_stage_update(
@@ -197,11 +245,7 @@ def download_and_stage_update(
     requests_mod=None,
 ):
     req = requests_mod or requests
-    target_dir = os.path.dirname(target_exe) or tempfile.gettempdir()
-    try:
-        os.makedirs(target_dir, exist_ok=True)
-    except Exception:
-        target_dir = tempfile.gettempdir()
+    target_dir = _ensure_writable_dir(os.path.dirname(target_exe) or tempfile.gettempdir())
     tmp_path = os.path.join(target_dir, "Discflow.exe.new.tmp")
     staged_path = os.path.join(target_dir, "Discflow.exe.update.exe")
 
@@ -211,7 +255,7 @@ def download_and_stage_update(
             download_url,
             stream=True,
             timeout=(8, 30),
-            headers={"User-Agent": f"{app_name}/{app_version}"},
+            headers={"User-Agent": f"{app_name}/{app_version}", "Accept-Encoding": "identity"},
         ) as resp:
             resp.raise_for_status()
             total_bytes = int(resp.headers.get("Content-Length") or expected_size or 0)
@@ -239,32 +283,48 @@ def download_and_stage_update(
                         statusText=txt,
                     )
 
+        if is_cancelled():
+            raise InterruptedError("下载已取消")
+
         if downloaded <= 0 or (total_bytes > 0 and downloaded != total_bytes):
             raise RuntimeError("更新包下载不完整，请重试")
 
         with open(tmp_path, "rb") as f_chk:
-            magic = f_chk.read(2)
-        if magic != b"MZ":
+            header_bytes = f_chk.read(4096)
+        if len(header_bytes) < 2 or header_bytes[:2] != b"MZ":
             raise RuntimeError("下载的更新包格式校验失败（非有效 Windows 可执行文件）")
+        if downloaded >= 4096:
+            if len(header_bytes) < 64:
+                raise RuntimeError("下载的更新包格式校验失败（PE 头不完整）")
+            e_lfanew = int.from_bytes(header_bytes[60:64], "little")
+            if e_lfanew < 64 or e_lfanew + 4 > downloaded:
+                raise RuntimeError("下载的更新包格式校验失败（无效的 PE 偏移）")
+            with open(tmp_path, "rb") as f_pe:
+                f_pe.seek(e_lfanew)
+                pe_sig = f_pe.read(4)
+            if pe_sig != b"PE\x00\x00":
+                raise RuntimeError("下载的更新包格式校验失败（缺少 PE 签名）")
 
         os.replace(tmp_path, staged_path)
         log_runtime_event("UPDATE", f"更新包校验通过并已暂存 size={downloaded} target={target_exe}")
         on_apply_staged(staged_path, target_exe)
     except InterruptedError:
         log_runtime_event("UPDATE", f"更新下载被取消 v{expected_version}", level="WARNING")
-        try:
-            if os.path.isfile(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
+        for p in (tmp_path, staged_path):
+            try:
+                if os.path.isfile(p):
+                    os.remove(p)
+            except Exception:
+                pass
         on_state(status="cancelled", statusText="下载已取消", error="")
     except Exception as e:
         log_runtime_event("UPDATE", f"更新下载失败 v{expected_version} err={e}", level="ERROR")
-        try:
-            if os.path.isfile(tmp_path):
-                os.remove(tmp_path)
-        except Exception:
-            pass
+        for p in (tmp_path, staged_path):
+            try:
+                if os.path.isfile(p):
+                    os.remove(p)
+            except Exception:
+                pass
         on_state(status="error", statusText="下载失败", error=str(e))
 
 
@@ -282,7 +342,13 @@ def apply_staged_update_and_restart(
     is_frozen = bool(getattr(sys, "frozen", False))
     if not is_frozen:
         os.makedirs(os.path.dirname(target_exe), exist_ok=True)
-        os.replace(staged_exe, target_exe)
+        try:
+            os.replace(staged_exe, target_exe)
+        except OSError as ex:
+            if ex.errno == errno.EXDEV or os.path.abspath(staged_exe).lower() != os.path.abspath(target_exe).lower():
+                shutil.move(staged_exe, target_exe)
+            else:
+                raise
         on_state(
             status="completed",
             progressPct=100.0,
@@ -304,6 +370,7 @@ def apply_staged_update_and_restart(
     with open(bat_path, "w", encoding="utf-8") as f_bat:
         f_bat.write(script_content)
     creation_flags = getattr(sp, "CREATE_NO_WINDOW", 0x08000000)
-    sp.Popen(["cmd.exe", "/c", bat_path], creationflags=creation_flags, close_fds=True)
+    bat_arg = f'"{bat_path}"' if ("&" in bat_path or "^" in bat_path) else bat_path
+    sp.Popen(["cmd.exe", "/c", bat_arg], creationflags=creation_flags, close_fds=True)
     tm.sleep(0.35)
     on_exit_app()

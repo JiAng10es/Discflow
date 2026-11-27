@@ -1,7 +1,7 @@
 # Discflow 产品需求文档 (PRD)
 
-**当前基线版本**：`v2.3.1` (`APP_VERSION = "2.3.1"`，含 2026-11-17 专项修复与体验升级)  
-**更新日期**：2026-11-17  
+**当前基线版本**：`v2.4.1` (`APP_VERSION = "2.4.1"`，含 2026-11-27 深度稳定性审计修复)  
+**更新日期**：2026-11-27  
 **目标平台**：Windows 10 / Windows 11 (x64, PyWebView EdgeChromium)
 
 ---
@@ -88,7 +88,7 @@ win-cd-player/
 
 - **语法校验**：`python -m py_compile` 与 `node --check win-cd-player/ui/app.js`
 - **自动化测试套件 (`win-cd-player/`)**：
-  - `test_v230_fixes.py`：DPI 逻辑窗口记忆与迁移、启动主题 SSR 水合与首帧脚本防 TDZ 校验、系统托盘彻底移除、应用内更新流式下载与 PE 校验/自更新脚本、读盘首曲优先抓词与 QQ 回退、`yrc` 逐字补全、日文假名音拍分词与片头信息行降噪、网易云候选借用曲目补齐、旧版归档解锁升级与整碟强制重刷、底栏翻译图标重绘；
+  - `test_v230_fixes.py`：DPI 逻辑窗口记忆与迁移、启动主题 SSR 水合与首帧脚本防 TDZ 校验、系统托盘彻底移除、应用内更新流式下载与 PE 校验/自更新脚本、读盘首曲优先抓词与 QQ 回退、`yrc` 逐字补全、日文假名音拍分词与片头信息行降噪、网易云候选借用曲目补齐、旧版归档解锁升级与整碟强制重刷、底栏翻译图标重绘，以及 Batch 1~4 深度稳定性回归（WASAPI 回调与共享重采样、`_wave_handle_lock`、24-bit WAV/FLAC、CD-TEXT/TOC 校验、跨碟歌词防护、路径遍历防护、`#appToast`/浅色主题与无头 JS 行为验证）；
   - `test_all_stages.py`：音频引擎扇区安全线、布局、元信息编辑、ZIP 备份恢复；
   - `test_ambient_and_opacity.py`：浅色模式氛围与底栏 0% 透明度；
   - `test_apple_music_layout.py`：核心视图与交互函数完整性；
@@ -123,3 +123,4 @@ win-cd-player/
 | `v2.4.0+ (2026-11-19 深/浅色模式液态玻璃质感统一)` | 深色与浅色模式下的所有弹窗、设置侧栏、菜单与底栏浮层全面统一为对应主题左上角图标菜单的通透玻璃配方，并移除多余遮罩压暗与混色，双主题下均能自然透出封面氛围光彩 |
 | `v2.4.0+ (2026-11-23 全屏沉浸模式与底栏二合一歌词气泡)` | 1) 将底栏「歌词对齐」与「双语翻译」整合进单个液态玻璃浮层胶囊（保留 `[ ] \` 快捷键与绿点偏移提示），释放右侧对称图标位；2) 新增「全屏沉浸模式」（底栏全屏键 / `F11` 进出，`Esc` 退出）：通过 WinForms/DWM 真正全屏覆盖任务栏、自动隐藏顶栏并放大居中封面与歌词视口，鼠标静止 3 秒后平滑隐藏底栏与光标，移动即现（悬停/弹窗期间锁定常显） |
 | `v2.4.1 (2026-11-23 小更新正式发布)` | 版本号升级至 `v2.4.1` 并同步官网与 GitHub Release（含深/浅色液态玻璃质感统一、底栏二合一歌词设置气泡及原生真全屏沉浸模式） |
+| `v2.4.1+ (2026-11-27 深度稳定性审计修复)` | 1）音频与原生窗口（`cd_engine.py` / `win_native.py`）：WASAPI 独占改用 `audio_callback` 与共享 `auto_convert=True`、EOF 平滑排空、`set_volume`/`stop` 通过 `_wave_handle_lock` 解耦不阻塞、修复末尾 5 秒回退 Seek 假死与预读跨轨错轨、24-bit/32-bit/float WAV & FLAC 读取与按比例重采样、CD-TEXT 主块与 TOC 长度校验、`GlobalMediaKeyListener` 队列同步与 Per-Monitor V2 DPI / 全屏句柄重读；2）控制器与后台服务（`main.py` / `library_service.py` / `metadata_service.py` / `updater_service.py`）：补全 `base64` 导入与高 DPI 逻辑坐标防双重缩放、跨碟歌词令牌防串扰、跳过数据轨播放与切换输出模式释放暂停句柄、抓轨暂存原子切换与 DiscID 路径遍历/保留名拦截、YRC 括号与译文丢失保护、SemVer 比较/`%` 转义/`ping` 等待与 PE 头校验；3）前端与主题（`ui/`）：修复 HTML `<div>` 嵌套与新增可见 `#appToast` / `showToast`、`escapeHtml` 单引号与事件委托、乐观预填统一 `snake_case` 与 `isLocal`、单栏模式宽度与浅色模式滑块/危险区/菜单分割线、拖拽 `pointercancel` 兜底、方向键累加 Seek 及快捷键 `T`/输入框 `Esc` 修复 |

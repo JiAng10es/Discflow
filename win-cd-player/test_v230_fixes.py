@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -1629,6 +1630,364 @@ setTimeout(function () {
         self.assertIn(".queue-header-toolbar", css)
         self.assertIn('class="queue-header-top"', js)
         self.assertIn('class="queue-header-toolbar"', js)
+
+
+class TestDeepStabilityAuditFixes(unittest.TestCase):
+    """v2.4.1+ 深度稳定性审计（Batch 1~4）核心修复回归测试"""
+
+    def test_cd_engine_cdtext_primary_block_and_toc_validation(self):
+        # 构造带 extension flag (0x80) 与双语块 (block 0 / block 1) 的 CD-TEXT 原始包
+        # pack: [pack_type(0x80=title), track_no(0=album), seq, block_char(bits 4..6 = block)] + 12B payload + 2B CRC
+        def make_pack(ptype, trk, seq, block_char, text_bytes):
+            payload = (text_bytes + b"\x00" * 12)[:12]
+            return bytes([ptype, trk, seq, block_char]) + payload + b"\x00\x00"
+
+        ext_pack = make_pack(0x80, 0x80, 0, 0x00, b"SkipExt\x00")
+        blk1_pack = make_pack(0x80, 0x00, 1, 0x10, b"AltBlock\x00")  # block 1
+        blk0_pack = make_pack(0x80, 0x00, 2, 0x00, b"Primary\x00")   # block 0
+        raw_blob = ext_pack + blk1_pack + blk0_pack
+        album, artist, titles, _trk_artists = cd_engine.WindowsCdDriveManager.parse_cdtext_payload(raw_blob)
+        self.assertEqual(album, "Primary")
+        self.assertEqual(titles, {})
+
+        # read_toc 应对过短返回的 DeviceIoControl 缓冲区安全返回 None
+        import ctypes
+        from ctypes import wintypes
+
+        def fake_short_toc(h, code, in_p, in_s, out_p, out_s, ret_ptr, ovl):
+            ctypes.cast(ret_ptr, ctypes.POINTER(wintypes.DWORD)).contents.value = 2
+            return 1
+
+        with patch.object(cd_engine.WindowsCdDriveManager, "open_drive_handle", return_value=999), \
+             patch.object(cd_engine.kernel32, "DeviceIoControl", side_effect=fake_short_toc), \
+             patch.object(cd_engine.kernel32, "CloseHandle", return_value=1):
+            self.assertIsNone(cd_engine.WindowsCdDriveManager.read_toc("D:"))
+
+    def test_local_audio_reader_24bit_wav_and_seek_clamp(self):
+        import numpy as np
+        import soundfile as sf
+
+        with tempfile.TemporaryDirectory() as td:
+            wav24 = os.path.join(td, "hi24.wav")
+            t = np.linspace(0.0, 0.1, 4800, endpoint=False)
+            sig = np.column_stack([0.25 * np.sin(2 * np.pi * 440 * t), 0.25 * np.cos(2 * np.pi * 440 * t)])
+            sf.write(wav24, sig, 48000, subtype="PCM_24")
+
+            reader = cd_engine._LocalAudioReader(wav24)
+            try:
+                self.assertEqual(reader.samplerate, 48000)
+                pcm = reader.readframes(4410)
+                self.assertEqual(len(pcm), 4410 * 4)
+                reader.setpos(10**9)
+                self.assertLessEqual(reader._sf.tell(), reader.getnframes())
+            finally:
+                reader.close()
+
+    def test_seek_seconds_clamp_and_wave_handle_lock(self):
+        player = cd_engine.CddaWaveOutPlayer()
+        self.assertTrue(hasattr(player, "_wave_handle_lock"))
+        player._track = cd_engine.CdTrackInfo(
+            track_number=1, start_lba=0, end_lba=10, start_frame=150, duration_sec=0.13
+        )
+        player._is_active = True
+        player.seek_seconds(-10.0)
+        self.assertEqual(player._seek_target_lba, 0)
+        player.seek_seconds(999.0)
+        self.assertEqual(player._seek_target_lba, 9)
+        player.set_volume(0.65)
+        self.assertAlmostEqual(player._volume, 0.65, places=2)
+
+    def test_wasapi_and_win_native_hardening(self):
+        import win_native
+
+        base_dir = os.path.dirname(__file__)
+        with open(os.path.join(base_dir, "cd_engine.py"), "r", encoding="utf-8") as f:
+            ce_src = f.read()
+        self.assertIn("auto_convert=True", ce_src)
+        self.assertIn("audio_callback", ce_src)
+        self.assertTrue(hasattr(win_native, "_user32"))
+        self.assertTrue(hasattr(win_native, "_kernel32"))
+        listener = win_native.GlobalMediaKeyListener(
+            lambda: None, lambda: None, lambda: None, lambda: None
+        )
+        self.assertTrue(hasattr(listener, "_ready_event"))
+        self.assertTrue(hasattr(listener, "_stop_event"))
+
+    def test_main_compact_state_play_mode_track_indices_and_lyrics_guard(self):
+        import main
+
+        ctrl = _make_controller()
+        try:
+            ctrl.set_play_mode("repeat_all")
+            self.assertEqual(ctrl.play_mode, "order")
+            ctrl.set_play_mode("loop")
+            self.assertEqual(ctrl.play_mode, "order")
+            ctrl.set_play_mode("repeat_one")
+            self.assertEqual(ctrl.play_mode, "one")
+
+            # _audio_track_indices 跳过数据轨
+            ctrl.current_toc = cd_engine.CdDiscToc(
+                drive_letter="D:",
+                first_track=1,
+                last_track=3,
+                leadout_frame=30000,
+                tracks=[
+                    cd_engine.CdTrackInfo(track_number=1, start_lba=0, end_lba=5000, start_frame=150, duration_sec=66.7, is_data_track=False),
+                    cd_engine.CdTrackInfo(track_number=2, start_lba=5000, end_lba=15000, start_frame=5150, duration_sec=133.3, is_data_track=True),
+                    cd_engine.CdTrackInfo(track_number=3, start_lba=15000, end_lba=25000, start_frame=15150, duration_sec=133.3, is_data_track=False),
+                ],
+                disc_id="disc_cur",
+            )
+            self.assertEqual(ctrl._audio_track_indices(), [0, 2])
+
+            state = ctrl.poll_state(-1, -1, -1)
+            self.assertIn("isLocal", state)
+            self.assertIn("isMaximized", state)
+
+            # 跨碟歌词写入保护：disc_id 不匹配时不得污染当前专辑缓存
+            ctrl.lyrics_cache[1] = [{"time": 1.0, "text": "CurLine", "translation": ""}]
+            ctrl._persist_track_lyrics(1, [{"time": 2.0, "text": "StaleLine", "translation": ""}], disc_id="disc_other")
+            self.assertEqual(ctrl.lyrics_cache[1][0]["text"], "CurLine")
+
+            # _compact_initial_state_for_html 正常使用 base64 压缩大封面
+            huge = "data:image/png;base64," + ("B" * 200000)
+            comp = main._compact_initial_state_for_html({"discId": "x", "metaVersion": 2, "coverDataUrl": huge})
+            self.assertLessEqual(len(comp["coverDataUrl"]), 65536)
+        finally:
+            ctrl.shutdown()
+
+    def test_library_service_disc_id_guard_dot_resolve_and_unknown_track_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            mgr = library_service.DiscflowLibraryManager(base_dir=td)
+            for bad_id in ("", "   ", ".", "..", "CON", "nul", "../../../etc"):
+                if bad_id in ("../../../etc",):
+                    # 清洗后剩余 etc 仍落在 base_dir 内；但空/点/Windows保留名必须拒绝
+                    continue
+                with self.assertRaises(ValueError):
+                    mgr.get_album_dir(bad_id)
+
+            # 含 '.' 旧版 DiscID 目录定位且跳过 .rip_staging_ 临时目录
+            legacy_dir = os.path.join(td, "disc.with.dot")
+            staging_dir = os.path.join(td, "discwithdot.rip_staging_1_1")
+            os.makedirs(legacy_dir, exist_ok=True)
+            os.makedirs(staging_dir, exist_ok=True)
+            with open(os.path.join(staging_dir, "album.json"), "w", encoding="utf-8") as f:
+                json.dump({"disc_id": "disc.with.dot", "title": "Stg", "artist": "A", "tracks": []}, f)
+            with open(os.path.join(legacy_dir, "album.json"), "w", encoding="utf-8") as f:
+                json.dump({
+                    "disc_id": "disc.with.dot",
+                    "title": "Dot Album",
+                    "artist": "Dot Artist",
+                    "tracks": [{
+                        "track_number": 1,
+                        "title": "T1",
+                        "artist": "Dot Artist",
+                        "duration_sec": 10.0,
+                        "file_name": "track_01.flac",
+                        "extra_future_field": "ignored",
+                    }],
+                }, f)
+            resolved = mgr._resolve_existing_album_dir("disc.with.dot")
+            self.assertEqual(os.path.abspath(resolved), os.path.abspath(legacy_dir))
+            albs = mgr.list_albums(force_refresh=True)
+            self.assertEqual(len(albs), 1)
+            self.assertEqual(albs[0].tracks[0].title, "T1")
+
+            # update_album_cover 支持 PNG 魔数识别与空串清除封面
+            png_magic = "data:application/octet-stream;base64," + __import__("base64").b64encode(
+                b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+            ).decode("ascii")
+            self.assertTrue(mgr.update_album_cover("disc.with.dot", png_magic))
+            self.assertTrue(os.path.isfile(os.path.join(legacy_dir, "cover.png")))
+            self.assertTrue(mgr.update_album_cover("disc.with.dot", ""))
+            self.assertFalse(os.path.isfile(os.path.join(legacy_dir, "cover.png")))
+
+    def test_metadata_service_yrc_parens_empty_toc_and_translation_guard(self):
+        # 1. YRC_WORD_REGEX 保留词内括号
+        yrc = "[1000,2000](1000,500,0)Hi (1500,500,0)(Yeah)"
+        lines = metadata_service.parse_yrc_word_lyrics(yrc)
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0]["text"], "Hi (Yeah)")
+
+        # 2. lookup_album_metadata(None) 不命中/不污染缓存
+        meta = metadata_service.lookup_album_metadata(None)
+        self.assertEqual(meta.album_title, "Audio CD")
+        self.assertNotIn("", metadata_service._METADATA_CACHE)
+
+        # 3. enrich_lyrics_with_word_timings 在文本不相似或译文大幅丢失时保留原双语歌词
+        orig_bilingual = [
+            {"time": 1.0, "text": "Alpha line one", "translation": "第一句"},
+            {"time": 4.0, "text": "Beta line two", "translation": "第二句"},
+            {"time": 7.0, "text": "Gamma line three", "translation": "第三句"},
+            {"time": 10.0, "text": "Delta line four", "translation": "第四句"},
+        ]
+        mismatched_yrc = [
+            {"time": 50.0, "text": "Completely unrelated text A", "words": [{"t": 50.0, "d": 0.5, "w": "X"}], "translation": ""},
+            {"time": 55.0, "text": "Completely unrelated text B", "words": [{"t": 55.0, "d": 0.5, "w": "Y"}], "translation": ""},
+            {"time": 60.0, "text": "Completely unrelated text C", "words": [{"t": 60.0, "d": 0.5, "w": "Z"}], "translation": ""},
+            {"time": 65.0, "text": "Completely unrelated text D", "words": [{"t": 65.0, "d": 0.5, "w": "W"}], "translation": ""},
+        ]
+        fake_post_resp = MagicMock()
+        fake_post_resp.status_code = 200
+        fake_post_resp.json.return_value = {"result": {"songs": [{"id": 99, "name": "Alpha", "duration": 120000}]}}
+        with patch.object(metadata_service.requests, "post", return_value=fake_post_resp), \
+             patch.object(metadata_service, "_fetch_netease_song_lyrics", return_value=mismatched_yrc):
+            res = metadata_service.enrich_lyrics_with_word_timings("Alpha", "Artist", 120.0, orig_bilingual)
+        self.assertEqual(res, orig_bilingual)
+
+        # 4. search_lyric_candidates(detail_top=0) 不崩溃
+        with patch.object(metadata_service, "_netease_search_songs", return_value=[{"id": "1", "title": "S", "artist": "A", "duration_sec": 100.0}]), \
+             patch.object(metadata_service, "_qq_search_songs", return_value=[]), \
+             patch.object(metadata_service, "_lrclib_search_songs", return_value=[]):
+            cands = metadata_service.search_lyric_candidates("S", "A", 100.0, detail_top=0)
+            self.assertEqual(cands, [])
+
+    def test_updater_service_semver_bat_escape_and_pe_validation(self):
+        import updater_service
+
+        # SemVer 预发布版顺序与同版本兼容
+        self.assertLess(
+            updater_service.parse_version_tuple("2.3.0-beta.1"),
+            updater_service.parse_version_tuple("2.3.0"),
+        )
+        self.assertEqual(
+            updater_service.parse_version_tuple("2.3.0"),
+            updater_service.parse_version_tuple("2.3.0.0"),
+        )
+
+        # 批处理脚本转义 % 且使用 ping 替代 timeout
+        bat = updater_service.build_self_update_script(
+            1234, r"C:\100%App\new.exe", r"C:\A&B\Discflow.exe"
+        )
+        self.assertNotIn("timeout /t", bat)
+        self.assertIn("ping -n 2 127.0.0.1", bat)
+        self.assertIn("100%%App", bat)
+
+        # 大尺寸假 MZ 非 PE 文件（>=4096B）应被 PE 头校验拦截
+        fake_large = b"MZ" + (b"\x00" * 5000)
+        with tempfile.TemporaryDirectory() as td:
+            cur_exe = os.path.join(td, "Discflow.exe")
+            with open(cur_exe, "wb") as f:
+                f.write(b"MZ" + b"\x00" * 100)
+
+            class FakeResp:
+                status_code = 200
+                headers = {"content-length": str(len(fake_large))}
+                def __enter__(self): return self
+                def __exit__(self, *a): pass
+                def raise_for_status(self): pass
+                def iter_content(self, chunk_size=65536): yield fake_large
+                def close(self): pass
+
+            events = []
+            applied = []
+            fake_req = MagicMock()
+            fake_req.get.return_value = FakeResp()
+            updater_service.download_and_stage_update(
+                app_name="Discflow",
+                app_version="2.4.1",
+                download_url="https://github.com/JiAng10es/Discflow/releases/download/v9.9.9/Discflow.exe",
+                expected_version="9.9.9",
+                expected_size=len(fake_large),
+                target_exe=cur_exe,
+                is_cancelled=lambda: False,
+                on_state=lambda **kw: events.append(kw),
+                on_apply_staged=lambda s, t: applied.append((s, t)),
+                requests_mod=fake_req,
+            )
+            self.assertEqual(applied, [])
+            self.assertTrue(any(ev.get("status") == "error" and "PE" in str(ev.get("error", "")) for ev in events), events)
+
+    def test_batch4_ui_toast_html_balance_escape_and_css_rules(self):
+        from html.parser import HTMLParser
+
+        base_dir = os.path.dirname(__file__)
+        with open(os.path.join(base_dir, "ui", "index.html"), "r", encoding="utf-8") as f:
+            html = f.read()
+        with open(os.path.join(base_dir, "ui", "styles.css"), "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(os.path.join(base_dir, "ui", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # 1. HTML div 严格配对与 #appToast
+        stack = []
+        extras = []
+
+        class DivChecker(HTMLParser):
+            def handle_starttag(self, tag, attrs):
+                if tag == "div":
+                    stack.append(self.getpos()[0])
+
+            def handle_endtag(self, tag):
+                if tag == "div":
+                    if not stack:
+                        extras.append(self.getpos()[0])
+                    else:
+                        stack.pop()
+
+        DivChecker().feed(html)
+        self.assertEqual(extras, [], f"存在多余闭合 </div>: {extras}")
+        self.assertEqual(stack, [], f"存在未闭合 <div>: {stack}")
+        self.assertIn('id="appToast"', html)
+        self.assertIn('id="statusText"', html)
+        self.assertIn("快退 / 快进 5s", html)
+
+        # 2. CSS 修复点校验
+        self.assertIn(".app-toast", css)
+        self.assertIn("#viewCd .main-stage.single-column", css)
+        self.assertIn("html.is-maximized .win-resize-edge", css)
+        self.assertIn('[data-theme="light"] .ios-slider', css)
+        lib_scroll_block = css[css.index("#viewLibrary .library-scroll-area"):css.index("#viewLibrary .library-scroll-area") + 120]
+        self.assertNotIn("padding: 18px 24px 28px 24px", lib_scroll_block)
+
+        # 3. JS 修复点与真实 Node 行为校验
+        for token in (
+            "function showToast(",
+            "&#39;",
+            "track_number:",
+            "duration_sec:",
+            "isLocal: true",
+            "function _accumulateArrowSeek(",
+            "function syncMaximizedUI(",
+            "pointercancel",
+            "lostpointercapture",
+        ):
+            self.assertIn(token, js)
+
+        rendered = render_frontend_html(
+            {"themeMode": "light", "autoPlay": True, "showTranslation": True},
+            {"discId": "d1", "tracks": []},
+        )
+        m = re.findall(r"<script>([\s\S]*?)</script>", rendered)
+        self.assertGreaterEqual(len(m), 2)
+        probe_js = (
+            _fake_dom_harness_js("light")
+            + "\n"
+            + m[0]
+            + "\n"
+            + m[1]
+            + """
+            if (escapeHtml("a'b\\"c<>&") !== "a&#39;b&quot;c&lt;&gt;&amp;") {
+              throw new Error("escapeHtml single-quote failed: " + escapeHtml("a'b"));
+            }
+            showToast("hello toast");
+            if (els["appToast"].textContent !== "hello toast" || !els["appToast"].classList.contains("visible")) {
+              throw new Error("showToast/appToast failed");
+            }
+            window._libraryAlbumsCache = [{
+              disc_id: "loc1", title: "Alb", artist: "Art", year: "2025",
+              tracks: [{ track_number: 1, title: "Song1", artist: "Art", duration_sec: 123, lyrics: [{ time: 1.0, text: "L1", translation: "T1" }] }]
+            }];
+            applyOptimisticLocalAlbum("loc1");
+            if (!appState.isLocal || appState.tracks[0].track_number !== 1 || appState.tracks[0].duration_sec !== 123 || appState.lyrics.length !== 1) {
+              throw new Error("applyOptimisticLocalAlbum snake_case failed");
+            }
+            """
+        )
+        proc = subprocess.run(
+            ["node", "-"], input=probe_js, capture_output=True, text=True, encoding="utf-8", timeout=15
+        )
+        self.assertEqual(proc.returncode, 0, f"Node 回归校验失败:\nSTDOUT:{proc.stdout}\nSTDERR:{proc.stderr}")
 
 
 if __name__ == "__main__":

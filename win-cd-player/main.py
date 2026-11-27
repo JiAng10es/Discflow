@@ -9,9 +9,11 @@ Discflow — Windows 轻量级桌面 CD 音乐播放器 (Apple Music 视觉与�
 - 元数据与歌词：metadata_service.py (MusicBrainz DiscID/TOC 智能匹配 + 多源 Base64 高清封面 + 网易云双语同步 LRC)
 """
 
+import base64
 import ctypes
 from ctypes import wintypes
 import json
+import math
 import os
 import re
 import shutil
@@ -190,9 +192,10 @@ class DiscflowController:
         # 状态版本号：前端轮询仅在版本号变更时才拉取大型 Base64 封面或歌单/歌词，彻底消除跨线程 evaluate_js 死锁
         self._meta_version: int = 1
         self._lyrics_version: int = 1
-        self._load_token: int = 0
+        self._load_token: int = 1
         self._watcher_miss_count: Dict[str, int] = {}
         self._non_audio_drives: set = set()
+        self._ripping_starting: bool = False
 
         self._cached_drives: List[str] = []
         self.current_toc: Optional[CdDiscToc] = None
@@ -423,12 +426,16 @@ class DiscflowController:
             if self._is_maximized or self._is_fullscreen:
                 return
             hwnd = self._hwnd
+            scale = 1.0
             if hwnd:
                 user32 = ctypes.windll.user32
                 if user32.IsZoomed(hwnd) or user32.IsIconic(hwnd):
                     return
-            self._last_normal_bounds["x"] = int(x)
-            self._last_normal_bounds["y"] = int(y)
+                scale = _get_dpi_scale(hwnd)
+            safe_scale = scale if scale > 0.2 else 1.0
+            self._last_normal_bounds["x"] = int(round(float(x) / safe_scale))
+            self._last_normal_bounds["y"] = int(round(float(y) / safe_scale))
+            self._last_normal_bounds["logical"] = True
             self._schedule_bounds_save()
         except Exception:
             pass
@@ -438,12 +445,16 @@ class DiscflowController:
             if self._is_maximized or self._is_fullscreen:
                 return
             hwnd = self._hwnd
+            scale = 1.0
             if hwnd:
                 user32 = ctypes.windll.user32
                 if user32.IsZoomed(hwnd) or user32.IsIconic(hwnd):
                     return
-            self._last_normal_bounds["width"] = max(880, int(width))
-            self._last_normal_bounds["height"] = max(620, int(height))
+                scale = _get_dpi_scale(hwnd)
+            safe_scale = scale if scale > 0.2 else 1.0
+            self._last_normal_bounds["width"] = max(880, int(round(float(width) / safe_scale)))
+            self._last_normal_bounds["height"] = max(620, int(round(float(height) / safe_scale)))
+            self._last_normal_bounds["logical"] = True
             self._schedule_bounds_save()
         except Exception:
             pass
@@ -491,6 +502,7 @@ class DiscflowController:
                         if user32.IsIconic(hwnd):
                             return
                         is_zoomed = bool(user32.IsZoomed(hwnd))
+                        self._is_maximized = is_zoomed
                         rect = wintypes.RECT()
                         if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
                             scale = _get_dpi_scale(hwnd)
@@ -505,9 +517,13 @@ class DiscflowController:
                                     "y": wb["y"],
                                     "width": wb["width"],
                                     "height": wb["height"],
+                                    "logical": True,
                                 }
                             save_user_preferences({"windowBounds": wb})
                             return
+                    elif self._closed:
+                        # 窗口在退出时已销毁，跳过用缓存值覆盖刚保存的最终几何状态
+                        return
 
                 if self._last_normal_bounds:
                     wb = {
@@ -527,7 +543,7 @@ class DiscflowController:
         self._is_maximized = bool(getattr(self, "_saved_maximized", False))
         try:
             w, h, x, y, _ = self._load_initial_window_bounds()
-            self._last_normal_bounds = {"width": w, "height": h}
+            self._last_normal_bounds = {"width": w, "height": h, "logical": True}
             if x is not None and y is not None:
                 self._last_normal_bounds["x"] = x
                 self._last_normal_bounds["y"] = y
@@ -609,16 +625,36 @@ class DiscflowController:
         if target and not self._is_fullscreen:
             # 进入全屏前先持久化一次当前正常窗口几何状态
             self._save_window_bounds()
-        self._is_fullscreen = target
-        try:
-            _win_set_fullscreen(
-                getattr(self._window, "native", None),
-                target,
-                self._fullscreen_restore_state,
-                on_hwnd=lambda h: setattr(self, "_hwnd", h),
-            )
-        except Exception:
-            pass
+        if target:
+            self._is_fullscreen = True
+            try:
+                _win_set_fullscreen(
+                    getattr(self._window, "native", None),
+                    True,
+                    self._fullscreen_restore_state,
+                    on_hwnd=lambda h: setattr(self, "_hwnd", h),
+                )
+            except Exception:
+                pass
+        else:
+            # 保持 _is_fullscreen=True 直至还原窗口尺寸/状态完成，防止还原过程触发的 moved/resized 事件污染坐标
+            try:
+                _win_set_fullscreen(
+                    getattr(self._window, "native", None),
+                    False,
+                    self._fullscreen_restore_state,
+                    on_hwnd=lambda h: setattr(self, "_hwnd", h),
+                )
+            except Exception:
+                pass
+            finally:
+                self._is_fullscreen = False
+                try:
+                    hwnd = self._hwnd
+                    if hwnd:
+                        self._is_maximized = bool(ctypes.windll.user32.IsZoomed(hwnd))
+                except Exception:
+                    pass
         return bool(self._is_fullscreen)
 
     def toggle_fullscreen_window(self) -> bool:
@@ -642,6 +678,12 @@ class DiscflowController:
     def shutdown(self):
         self._closed = True
         self._update_cancel_event.set()
+        self._wav_migration_cancel_event.set()
+        if self.ripper_task:
+            try:
+                self.ripper_task.cancel()
+            except Exception:
+                pass
         self._save_window_bounds()
         self._save_session_state()
         if hasattr(self, "_media_keys") and self._media_keys:
@@ -812,9 +854,11 @@ class DiscflowController:
         """
         meta_ver = self._meta_version
         lyrics_ver = self._lyrics_version
+        toc_ref = self.current_toc
+        cur_idx = self.current_track_index
 
         state = {
-            "currentTrackIndex": self.current_track_index,
+            "currentTrackIndex": cur_idx,
             "isPlaying": self.player.is_playing(),
             "elapsedSec": round(self.elapsed_sec, 2),
             "durationSec": round(self.duration_sec, 2),
@@ -823,6 +867,8 @@ class DiscflowController:
             "playMode": self.play_mode,
             "volume": self.volume_pct,
             "lyricOffset": round(self._get_current_track_lyric_offset(), 2),
+            "isLocal": bool(getattr(toc_ref, "is_local", False)) if toc_ref else False,
+            "isMaximized": bool(getattr(self, "_is_maximized", False)),
             "metaVersion": meta_ver,
             "lyricsVersion": lyrics_ver,
             "lyricsBatch": dict(self._lyrics_batch),
@@ -832,7 +878,6 @@ class DiscflowController:
             if self._update_info and self._update_info.get("hasUpdate"):
                 state["updateAvailable"] = dict(self._update_info)
             tracks_payload = []
-            toc_ref = self.current_toc
             if toc_ref:
                 for t in toc_ref.tracks:
                     tracks_payload.append(
@@ -873,6 +918,7 @@ class DiscflowController:
             if self._booted:
                 return
             self._booted = True
+        self._apply_win11_rounded_corners()
         if getattr(self, "_saved_maximized", False):
             try:
                 hwnd = self._hwnd
@@ -880,7 +926,7 @@ class DiscflowController:
                     native = getattr(self._window, "native", None)
                     if native is not None and not getattr(native, "InvokeRequired", False):
                         hwnd = int(native.Handle.ToInt64()) if hasattr(native, "Handle") else 0
-                if hwnd and not ctypes.windll.user32.IsZoomed(hwnd):
+                if self._window and (not hwnd or not ctypes.windll.user32.IsZoomed(hwnd)):
                     self._window.maximize()
                     self._is_maximized = True
             except Exception:
@@ -891,6 +937,8 @@ class DiscflowController:
         threading.Thread(target=self._auto_check_updates_bg, daemon=True).start()
 
     def _is_ripping(self) -> bool:
+        if getattr(self, "_ripping_starting", False):
+            return True
         task = getattr(self, "ripper_task", None)
         if not task:
             return False
@@ -899,15 +947,25 @@ class DiscflowController:
         except Exception:
             return False
 
+    def _is_migrating(self) -> bool:
+        with self._wav_migration_lock:
+            return self._wav_migration_state.get("status") == "running"
+
+    def _audio_track_indices(self, toc_ref=None) -> List[int]:
+        toc = toc_ref if toc_ref is not None else self.current_toc
+        if not toc or not getattr(toc, "tracks", None):
+            return []
+        return [i for i, t in enumerate(toc.tracks) if not getattr(t, "is_data_track", False)]
+
     def select_drive(self, drive_letter: str):
-        if self._is_ripping():
+        if self._is_ripping() or self._is_migrating():
             return
         if drive_letter:
             threading.Thread(target=self._load_drive_async, args=(drive_letter,), daemon=True).start()
 
     def rescan_drive(self):
-        if self._is_ripping():
-            self.status_text = "正在抓轨中，请等待完成或取消后再重新读盘"
+        if self._is_ripping() or self._is_migrating():
+            self.status_text = "正在抓轨或转换中，请等待完成或取消后再重新读盘"
             self._bump_meta()
             return
         phys = self._refresh_cached_drives()
@@ -935,75 +993,123 @@ class DiscflowController:
         threading.Thread(target=self._load_drive_async, args=(target,), daemon=True).start()
 
     def eject_drive(self):
-        if self._is_ripping():
-            self.status_text = "正在抓轨中，请先取消抓轨再弹出光盘"
+        if self._is_ripping() or self._is_migrating():
+            self.status_text = "正在抓轨或转换中，请先取消后再弹出光盘"
             self._bump_meta()
             return
         drv = self.current_drive
         if not drv:
             return
         self._non_audio_drives.discard(drv)
-        self._load_token += 1
+        with self._lock:
+            self._load_token += 1
+            my_token = self._load_token
+            self.current_toc = None
+            self.is_loading = False
+            self.elapsed_sec = 0.0
+            self.duration_sec = 0.0
+            self.status_text = f"正在弹出光驱 {drv} 托盘..."
+            self.album_title = f"光驱 {drv} 托盘已弹出"
+            self.artist = "放入新的音频 CD 后将自动识别并播放"
+            self.cover_data_url = ""
+            self.current_lyrics = []
+            self._bump_meta()
+            self._bump_lyrics()
         self.player.stop()
-        self.current_toc = None
-        self.is_loading = False
-        self.elapsed_sec = 0.0
-        self.duration_sec = 0.0
-        self.status_text = f"正在弹出光驱 {drv} 托盘..."
-        self.album_title = f"光驱 {drv} 托盘已弹出"
-        self.artist = "放入新的音频 CD 后将自动识别并播放"
-        self.cover_data_url = ""
-        self.current_lyrics = []
-        self._bump_meta()
-        self._bump_lyrics()
 
-        def _eject_worker(target_drv: str):
+        def _eject_worker(target_drv: str, expected_token: int):
+            try:
+                self.player.wait_reader_idle(timeout=1.5)
+            except Exception:
+                pass
             WindowsCdDriveManager.eject_disc(target_drv)
-            self.status_text = f"已弹出光驱 {target_drv} 托盘 · 等待放入音频 CD"
+            with self._lock:
+                if not self._closed and self._load_token == expected_token:
+                    self.status_text = f"已弹出光驱 {target_drv} 托盘 · 等待放入音频 CD"
+                    self._bump_meta()
 
-        threading.Thread(target=_eject_worker, args=(drv,), daemon=True).start()
+        threading.Thread(target=_eject_worker, args=(drv, my_token), daemon=True).start()
 
     def toggle_play_pause(self):
-        if self._is_ripping():
-            self.status_text = "正在抓轨中，请等待抓轨完成或取消后再播放"
+        if self._is_ripping() or self._is_migrating():
+            self.status_text = "正在抓轨或转换中，请等待完成或取消后再播放"
             self._bump_meta()
             return
-        if not self.current_toc or not self.current_toc.tracks:
+        toc_ref = self.current_toc
+        if not toc_ref or not toc_ref.tracks:
             return
         if not self.player.is_running():
-            self._start_track(self.current_track_index)
+            resume_pos = max(0.0, float(self.elapsed_sec or 0.0))
+            audio_indices = self._audio_track_indices(toc_ref)
+            target_idx = self.current_track_index
+            if audio_indices and target_idx not in audio_indices:
+                target_idx = audio_indices[0]
+            self._start_track(target_idx)
+            if resume_pos > 0.5 and self.player.is_running():
+                self.player.seek_seconds(resume_pos)
             return
         playing = self.player.is_playing()
         self.player.set_paused(playing)
         self._schedule_ui_push()
 
     def prev_track(self):
-        if not self.current_toc or not self.current_toc.tracks:
+        toc_ref = self.current_toc
+        if not toc_ref or not toc_ref.tracks:
             return
-        idx = (self.current_track_index - 1) % len(self.current_toc.tracks)
+        audio_indices = self._audio_track_indices(toc_ref)
+        if not audio_indices:
+            return
+        if self.current_track_index in audio_indices:
+            pos = audio_indices.index(self.current_track_index)
+            idx = audio_indices[(pos - 1) % len(audio_indices)]
+        else:
+            idx = audio_indices[0]
         self._start_track(idx)
 
     def next_track(self):
-        if not self.current_toc or not self.current_toc.tracks:
+        toc_ref = self.current_toc
+        if not toc_ref or not toc_ref.tracks:
             return
-        if self.play_mode == "shuffle" and len(self.current_toc.tracks) > 1:
+        audio_indices = self._audio_track_indices(toc_ref)
+        if not audio_indices:
+            return
+        if self.play_mode == "shuffle" and len(audio_indices) > 1:
             import random
-            choices = [i for i in range(len(self.current_toc.tracks)) if i != self.current_track_index]
-            idx = random.choice(choices)
+            choices = [i for i in audio_indices if i != self.current_track_index]
+            idx = random.choice(choices) if choices else audio_indices[0]
+        elif self.current_track_index in audio_indices:
+            pos = audio_indices.index(self.current_track_index)
+            idx = audio_indices[(pos + 1) % len(audio_indices)]
         else:
-            idx = (self.current_track_index + 1) % len(self.current_toc.tracks)
+            idx = audio_indices[0]
         self._start_track(idx)
 
     def play_track_index(self, index: int):
-        if self.current_toc and 0 <= int(index) < len(self.current_toc.tracks):
+        toc_ref = self.current_toc
+        if toc_ref and 0 <= int(index) < len(toc_ref.tracks):
+            trk = toc_ref.tracks[int(index)]
+            if getattr(trk, "is_data_track", False):
+                return
             self._start_track(int(index))
 
     def seek_to(self, seconds: float):
-        if self._is_ripping():
+        if self._is_ripping() or self._is_migrating():
             return
-        target = max(0.0, float(seconds))
+        toc_ref = self.current_toc
+        if not toc_ref or not toc_ref.tracks:
+            return
+        try:
+            sec_val = float(seconds)
+            if math.isnan(sec_val) or math.isinf(sec_val):
+                return
+        except (TypeError, ValueError):
+            return
+        max_dur = max(0.0, float(self.duration_sec or 0.0))
+        target = max(0.0, min(sec_val, max_dur)) if max_dur > 0.0 else max(0.0, sec_val)
         self.elapsed_sec = target
-        self.player.seek_seconds(target)
+        if self.player.is_running():
+            self.player.seek_seconds(target)
+        self._schedule_ui_push()
 
     def set_volume(self, pct: int):
         try:
@@ -1038,25 +1144,32 @@ class DiscflowController:
 
     def _queue_next_track_to_player(self, index: int):
         """计算顺序播放的下一轨，供播放引擎做连续内存预读与无缝跨轨平滑过渡"""
-        if not self.current_toc or not self.current_toc.tracks:
+        toc_ref = self.current_toc
+        if not toc_ref or not toc_ref.tracks:
             return
-        total = len(self.current_toc.tracks)
-        if total <= 0:
+        audio_indices = self._audio_track_indices(toc_ref)
+        if not audio_indices:
+            self.player.set_next_track(None, None, -1)
             return
         if self.play_mode == "one":
-            next_idx = index
+            next_idx = index if index in audio_indices else audio_indices[0]
         elif self.play_mode == "shuffle":
             self.player.set_next_track(None, None, -1)
             return
         else:
-            next_idx = (index + 1) % total
+            if index in audio_indices:
+                pos = audio_indices.index(index)
+                next_idx = audio_indices[(pos + 1) % len(audio_indices)]
+            else:
+                next_idx = audio_indices[0]
 
-        next_trk = self.current_toc.tracks[next_idx]
-        self.player.set_next_track(self.current_toc.drive_letter, next_trk, next_idx)
+        next_trk = toc_ref.tracks[next_idx]
+        self.player.set_next_track(toc_ref.drive_letter, next_trk, next_idx)
 
     def _on_player_track_transition(self, next_track: CdTrackInfo, next_index: int):
         """底层播放引擎在无缝跨轨时触发此回调：零延迟推进界面与歌词状态"""
-        if self._closed or not self.current_toc:
+        toc_ref = self.current_toc
+        if self._closed or not toc_ref:
             return
         self.current_track_index = next_index
         self.duration_sec = next_track.duration_sec
@@ -1081,9 +1194,10 @@ class DiscflowController:
     def _save_session_state(self):
         """将当前播放的本地唱片与曲目现场写入 preferences.json，供下次无碟启动恢复"""
         try:
-            if self.current_toc and getattr(self.current_toc, "is_local", False):
+            toc_ref = self.current_toc
+            if toc_ref and getattr(toc_ref, "is_local", False):
                 session_data = {
-                    "discId": self.current_toc.disc_id,
+                    "discId": toc_ref.disc_id,
                     "trackIndex": self.current_track_index,
                 }
                 save_user_preferences({"lastSession": session_data})
@@ -1114,6 +1228,7 @@ class DiscflowController:
                     break
 
             with self._lock:
+                self._load_token += 1
                 self.current_toc = toc
                 self.current_drive = ""
                 self.album_title = target_album.title if target_album else (toc.cdtext_album or "Local Album")
@@ -1147,28 +1262,46 @@ class DiscflowController:
             return False
 
     def set_play_mode(self, mode: str):
-        if mode in ("order", "shuffle", "one"):
-            self.play_mode = mode
+        norm = str(mode or "").strip().lower()
+        if norm in ("repeat_all", "loop"):
+            norm = "order"
+        elif norm == "repeat_one":
+            norm = "one"
+        if norm in ("order", "shuffle", "one"):
+            self.play_mode = norm
             self._queue_next_track_to_player(self.current_track_index)
+            self._schedule_ui_push()
 
     def set_shuffle(self, enabled: bool):
         self.play_mode = "shuffle" if enabled else "order"
         self._queue_next_track_to_player(self.current_track_index)
+        self._schedule_ui_push()
 
     def set_repeat_mode(self, mode: str):
         self.play_mode = "one" if mode == "one" else "order"
         self._queue_next_track_to_player(self.current_track_index)
+        self._schedule_ui_push()
 
     def start_ripping(self) -> dict:
+        if self._is_migrating():
+            return {"success": False, "message": "正在执行 WAV 转 FLAC，请等待完成后再抓轨"}
         with self._lock:
             if not self.current_toc or not self.current_toc.tracks:
                 return {"success": False, "message": "当前未放入音频 CD，无法执行抓轨"}
             if getattr(self.current_toc, "is_local", False):
                 return {"success": False, "message": "当前已是本地资料库曲目，无需重复抓轨"}
-            if self.ripper_task and self.ripper_task.get_progress().is_ripping:
+            if self._ripping_starting or (self.ripper_task and self.ripper_task.get_progress().is_ripping):
                 return {"success": False, "message": "当前已有抓轨任务正在进行中"}
+            self._ripping_starting = True
+            toc_ref = self.current_toc
+            album_title = self.album_title
+            artist = self.artist
+            year = self.year
+            cover_data_url = self.cover_data_url
+            lyrics_snap = dict(self.lyrics_cache)
 
-            # 抓轨前安全停播并等待读线程关闭光驱句柄，彻底避免双线程争抢激光头导致降速或 I/O 报错
+        try:
+            # 在锁外停播并等待读线程关闭光驱句柄，避免与 _reader_loop 死锁及双线程争抢激光头
             self.player.stop()
             try:
                 self.player.wait_reader_idle(timeout=1.5)
@@ -1180,19 +1313,27 @@ class DiscflowController:
             except Exception:
                 rip_fmt = "flac"
 
-            task = CdRipperTask(
-                toc=self.current_toc,
-                album_title=self.album_title,
-                artist=self.artist,
-                year=self.year,
-                cover_data_url=self.cover_data_url,
-                lyrics_cache=dict(self.lyrics_cache),
-                library_mgr=self.library_manager,
-                rip_format=rip_fmt,
-            )
-            self.ripper_task = task
-            threading.Thread(target=task.run, daemon=True).start()
-            return {"success": True, "message": "抓轨任务已启动"}
+            with self._lock:
+                if self._closed or self.current_toc is not toc_ref or getattr(toc_ref, "is_local", False):
+                    return {"success": False, "message": "光盘状态已变更，请重试抓轨"}
+                task = CdRipperTask(
+                    toc=toc_ref,
+                    album_title=album_title,
+                    artist=artist,
+                    year=year,
+                    cover_data_url=cover_data_url,
+                    lyrics_cache=lyrics_snap,
+                    library_mgr=self.library_manager,
+                    rip_format=rip_fmt,
+                )
+                with task._lock:
+                    task._progress.is_ripping = True
+                self.ripper_task = task
+                threading.Thread(target=task.run, daemon=True).start()
+                return {"success": True, "message": "抓轨任务已启动"}
+        finally:
+            with self._lock:
+                self._ripping_starting = False
 
     def cancel_ripping(self) -> dict:
         if self.ripper_task:
@@ -1234,30 +1375,47 @@ class DiscflowController:
         """
         if not disc_id:
             return {"ok": False, "existed": False, "path": "", "failed": [], "reason": "缺少唱片标识"}
+        if self._is_ripping() or self._is_migrating():
+            return {"ok": False, "existed": False, "path": "", "failed": [], "reason": "正在执行抓轨或格式转换，请稍后再删除"}
 
+        toc_ref = self.current_toc
         is_current = bool(
-            self.current_toc and getattr(self.current_toc, "disc_id", "") == disc_id
+            toc_ref and getattr(toc_ref, "is_local", False) and getattr(toc_ref, "disc_id", "") == disc_id
         )
         if is_current:
             try:
                 self.player.stop()
+                self.player.wait_reader_idle(timeout=2.0)
             except Exception:
                 pass
-            # 播放线程为非阻塞复位，需给硬件句柄与 WAV 读取器留出释放时间
-            time.sleep(0.35)
-            self.current_toc = None
-            self.current_track_index = 0
-            self.current_lyrics = []
-            self.elapsed_sec = 0.0
-            self.duration_sec = 0.0
-            self._bump_lyrics()
+            with self._lock:
+                self._load_token += 1
+                self.current_toc = None
+                self.current_drive = ""
+                self.current_track_index = 0
+                self.lyrics_cache.clear()
+                self.lyrics_locked_tracks = set()
+                self.lyrics_missed_tracks = set()
+                self.track_song_ids = {}
+                self.current_lyrics = []
+                self.album_title = "等待放入音频 CD"
+                self.artist = ""
+                self.year = ""
+                self.source = ""
+                self.cover_data_url = ""
+                self.elapsed_sec = 0.0
+                self.duration_sec = 0.0
+                self.status_text = "已从资料库移除"
+                self._bump_meta()
+                self._bump_lyrics()
 
         res = self.library_manager.delete_album_verbose(disc_id)
         if res.get("ok"):
             self._meta_version += 1
+            self._schedule_ui_push()
         return res
 
-    def update_album_metadata(self, disc_id: str, title: str = "", artist: str = "", year: str = "", track_titles: Optional[dict] = None) -> bool:
+    def update_album_metadata(self, disc_id: str, title: str = "", artist: str = "", year: Optional[str] = None, track_titles: Optional[dict] = None) -> bool:
         parsed_tracks = None
         if isinstance(track_titles, dict):
             parsed_tracks = {}
@@ -1269,23 +1427,25 @@ class DiscflowController:
                         parsed_tracks[num] = val
                 except Exception:
                     pass
+        clean_year = str(year).strip() if year is not None else None
         res = self.library_manager.update_album_metadata(
             disc_id,
             title=title or None,
             artist=artist or None,
-            year=year or None,
+            year=clean_year,
             track_titles=parsed_tracks,
         )
         if res:
-            if self.current_toc and self.current_toc.disc_id == disc_id:
+            toc_ref = self.current_toc
+            if toc_ref and getattr(toc_ref, "is_local", False) and toc_ref.disc_id == disc_id:
                 if title:
                     self.album_title = title
                 if artist:
                     self.artist = artist
-                if year is not None:
-                    self.year = year
-                if parsed_tracks and self.current_toc.tracks:
-                    for t in self.current_toc.tracks:
+                if clean_year is not None:
+                    self.year = clean_year
+                if parsed_tracks and toc_ref.tracks:
+                    for t in toc_ref.tracks:
                         if t.track_number in parsed_tracks:
                             t.title = parsed_tracks[t.track_number]
             self._bump_meta()
@@ -1302,42 +1462,72 @@ class DiscflowController:
 
     def clear_all_library_data(self) -> bool:
         """清空整个资料库（磁盘文件一并删除），并重置内存中的播放状态"""
+        if self._is_ripping() or self._is_migrating():
+            return False
+        toc_ref = self.current_toc
+        should_reset_playing = bool(toc_ref is not None and getattr(toc_ref, "is_local", True))
+        if should_reset_playing:
+            try:
+                self.player.stop()
+                self.player.wait_reader_idle(timeout=2.0)
+            except Exception:
+                pass
         albums = self.library_manager.list_albums()
         for alb in albums:
             try:
                 self.library_manager.delete_album(alb.disc_id)
             except Exception:
                 pass
-        with self._lock:
-            self.player.stop()
-            self.current_toc = None
-            self.lyrics_cache.clear()
-            self.lyrics_locked_tracks = set()
-            self.lyrics_missed_tracks = set()
-            self.track_song_ids = {}
-            self.current_lyrics = []
-            self.album_title = "等待放入音频 CD"
-            self.artist = ""
-            self.year = ""
-            self.cover_data_url = ""
-            self.status_text = "资料库已清空"
-            self._meta_version += 1
-        self._bump_lyrics()
+        if should_reset_playing:
+            with self._lock:
+                self._load_token += 1
+                self.current_toc = None
+                self.current_drive = ""
+                self.current_track_index = 0
+                self.elapsed_sec = 0.0
+                self.duration_sec = 0.0
+                self.lyrics_cache.clear()
+                self.lyrics_locked_tracks = set()
+                self.lyrics_missed_tracks = set()
+                self.track_song_ids = {}
+                self.current_lyrics = []
+                self.album_title = "等待放入音频 CD"
+                self.artist = ""
+                self.year = ""
+                self.source = ""
+                self.cover_data_url = ""
+                self.status_text = "资料库已清空"
+                self._meta_version += 1
+            self._bump_lyrics()
+        else:
+            self._bump_meta()
+        try:
+            save_user_preferences({"lastSession": {}})
+        except Exception:
+            pass
         return True
 
     def update_album_cover(self, disc_id: str, cover_data_url: str) -> bool:
         res = self.library_manager.update_album_cover(disc_id, cover_data_url)
         if res:
-            self._meta_version += 1
+            with self._lock:
+                toc_ref = self.current_toc
+                if toc_ref and getattr(toc_ref, "is_local", False) and toc_ref.disc_id == disc_id:
+                    self.cover_data_url = str(cover_data_url or "")
+                self._meta_version += 1
+                self._schedule_ui_push()
         return res
 
     def export_library(self, target_zip_path: str) -> bool:
         return self.library_manager.export_library_zip(target_zip_path)
 
     def import_library(self, source_zip_path: str) -> bool:
+        if self._is_ripping() or self._is_migrating():
+            return False
         res = self.library_manager.import_library_zip(source_zip_path)
         if res:
             self._meta_version += 1
+            self._schedule_ui_push()
         return res
 
     def get_preferences(self) -> dict:
@@ -1355,26 +1545,37 @@ class DiscflowController:
         save_user_preferences({"audioOutputMode": applied})
         log_runtime_event("AUDIO", f"切换音频输出引擎 mode={applied}")
 
-        # 若当前正在播放曲目，平滑按新引擎重启并定位回原播放进度
-        was_playing = False
+        # 若当前正在播放或暂停占用设备，平滑按新引擎释放并重启（暂停态仅释放旧设备句柄）
+        was_running = self.player.is_running()
+        was_playing = self.player.is_playing()
         resume_pos = 0.0
         toc_ref = None
         trk_idx = 0
+        my_token = self._load_token
         with self._lock:
-            if self.current_toc and self.current_toc.tracks and self.player.is_playing():
-                was_playing = True
+            my_token = self._load_token
+            if was_running and self.current_toc and self.current_toc.tracks:
                 resume_pos = max(0.0, float(self.elapsed_sec or 0.0))
                 toc_ref = self.current_toc
                 trk_idx = self.current_track_index
 
-        if was_playing and toc_ref and 0 <= trk_idx < len(toc_ref.tracks):
+        if was_running and toc_ref and 0 <= trk_idx < len(toc_ref.tracks):
             trk = toc_ref.tracks[trk_idx]
             try:
                 self.player.stop()
-                self.player.wait_reader_idle(timeout=1.0)
-                self.player.load_and_play(toc_ref.drive_letter, trk, track_index=trk_idx)
-                if resume_pos > 1.0:
-                    self.player.seek_seconds(resume_pos)
+                self.player.wait_reader_idle(timeout=1.5)
+                with self._lock:
+                    token_ok = (
+                        not self._closed
+                        and my_token == self._load_token
+                        and self.current_toc is toc_ref
+                        and 0 <= trk_idx < len(toc_ref.tracks)
+                    )
+                if token_ok and was_playing:
+                    self.player.load_and_play(toc_ref.drive_letter, trk, track_index=trk_idx)
+                    self._queue_next_track_to_player(trk_idx)
+                    if resume_pos > 1.0:
+                        self.player.seek_seconds(resume_pos)
             except Exception as e:
                 log_runtime_event("AUDIO", f"切换输出引擎热重启异常: {e}", level="WARNING")
 
@@ -1483,7 +1684,9 @@ class DiscflowController:
         if not isinstance(cand, dict):
             return {"ok": False, "reason": "候选数据无效"}
 
-        toc_ref = self.current_toc
+        with self._lock:
+            toc_ref = self.current_toc
+            my_token = self._load_token
         # 曲库返回的标题先过一遍清洗：反转义 HTML 实体、去零宽/控制字符、折叠空白
         title = _sanitize_title(cand.get("title"))
         artist = _sanitize_title(cand.get("artist"))
@@ -1566,6 +1769,8 @@ class DiscflowController:
                 cover_data_url = _bytes_to_data_url(cover_bytes)
 
         with self._lock:
+            if self._closed or my_token != self._load_token or self.current_toc is not toc_ref:
+                return {"ok": False, "reason": "当前专辑已切换，已取消套用"}
             self.album_title = title
             if artist:
                 self.artist = artist
@@ -1580,18 +1785,44 @@ class DiscflowController:
                     if trk.track_number in track_artists:
                         trk.artist = track_artists[trk.track_number]
             self.status_text = f"已套用专辑：《{self.album_title}》— {self.artist}"
-            self._bump_meta()
 
-        if song_ids:
-            self.track_song_ids.update(song_ids)
+            if song_ids:
+                self.track_song_ids.update(song_ids)
+
+            # 曲名/专辑已重新匹配：清理被新专辑覆盖或尚未拥有逐字时间轴的旧缓存与锁定，保证整碟刷新
+            cur_tn = None
+            if toc_ref and 0 <= self.current_track_index < len(toc_ref.tracks):
+                cur_tn = toc_ref.tracks[self.current_track_index].track_number
+            track_nums_to_reset = set(track_titles.keys()) | set(song_ids.keys())
+            if toc_ref:
+                for t in toc_ref.tracks:
+                    cached_lyr = self.lyrics_cache.get(t.track_number)
+                    has_words = bool(cached_lyr and any(isinstance(ln, dict) and ln.get("words") for ln in cached_lyr))
+                    if not has_words or not self._lyrics_quality_ok(cached_lyr):
+                        track_nums_to_reset.add(t.track_number)
+            for tn in list(self.lyrics_cache.keys()):
+                if tn in track_nums_to_reset or tn not in self.lyrics_locked_tracks:
+                    self.lyrics_cache.pop(tn, None)
+                    self.lyrics_locked_tracks.discard(tn)
+            for tn in track_nums_to_reset:
+                self.lyrics_locked_tracks.discard(tn)
+                self.lyrics_missed_tracks.discard(tn)
+            if cur_tn is not None and cur_tn not in self.lyrics_cache:
+                self.current_lyrics = []
+            applied_title = self.album_title
+            applied_artist = self.artist
+            applied_year = self.year
+            applied_source = self.source
+            self._bump_meta()
+            self._bump_lyrics()
 
         if is_local and disc_id:
             try:
                 self.library_manager.update_album_metadata(
                     disc_id,
-                    title=self.album_title,
-                    artist=self.artist or None,
-                    year=self.year or None,
+                    title=applied_title,
+                    artist=applied_artist or None,
+                    year=applied_year,
                     track_titles=track_titles or None,
                     track_artists=track_artists or None,
                 )
@@ -1608,28 +1839,6 @@ class DiscflowController:
                 except Exception:
                     pass
 
-        # 曲名/专辑已重新匹配：清理被新专辑覆盖或尚未拥有逐字时间轴的旧缓存与锁定，保证整碟刷新
-        cur_tn = None
-        if toc_ref and 0 <= self.current_track_index < len(toc_ref.tracks):
-            cur_tn = toc_ref.tracks[self.current_track_index].track_number
-        track_nums_to_reset = set(track_titles.keys()) | set(song_ids.keys())
-        if toc_ref:
-            for t in toc_ref.tracks:
-                cached_lyr = self.lyrics_cache.get(t.track_number)
-                has_words = bool(cached_lyr and any(isinstance(ln, dict) and ln.get("words") for ln in cached_lyr))
-                if not has_words or not self._lyrics_quality_ok(cached_lyr):
-                    track_nums_to_reset.add(t.track_number)
-        for tn in list(self.lyrics_cache.keys()):
-            if tn in track_nums_to_reset or tn not in self.lyrics_locked_tracks:
-                self.lyrics_cache.pop(tn, None)
-                self.lyrics_locked_tracks.discard(tn)
-        for tn in track_nums_to_reset:
-            self.lyrics_locked_tracks.discard(tn)
-            self.lyrics_missed_tracks.discard(tn)
-        if cur_tn is not None and cur_tn not in self.lyrics_cache:
-            self.current_lyrics = []
-        self._bump_lyrics()
-
         try:
             batch_info = self.start_album_lyrics_batch()
         except Exception:
@@ -1637,14 +1846,14 @@ class DiscflowController:
 
         return {
             "ok": True,
-            "albumTitle": self.album_title,
-            "artist": self.artist,
-            "year": self.year,
+            "albumTitle": applied_title,
+            "artist": applied_artist,
+            "year": applied_year,
             "trackCount": len(track_titles),
             "songIdCount": len(song_ids),
             "skippedGarbled": skipped_garbled,
             "lyricsBatchStarted": bool(batch_info.get("ok")),
-            "source": self.source,
+            "source": applied_source,
         }
 
     def apply_manual_metadata(self, title: str, artist: str = "", year: str = "") -> dict:
@@ -1682,16 +1891,19 @@ class DiscflowController:
         return None
 
     def _persist_track_lyrics(self, track_number: int, lines: List[dict], source: str = "",
-                              song_id: str = "", locked: bool = False, clear_lock: bool = False) -> bool:
-        toc_ref = self.current_toc
-        if not toc_ref or not getattr(toc_ref, "is_local", False):
-            return False
-        disc_id = getattr(toc_ref, "disc_id", "")
-        if not disc_id:
+                              song_id: str = "", locked: bool = False, clear_lock: bool = False,
+                              disc_id: str = "") -> bool:
+        target_disc_id = str(disc_id or "").strip()
+        if not target_disc_id:
+            toc_ref = self.current_toc
+            if not toc_ref or not getattr(toc_ref, "is_local", False):
+                return False
+            target_disc_id = getattr(toc_ref, "disc_id", "")
+        if not target_disc_id:
             return False
         try:
             return self.library_manager.update_track_lyrics(
-                disc_id, track_number, lines,
+                target_disc_id, track_number, lines,
                 source=source, song_id=song_id, locked=locked, clear_lock=clear_lock,
             )
         except Exception:
@@ -1719,10 +1931,16 @@ class DiscflowController:
         title: str = "", artist: str = "", duration: float = 0.0,
     ) -> dict:
         """应用用户选定的歌词，并锁定该曲目，自动流程不再覆盖"""
-        trk = self._find_track(track_number)
-        if not trk:
+        with self._lock:
+            toc_ref = self.current_toc
+            my_token = self._load_token
+            trk = self._find_track(track_number)
+        if not trk or not toc_ref:
             return {"ok": False, "reason": "找不到该曲目"}
 
+        disc_id = getattr(toc_ref, "disc_id", "")
+        is_local = bool(getattr(toc_ref, "is_local", False))
+        tn = int(trk.track_number)
         cand = {
             "source": source,
             "song_id": str(song_id or ""),
@@ -1734,16 +1952,19 @@ class DiscflowController:
         if not lines:
             return {"ok": False, "reason": "该来源没有返回可用歌词，换一条候选试试。"}
 
-        tn = int(trk.track_number)
-        self.lyrics_cache[tn] = lines
-        self.lyrics_locked_tracks.add(tn)
-        self.lyrics_missed_tracks.discard(tn)
-        self._persist_track_lyrics(tn, lines, source=source, song_id=str(song_id or ""), locked=True)
+        with self._lock:
+            if self._closed or my_token != self._load_token or self.current_toc is not toc_ref:
+                return {"ok": False, "reason": "当前专辑已切换，已取消应用歌词"}
+            self.lyrics_cache[tn] = lines
+            self.lyrics_locked_tracks.add(tn)
+            self.lyrics_missed_tracks.discard(tn)
+            if self._is_current_track(tn):
+                self.current_lyrics = lines
+                self._bump_lyrics()
+            self._bump_meta()
 
-        if self._is_current_track(tn):
-            self.current_lyrics = lines
-            self._bump_lyrics()
-        self._bump_meta()
+        if is_local and disc_id:
+            self._persist_track_lyrics(tn, lines, source=source, song_id=str(song_id or ""), locked=True, disc_id=disc_id)
 
         return {
             "ok": True,
@@ -1754,41 +1975,54 @@ class DiscflowController:
 
     def clear_track_lyrics(self, track_number: int) -> dict:
         """清空指定曲目的歌词并解除锁定"""
-        trk = self._find_track(track_number)
-        if not trk:
-            return {"ok": False, "reason": "找不到该曲目"}
-        tn = int(trk.track_number)
-        self.lyrics_cache.pop(tn, None)
-        self.lyrics_locked_tracks.discard(tn)
-        self._persist_track_lyrics(tn, [], clear_lock=True)
-        if self._is_current_track(tn):
-            self.current_lyrics = []
-            self._bump_lyrics()
+        with self._lock:
+            toc_ref = self.current_toc
+            trk = self._find_track(track_number)
+            if not trk or not toc_ref:
+                return {"ok": False, "reason": "找不到该曲目"}
+            disc_id = getattr(toc_ref, "disc_id", "")
+            is_local = bool(getattr(toc_ref, "is_local", False))
+            tn = int(trk.track_number)
+            self.lyrics_cache.pop(tn, None)
+            self.lyrics_locked_tracks.discard(tn)
+            if self._is_current_track(tn):
+                self.current_lyrics = []
+                self._bump_lyrics()
+            self._bump_meta()
+        if is_local and disc_id:
+            self._persist_track_lyrics(tn, [], clear_lock=True, disc_id=disc_id)
         return {"ok": True}
 
     def auto_match_track_lyrics(self, track_number: int) -> dict:
         """解除锁定并按曲名重新自动匹配一次"""
-        trk = self._find_track(track_number)
-        if not trk:
-            return {"ok": False, "reason": "找不到该曲目"}
-        tn = int(trk.track_number)
-        self.lyrics_locked_tracks.discard(tn)
-        self.lyrics_cache.pop(tn, None)
+        with self._lock:
+            toc_ref = self.current_toc
+            my_token = self._load_token
+            trk = self._find_track(track_number)
+            if not trk or not toc_ref:
+                return {"ok": False, "reason": "找不到该曲目"}
+            disc_id = getattr(toc_ref, "disc_id", "")
+            is_local = bool(getattr(toc_ref, "is_local", False))
+            tn = int(trk.track_number)
+            self.lyrics_locked_tracks.discard(tn)
+            self.lyrics_cache.pop(tn, None)
 
         lines = lookup_track_lyrics(
             trk.title, trk.artist, trk.duration_sec, getattr(trk, "builtin_lrc", "") or ""
         )
-        if lines:
-            self.lyrics_cache[tn] = lines
-            self.lyrics_missed_tracks.discard(tn)
-            self._persist_track_lyrics(tn, lines, clear_lock=True)
-        else:
-            self._persist_track_lyrics(tn, [], clear_lock=True)
+        with self._lock:
+            if self._closed or my_token != self._load_token or self.current_toc is not toc_ref:
+                return {"ok": False, "reason": "当前专辑已切换"}
+            if lines:
+                self.lyrics_cache[tn] = lines
+                self.lyrics_missed_tracks.discard(tn)
+            if self._is_current_track(tn):
+                self.current_lyrics = lines
+                self._bump_lyrics()
+            self._bump_meta()
 
-        if self._is_current_track(tn):
-            self.current_lyrics = lines
-            self._bump_lyrics()
-        self._bump_meta()
+        if is_local and disc_id:
+            self._persist_track_lyrics(tn, lines or [], clear_lock=True, disc_id=disc_id)
 
         return {"ok": bool(lines), "lineCount": len(lines)}
 
@@ -1797,25 +2031,27 @@ class DiscflowController:
     # ------------------------------------------------------------------
     def start_album_lyrics_batch(self, force_refresh: bool = False) -> dict:
         """按当前专辑每一轨的曲名，批量检索并套用歌词（后台执行，带进度；支持强制重刷）"""
-        if self._lyrics_batch.get("running"):
-            return {"ok": False, "reason": "已有批量任务在进行中"}
-        toc_ref = self.current_toc
-        if not toc_ref or not toc_ref.tracks:
-            return {"ok": False, "reason": "当前没有可处理的曲目"}
+        with self._lock:
+            if self._lyrics_batch.get("running"):
+                return {"ok": False, "reason": "已有批量任务在进行中"}
+            toc_ref = self.current_toc
+            my_token = self._load_token
+            if not toc_ref or not toc_ref.tracks:
+                return {"ok": False, "reason": "当前没有可处理的曲目"}
 
-        tracks = [t for t in toc_ref.tracks if not getattr(t, "is_data_track", False)]
-        if not tracks:
-            return {"ok": False, "reason": "当前没有音频曲目"}
+            tracks = [t for t in toc_ref.tracks if not getattr(t, "is_data_track", False)]
+            if not tracks:
+                return {"ok": False, "reason": "当前没有音频曲目"}
 
-        self._lyrics_batch = {"running": True, "done": 0, "total": len(tracks), "matched": 0, "missed": []}
+            self._lyrics_batch = {"running": True, "done": 0, "total": len(tracks), "matched": 0, "missed": []}
         threading.Thread(
             target=self._run_album_lyrics_batch,
-            args=(toc_ref, tracks, bool(force_refresh)),
+            args=(toc_ref, tracks, bool(force_refresh), my_token),
             daemon=True,
         ).start()
         return {"ok": True, "total": len(tracks)}
 
-    def _run_album_lyrics_batch(self, toc_ref, tracks, force_refresh: bool = False) -> None:
+    def _run_album_lyrics_batch(self, toc_ref, tracks, force_refresh: bool = False, my_token: Optional[int] = None) -> None:
         """
         并发为每轨取词：
         - 若该轨已绑定歌曲 ID（来自专辑匹配），直接按 ID 取词，不再搜索（快且不会配错）；
@@ -1826,13 +2062,23 @@ class DiscflowController:
 
         disc_id = getattr(toc_ref, "disc_id", "")
         is_local = bool(getattr(toc_ref, "is_local", False))
+        song_ids_snapshot = dict(self.track_song_ids)
+        cache_snapshot = dict(self.lyrics_cache)
+        locked_snapshot = set(self.lyrics_locked_tracks)
         total = len(tracks)
         done = 0
         matched = 0
         missed: List[int] = []
 
+        def _is_still_active() -> bool:
+            if self._closed or self.current_toc is not toc_ref:
+                return False
+            if my_token is not None and my_token != self._load_token:
+                return False
+            return True
+
         def _fetch_lines(trk):
-            sid = self.track_song_ids.get(trk.track_number) or {}
+            sid = song_ids_snapshot.get(trk.track_number) or {}
             if sid.get("song_id"):
                 lines = fetch_lyrics_for_candidate(
                     {"source": sid.get("source") or "", "song_id": sid["song_id"]}
@@ -1856,9 +2102,11 @@ class DiscflowController:
             return [], {}
 
         def _work(trk):
-            existing = self.lyrics_cache.get(trk.track_number)
+            if not _is_still_active():
+                return (trk, [], {}, "aborted")
+            existing = cache_snapshot.get(trk.track_number)
             if not force_refresh:
-                if trk.track_number in self.lyrics_locked_tracks:
+                if trk.track_number in locked_snapshot:
                     has_words = bool(existing and any(isinstance(ln, dict) and ln.get("words") for ln in existing))
                     if existing and (has_words or self._lyrics_quality_ok(existing)):
                         return (trk, [], {}, "locked")
@@ -1877,59 +2125,90 @@ class DiscflowController:
             tracks,
             key=lambda t: (0 if self._is_current_track(t.track_number) else 1, int(t.track_number)),
         )
+        aborted = False
+        pool = ThreadPoolExecutor(max_workers=4)
         try:
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                for trk, lines, info, status in pool.map(_work, ordered_tracks):
-                    if status == "ok":
-                        matched += 1
-                    if status == "hit" and lines:
-                        tn = int(trk.track_number)
+            futures = [pool.submit(_work, trk) for trk in ordered_tracks]
+            for fut in as_completed(futures):
+                if not _is_still_active():
+                    aborted = True
+                    for f in futures:
+                        f.cancel()
+                    break
+                try:
+                    trk, lines, info, status = fut.result()
+                except Exception:
+                    continue
+                if status == "aborted" or not _is_still_active():
+                    aborted = True
+                    for f in futures:
+                        f.cancel()
+                    break
+                if status == "ok":
+                    matched += 1
+                if status == "hit" and lines:
+                    tn = int(trk.track_number)
+                    with self._lock:
+                        if not _is_still_active():
+                            aborted = True
+                            break
                         self.lyrics_cache[tn] = lines
                         self.lyrics_locked_tracks.add(tn)
                         if info.get("song_id"):
                             self.track_song_ids[tn] = info
-                        if is_local and disc_id:
-                            self._persist_track_lyrics(
-                                tn, lines,
-                                source=str(info.get("source") or ""),
-                                song_id=str(info.get("song_id") or ""),
-                                locked=True,
-                            )
-                        matched += 1
                         if self._is_current_track(tn):
                             self.current_lyrics = lines
                             self._bump_lyrics()
-                    elif status == "miss":
-                        # 批量对不上的轨道单独记账，前端会在曲目行上标出来，
-                        # 引导用户用行内「词」按钮逐轨手动指定（专辑优先、单曲兜底）
-                        missed.append(int(trk.track_number))
-                    done += 1
-                    self._lyrics_batch = {
-                        "running": done < total,
-                        "done": done,
-                        "total": total,
-                        "matched": matched,
-                        "missed": list(missed),
-                    }
-                    self._schedule_ui_push()
+                    if is_local and disc_id:
+                        self._persist_track_lyrics(
+                            tn, lines,
+                            source=str(info.get("source") or ""),
+                            song_id=str(info.get("song_id") or ""),
+                            locked=True,
+                            disc_id=disc_id,
+                        )
+                    matched += 1
+                elif status == "miss":
+                    # 批量对不上的轨道单独记账，前端会在曲目行上标出来，
+                    # 引导用户用行内「词」按钮逐轨手动指定（专辑优先、单曲兜底）
+                    missed.append(int(trk.track_number))
+                done += 1
+                self._lyrics_batch = {
+                    "running": done < total,
+                    "done": done,
+                    "total": total,
+                    "matched": matched,
+                    "missed": list(missed),
+                }
+                self._schedule_ui_push()
         finally:
-            self.lyrics_missed_tracks = set(missed)
-            self._lyrics_batch = {
-                "running": False,
-                "done": done,
-                "total": total,
-                "matched": matched,
-                "missed": list(missed),
-            }
-            if missed:
-                self.status_text = (
-                    f"整专辑歌词匹配完成：{matched}/{total} 首，"
-                    f"{len(missed)} 首未命中，可点曲目行的「词」逐轨指定"
-                )
-            else:
-                self.status_text = f"整专辑歌词匹配完成：{matched}/{total} 首"
-            self._bump_meta()
-            self._bump_lyrics()
+            pool.shutdown(wait=not aborted, cancel_futures=aborted)
+            if _is_still_active():
+                self.lyrics_missed_tracks = set(missed)
+                self._lyrics_batch = {
+                    "running": False,
+                    "done": done,
+                    "total": total,
+                    "matched": matched,
+                    "missed": list(missed),
+                }
+                if missed:
+                    self.status_text = (
+                        f"整专辑歌词匹配完成：{matched}/{total} 首，"
+                        f"{len(missed)} 首未命中，可点曲目行的「词」逐轨指定"
+                    )
+                else:
+                    self.status_text = f"整专辑歌词匹配完成：{matched}/{total} 首"
+                self._bump_meta()
+                self._bump_lyrics()
+            elif self._lyrics_batch.get("running") and self.current_toc is toc_ref:
+                self._lyrics_batch = {
+                    "running": False,
+                    "done": done,
+                    "total": total,
+                    "matched": matched,
+                    "missed": list(missed),
+                }
 
     def get_library_dir(self) -> str:
         try:
@@ -1974,6 +2253,8 @@ class DiscflowController:
             return {"ok": False, "error": str(e)}
 
     def play_local_album(self, disc_id: str) -> bool:
+        if self._is_ripping() or self._is_migrating():
+            return False
         toc = self.library_manager.get_album_toc(disc_id)
         if not toc:
             return False
@@ -1986,6 +2267,8 @@ class DiscflowController:
                 break
 
         with self._lock:
+            if self._closed or self._is_ripping() or self._is_migrating():
+                return False
             self._load_token += 1
             my_token = self._load_token
             self.current_toc = toc
@@ -2025,12 +2308,16 @@ class DiscflowController:
             self._bump_lyrics()
 
         def _async_start_local_album():
-            if self._closed or my_token != self._load_token:
+            if self._closed or my_token != self._load_token or self._is_ripping() or self._is_migrating():
                 return
             self.player.stop()
-            if self._closed or my_token != self._load_token:
+            try:
+                self.player.wait_reader_idle(timeout=1.5)
+            except Exception:
+                pass
+            if self._closed or my_token != self._load_token or self._is_ripping() or self._is_migrating():
                 return
-            self._start_track(0)
+            self._start_track(0, expected_token=my_token)
             if self._closed or my_token != self._load_token:
                 return
             self._prefetch_lyrics_async(my_token)
@@ -2108,18 +2395,19 @@ class DiscflowController:
                 continue
 
             try:
+                toc_ref = self.current_toc
                 # 关键保护：当前若正在活跃播放本地黑胶资料库专辑（is_local=True），
                 # 绝不受物理光驱有盘/无盘巡检影响；若处于未起播就绪状态且放入物理CD，允许切入
-                if self.current_toc is not None and getattr(self.current_toc, "is_local", False):
+                if toc_ref is not None and getattr(toc_ref, "is_local", False):
                     if self.player.is_running():
                         continue
 
                 phys = self._refresh_cached_drives()
-                if self._is_ripping():
+                if self._is_ripping() or self._is_migrating():
                     self._watcher_miss_count.clear()
                     continue
                 if not phys:
-                    if self.current_toc and not getattr(self.current_toc, "is_local", False):
+                    if toc_ref and not getattr(toc_ref, "is_local", False):
                         self._handle_disc_removed(self.current_drive)
                     continue
 
@@ -2127,9 +2415,10 @@ class DiscflowController:
                     # 关键保护：当物理光驱正在活跃读取 CD-DA 原始 PCM 扇区播放时，
                     # 绝不开启新句柄发送 IOCTL 检查，防止外置 USB 光驱因总线争夺产生杂音或卡顿
                     if (
-                        self.current_toc is not None
-                        and not self.current_toc.is_simulated
-                        and self.current_toc.drive_letter == p_drv
+                        toc_ref is not None
+                        and not getattr(toc_ref, "is_local", False)
+                        and not toc_ref.is_simulated
+                        and toc_ref.drive_letter == p_drv
                         and self.player.is_running()
                     ):
                         self._watcher_miss_count[p_drv] = 0
@@ -2141,8 +2430,8 @@ class DiscflowController:
                         if p_drv in self._non_audio_drives:
                             continue
                         if (
-                            self.current_toc is None
-                            or self.current_toc.drive_letter != p_drv
+                            toc_ref is None
+                            or toc_ref.drive_letter != p_drv
                         ):
                             # 如果该光驱正在异步加载，不要重复发起触发
                             if self.current_drive == p_drv and self.is_loading:
@@ -2155,32 +2444,42 @@ class DiscflowController:
                             break
                     else:
                         # 部分 USB 光驱在休眠/刚插入时 CHECK_VERIFY 返回 False 但 read_toc 可唤醒读出
+                        probe_toc = None
                         if (
-                            p_drv not in self._non_audio_drives
-                            and (self.current_toc is None or self.current_toc.drive_letter != p_drv)
+                            (toc_ref is None or toc_ref.drive_letter != p_drv)
                             and (self._watcher_miss_count.get(p_drv, 0) % 2 == 0)
                         ):
                             try:
                                 probe_toc = WindowsCdDriveManager.read_toc(p_drv)
                                 if probe_toc is not None and len(probe_toc.tracks) > 0:
-                                    self._watcher_miss_count[p_drv] = 0
-                                    threading.Thread(
-                                        target=self._load_drive_async,
-                                        args=(p_drv,),
-                                        daemon=True,
-                                    ).start()
-                                    break
+                                    has_audio = any(
+                                        not getattr(t, "is_data_track", False) for t in probe_toc.tracks
+                                    )
+                                    if not has_audio:
+                                        self._non_audio_drives.add(p_drv)
+                                        self._watcher_miss_count[p_drv] = 0
+                                        continue
+                                    if p_drv not in self._non_audio_drives:
+                                        self._watcher_miss_count[p_drv] = 0
+                                        threading.Thread(
+                                            target=self._load_drive_async,
+                                            args=(p_drv,),
+                                            daemon=True,
+                                        ).start()
+                                        break
                             except Exception:
-                                pass
-                        # 光盘已取出或未就绪时清除非音频标记，等待下次放盘重新识别
-                        self._non_audio_drives.discard(p_drv)
+                                probe_toc = None
                         # 物理防抖：外置 USB 光驱在寻道或刚放入时可能偶发瞬态未就绪
-                        # 只有连续 3 次巡检 (约 5.4 秒) 均明确未就绪，且当前载入了该光驱，才判定为退盘
-                        self._watcher_miss_count[p_drv] = self._watcher_miss_count.get(p_drv, 0) + 1
+                        # 只有连续 3 次巡检 (约 5.4 秒) 均明确未就绪，才清除非音频标记或判定为退盘
+                        misses = self._watcher_miss_count.get(p_drv, 0) + 1
+                        self._watcher_miss_count[p_drv] = misses
+                        if misses >= 3 and probe_toc is None:
+                            self._non_audio_drives.discard(p_drv)
                         if (
-                            self.current_toc is not None
-                            and self.current_toc.drive_letter == p_drv
-                            and self._watcher_miss_count[p_drv] >= 3
+                            toc_ref is not None
+                            and not getattr(toc_ref, "is_local", False)
+                            and toc_ref.drive_letter == p_drv
+                            and misses >= 3
                         ):
                             self._handle_disc_removed(p_drv)
                             break
@@ -2190,6 +2489,7 @@ class DiscflowController:
     def _handle_disc_removed(self, drive_letter: str):
         self.player.stop()
         with self._lock:
+            self._load_token += 1
             self.current_toc = None
             self.is_loading = False
             self.elapsed_sec = 0.0
@@ -2203,6 +2503,8 @@ class DiscflowController:
             self._bump_lyrics()
 
     def _load_drive_async(self, drive_letter: str):
+        if self._is_ripping() or self._is_migrating():
+            return
         if not drive_letter:
             with self._lock:
                 self.is_loading = False
@@ -2211,20 +2513,26 @@ class DiscflowController:
             return
 
         with self._lock:
+            if self._closed or self._is_ripping() or self._is_migrating():
+                return
             self._load_token += 1
             my_token = self._load_token
             self.is_loading = True
             self.current_drive = drive_letter
+            self.lyrics_cache.clear()
+            self.lyrics_locked_tracks = set()
+            self.lyrics_missed_tracks = set()
+            self.track_song_ids = {}
+            self.current_lyrics = []
+            self.status_text = f"正在读取光驱 {drive_letter} 引导区 TOC..."
+            self._bump_meta()
+            self._bump_lyrics()
 
         self.player.stop()
-        self.lyrics_cache.clear()
-        self.lyrics_locked_tracks = set()
-        self.lyrics_missed_tracks = set()
-        self.track_song_ids = {}
-        self.current_lyrics = []
-        self.status_text = f"正在读取光驱 {drive_letter} 引导区 TOC..."
-        self._bump_meta()
-        self._bump_lyrics()
+        try:
+            self.player.wait_reader_idle(timeout=1.5)
+        except Exception:
+            pass
 
         toc: Optional[CdDiscToc] = None
         try:
@@ -2239,8 +2547,11 @@ class DiscflowController:
                     break
 
                 if attempt < max_attempts - 1:
-                    self.status_text = f"光驱 {drive_letter} 正在旋转启动 ({attempt + 1}/{max_attempts})..."
-                    self._bump_meta()
+                    with self._lock:
+                        if my_token != self._load_token or self._closed:
+                            return
+                        self.status_text = f"光驱 {drive_letter} 正在旋转启动 ({attempt + 1}/{max_attempts})..."
+                        self._bump_meta()
                     time.sleep(0.8)
 
             if my_token != self._load_token or self._closed:
@@ -2296,8 +2607,9 @@ class DiscflowController:
                 auto_play = bool(load_user_preferences().get("autoPlay", True))
             except Exception:
                 auto_play = True
-            self._start_track(audio_indices[0], autoplay=auto_play)
-            threading.Thread(target=self._fetch_metadata_async, args=(toc, my_token), daemon=True).start()
+            self._start_track(audio_indices[0], autoplay=auto_play, expected_token=my_token)
+            if my_token == self._load_token and not self._closed:
+                threading.Thread(target=self._fetch_metadata_async, args=(toc, my_token), daemon=True).start()
         except Exception as e:
             with self._lock:
                 if my_token == self._load_token:
@@ -2318,52 +2630,60 @@ class DiscflowController:
         return bool(re.match(r"^Track\s*\d+$", title or "") and placeholder_art)
 
     def _apply_metadata_to_state(self, meta: AlbumMetadataResult, my_token: int):
-        if self._closed or my_token != self._load_token:
-            return
-        if not self.current_toc or self.current_toc.disc_id != meta.disc_id:
-            return
+        with self._lock:
+            toc_ref = self.current_toc
+            if self._closed or my_token != self._load_token:
+                return
+            if not toc_ref or toc_ref.disc_id != meta.disc_id:
+                return
 
-        prev_cur_sig = ""
-        if 0 <= self.current_track_index < len(self.current_toc.tracks):
-            t0 = self.current_toc.tracks[self.current_track_index]
-            prev_cur_sig = f"{t0.title}|{t0.artist}"
+            prev_cur_sig = ""
+            if 0 <= self.current_track_index < len(toc_ref.tracks):
+                t0 = toc_ref.tracks[self.current_track_index]
+                prev_cur_sig = f"{t0.title}|{t0.artist}"
 
-        self.album_title = meta.album_title
-        self.artist = meta.artist
-        self.year = meta.year
-        self.source = meta.matched_source
-        if meta.cover_data_url:
-            self.cover_data_url = meta.cover_data_url
-        self.status_text = f"{meta.album_title} — {meta.artist} ({meta.matched_source})"
+            self.album_title = meta.album_title
+            self.artist = meta.artist
+            self.year = meta.year
+            self.source = meta.matched_source
+            if meta.cover_data_url:
+                self.cover_data_url = meta.cover_data_url
+            self.status_text = f"{meta.album_title} — {meta.artist} ({meta.matched_source})"
 
-        for trk in self.current_toc.tracks:
-            if trk.track_number in meta.track_titles:
-                trk.title = meta.track_titles[trk.track_number]
-            if trk.track_number in meta.track_artists:
-                trk.artist = meta.track_artists[trk.track_number]
+            for trk in toc_ref.tracks:
+                if trk.track_number in meta.track_titles:
+                    trk.title = meta.track_titles[trk.track_number]
+                if trk.track_number in meta.track_artists:
+                    trk.artist = meta.track_artists[trk.track_number]
 
-        self._bump_meta()
+            self._bump_meta()
 
-        # 元数据刚匹配到位时，立即为当前正在播放的音轨（如第 1 首）单独高优拉取歌词，
-        # 避免被整张专辑 10+ 首批量预取阻塞等待。
-        if 0 <= self.current_track_index < len(self.current_toc.tracks):
-            cur_trk = self.current_toc.tracks[self.current_track_index]
-            if not self._is_placeholder_track(cur_trk.title, cur_trk.artist):
-                cur_sig = f"{cur_trk.title}|{cur_trk.artist}"
-                cur_cached = self.lyrics_cache.get(cur_trk.track_number)
-                need_fetch = (
-                    (cur_trk.track_number not in self.lyrics_cache)
-                    or (not self._lyrics_quality_ok(cur_cached))
-                    or (cur_sig != prev_cur_sig and not self.current_lyrics)
-                )
-                fetch_key = (my_token, cur_trk.track_number, cur_trk.title, cur_trk.artist)
-                if need_fetch and fetch_key not in self._lyrics_fetching_keys:
-                    self._lyrics_fetching_keys.add(fetch_key)
-                    threading.Thread(
-                        target=self._fetch_lyrics_async,
-                        args=(cur_trk, True, my_token, fetch_key),
-                        daemon=True,
-                    ).start()
+            # 元数据刚匹配到位时，立即为当前正在播放的音轨（如第 1 首）单独高优拉取歌词，
+            # 避免被整张专辑 10+ 首批量预取阻塞等待。
+            cur_trk_to_fetch = None
+            fetch_key = None
+            if 0 <= self.current_track_index < len(toc_ref.tracks):
+                cur_trk = toc_ref.tracks[self.current_track_index]
+                if not self._is_placeholder_track(cur_trk.title, cur_trk.artist):
+                    cur_sig = f"{cur_trk.title}|{cur_trk.artist}"
+                    cur_cached = self.lyrics_cache.get(cur_trk.track_number)
+                    need_fetch = (
+                        (cur_trk.track_number not in self.lyrics_cache)
+                        or (not self._lyrics_quality_ok(cur_cached))
+                        or (cur_sig != prev_cur_sig and not self.current_lyrics)
+                    )
+                    fk = (my_token, cur_trk.track_number, cur_trk.title, cur_trk.artist)
+                    if need_fetch and fk not in self._lyrics_fetching_keys:
+                        self._lyrics_fetching_keys.add(fk)
+                        cur_trk_to_fetch = cur_trk
+                        fetch_key = fk
+
+        if cur_trk_to_fetch is not None:
+            threading.Thread(
+                target=self._fetch_lyrics_async,
+                args=(cur_trk_to_fetch, True, my_token, fetch_key),
+                daemon=True,
+            ).start()
 
     def _fetch_metadata_async(self, toc: CdDiscToc, my_token: int):
         def _on_partial(partial_meta: AlbumMetadataResult):
@@ -2425,31 +2745,43 @@ class DiscflowController:
         self.cover_data_url = data_url
         self._bump_meta()
 
-    def _start_track(self, index: int, autoplay: bool = True):
-        if self._is_ripping():
+    def _start_track(self, index: int, autoplay: bool = True, expected_token: Optional[int] = None):
+        if self._is_ripping() or self._is_migrating():
             return
-        if not self.current_toc or not (0 <= index < len(self.current_toc.tracks)):
-            return
+        with self._lock:
+            if self._closed:
+                return
+            if expected_token is not None and expected_token != self._load_token:
+                return
+            toc_ref = self.current_toc
+            if not toc_ref or not (0 <= index < len(toc_ref.tracks)):
+                return
+            self.current_track_index = index
+            trk = toc_ref.tracks[index]
+            if getattr(trk, "is_data_track", False):
+                return
+            my_token = self._load_token
+            self.duration_sec = trk.duration_sec
+            self.elapsed_sec = 0.0
 
-        self.current_track_index = index
-        trk = self.current_toc.tracks[index]
-        self.duration_sec = trk.duration_sec
-        self.elapsed_sec = 0.0
+            need_fetch = False
+            if trk.track_number in self.lyrics_cache:
+                self.current_lyrics = self.lyrics_cache[trk.track_number]
+                self._bump_lyrics()
+            else:
+                self.current_lyrics = []
+                self._bump_lyrics()
+                # 切到任何有真实曲名但未缓存歌词的曲目都立即补取；
+                # 若仍是占位 Track 01，则等待 _apply_metadata_to_state 元数据就绪后统一高优直取。
+                if not self._is_placeholder_track(trk.title, trk.artist):
+                    need_fetch = True
 
-        if trk.track_number in self.lyrics_cache:
-            self.current_lyrics = self.lyrics_cache[trk.track_number]
-            self._bump_lyrics()
-        else:
-            self.current_lyrics = []
-            self._bump_lyrics()
-            # 切到任何有真实曲名但未缓存歌词的曲目都立即补取；
-            # 若仍是占位 Track 01，则等待 _apply_metadata_to_state 元数据就绪后统一高优直取。
-            if not self._is_placeholder_track(trk.title, trk.artist):
-                threading.Thread(
-                    target=self._fetch_lyrics_async,
-                    args=(trk, False, self._load_token),
-                    daemon=True,
-                ).start()
+        if need_fetch:
+            threading.Thread(
+                target=self._fetch_lyrics_async,
+                args=(trk, False, my_token),
+                daemon=True,
+            ).start()
 
         # 计算顺序播放的下一轨，供播放引擎做连续内存预读与无缝跨轨过渡
         self._queue_next_track_to_player(index)
@@ -2459,30 +2791,33 @@ class DiscflowController:
 
         # 关闭「放入光盘自动播放」时只准备好曲目与歌词，等用户点播放键再出声
         if autoplay:
-            self.player.load_and_play(self.current_toc.drive_letter, trk, track_index=index)
+            self.player.load_and_play(toc_ref.drive_letter, trk, track_index=index)
         else:
             self.status_text = f"已就绪：《{self.album_title}》· 按播放键或空格开始"
             self._bump_meta()
 
-    def _fetch_lyrics_async(self, trk, force_refresh: bool = False, my_token: int = 0, _fetch_key=None):
+    def _fetch_lyrics_async(self, trk, force_refresh: bool = False, my_token: Optional[int] = None, _fetch_key=None):
         try:
-            if self._closed or (my_token and my_token != self._load_token):
+            if my_token is None:
+                my_token = self._load_token
+            if self._closed or my_token != self._load_token:
                 return
             existing = self.lyrics_cache.get(trk.track_number)
             if not force_refresh and existing:
                 return
             lines = lookup_track_lyrics(trk.title, trk.artist, trk.duration_sec, trk.builtin_lrc)
-            if self._closed or (my_token and my_token != self._load_token):
+            if self._closed or my_token != self._load_token:
                 return
             if lines:
                 self.lyrics_cache[trk.track_number] = lines
             else:
                 # 若期间其他高优/预取线程已写入歌词，绝不用空结果覆盖缓存或当前显示歌词
                 lines = self.lyrics_cache.get(trk.track_number) or []
+            toc_ref = self.current_toc
             if (
-                self.current_toc
-                and 0 <= self.current_track_index < len(self.current_toc.tracks)
-                and self.current_toc.tracks[self.current_track_index].track_number == trk.track_number
+                toc_ref
+                and 0 <= self.current_track_index < len(toc_ref.tracks)
+                and toc_ref.tracks[self.current_track_index].track_number == trk.track_number
             ):
                 if lines or not self.current_lyrics:
                     if self.current_lyrics != lines:
@@ -2505,13 +2840,15 @@ class DiscflowController:
         with_trans = sum(1 for ln in lines if isinstance(ln, dict) and ln.get("translation"))
         return with_trans >= n * 0.7
 
-    def _prefetch_lyrics_async(self, my_token: int = 0):
+    def _prefetch_lyrics_async(self, my_token: Optional[int] = None):
         """
         并发预取整张专辑所有音轨的歌词：
         将当前播放音轨置于优先队列，并采用 as_completed 逐首即时落地更新，
         避免第一首歌等待整张专辑全部查询完毕后才显示歌词。
         """
-        if self._closed:
+        if my_token is None:
+            my_token = self._load_token
+        if self._closed or my_token != self._load_token:
             return
         toc_ref = self.current_toc
         if not toc_ref or not toc_ref.tracks:
@@ -2581,10 +2918,15 @@ class DiscflowController:
                 return int(item["track_number"]), []
 
         workers = max(1, min(2, len(pending)))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        aborted = False
+        pool = ThreadPoolExecutor(max_workers=workers)
+        try:
             futures = [pool.submit(_fetch_one, item) for item in pending]
             for fut in as_completed(futures):
-                if self._closed or (my_token and my_token != self._load_token):
+                if self._closed or my_token != self._load_token or self.current_toc is not toc_ref:
+                    aborted = True
+                    for f in futures:
+                        f.cancel()
                     return
                 try:
                     tn, lines = fut.result()
@@ -2592,23 +2934,31 @@ class DiscflowController:
                     continue
                 if not lines:
                     continue
+                if self._closed or my_token != self._load_token or self.current_toc is not toc_ref:
+                    aborted = True
+                    for f in futures:
+                        f.cancel()
+                    return
                 current = self.lyrics_cache.get(tn)
                 if current is None or _lyr_rank(lines) > _lyr_rank(current) or not self._lyrics_quality_ok(current):
                     if current is not None and _lyr_rank(lines) < _lyr_rank(current):
                         continue
                     self.lyrics_cache[tn] = lines
                     improved[tn] = lines
+                    cur_toc_now = self.current_toc
                     if (
-                        self.current_toc
-                        and 0 <= self.current_track_index < len(self.current_toc.tracks)
-                        and self.current_toc.tracks[self.current_track_index].track_number == tn
+                        cur_toc_now is toc_ref
+                        and 0 <= self.current_track_index < len(cur_toc_now.tracks)
+                        and cur_toc_now.tracks[self.current_track_index].track_number == tn
                     ):
                         if self.current_lyrics != lines:
                             self.current_lyrics = lines
                             self._bump_lyrics()
+        finally:
+            pool.shutdown(wait=not aborted, cancel_futures=aborted)
 
         # 本地唱片：把重新抓到的优质歌词回写 album.json，让修复长期生效
-        if improved and is_local and disc_id:
+        if improved and is_local and disc_id and not self._closed:
             def _persist():
                 for tn, lyr in improved.items():
                     try:
@@ -2640,13 +2990,23 @@ class DiscflowController:
         if self._closed:
             return
         self.status_text = msg
+        self._bump_meta()
+        toc_ref = self.current_toc
         if (
-            self.current_toc
-            and not getattr(self.current_toc, "is_local", False)
-            and not self.current_toc.is_simulated
-            and not WindowsCdDriveManager.is_disc_ready(self.current_toc.drive_letter)
+            toc_ref
+            and not getattr(toc_ref, "is_local", False)
+            and not toc_ref.is_simulated
         ):
-            self._handle_disc_removed(self.current_toc.drive_letter)
+            drv = toc_ref.drive_letter
+
+            def _check_removed():
+                try:
+                    if not self._closed and not WindowsCdDriveManager.is_disc_ready(drv):
+                        self._handle_disc_removed(drv)
+                except Exception:
+                    pass
+
+            threading.Thread(target=_check_removed, daemon=True).start()
 
 
 class DiscflowJsApi:
@@ -2758,7 +3118,7 @@ class DiscflowJsApi:
     def delete_local_album(self, disc_id: str) -> dict:
         return self._ctrl.delete_local_album(disc_id)
 
-    def update_album_metadata(self, disc_id: str, title: str = "", artist: str = "", year: str = "", track_titles: Optional[dict] = None) -> bool:
+    def update_album_metadata(self, disc_id: str, title: str = "", artist: str = "", year: Optional[str] = None, track_titles: Optional[dict] = None) -> bool:
         return self._ctrl.update_album_metadata(disc_id, title, artist, year, track_titles)
 
     def update_album_cover(self, disc_id: str, cover_data_url: str) -> bool:

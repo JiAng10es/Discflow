@@ -18,7 +18,7 @@ import tempfile
 import threading
 import time
 import wave
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import Callable, Dict, List, Optional, Tuple
 import ctypes
 from ctypes import wintypes
@@ -210,14 +210,19 @@ def resolve_library_dir() -> str:
 
 
 def _auto_migrate_legacy_library(target_dir: str):
-    """自动将之前保存在 C 盘 ~/.discflow/library 的专辑无缝迁移至目标目录，确保数据不丢失"""
+    """自动将之前保存在 C 盘 ~/.discflow/library 的专辑无缝迁移至目标目录（仅首次执行一次，避免已删专辑复活）"""
     try:
         legacy_dir = os.path.join(os.path.expanduser("~"), ".discflow", "library")
         if os.path.abspath(legacy_dir).lower() == os.path.abspath(target_dir).lower():
             return
         if not os.path.isdir(legacy_dir):
             return
+        sentinel = os.path.join(target_dir, ".legacy_migrated")
+        if os.path.isfile(sentinel):
+            return
         for item in os.listdir(legacy_dir):
+            if item.startswith("."):
+                continue
             src_item = os.path.join(legacy_dir, item)
             dst_item = os.path.join(target_dir, item)
             if not os.path.exists(dst_item):
@@ -225,6 +230,11 @@ def _auto_migrate_legacy_library(target_dir: str):
                     shutil.copytree(src_item, dst_item)
                 elif os.path.isfile(src_item):
                     shutil.copy2(src_item, dst_item)
+        try:
+            with open(sentinel, "w", encoding="utf-8") as sf:
+                sf.write("migrated\n")
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -239,8 +249,37 @@ def get_preferences_file_path() -> str:
     return os.path.join(parent_dir, "preferences.json")
 
 
+_PREFS_LOCK = threading.Lock()
 _RUNTIME_LOG_LOCK = threading.Lock()
 _RUNTIME_LOG_CACHE: Dict[str, logging.Logger] = {}
+
+
+def _atomic_write_json(path: str, payload) -> None:
+    """原子写入 JSON 文件（同目录临时文件 + os.replace），防止并发或断电写半截损坏。"""
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    tmp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _is_within_dir(base_dir: str, target_path: str) -> bool:
+    try:
+        abs_base = os.path.abspath(base_dir)
+        abs_target = os.path.abspath(target_path)
+        return os.path.commonpath([abs_base, abs_target]) == abs_base
+    except Exception:
+        return False
 
 
 def get_runtime_log_path() -> str:
@@ -288,9 +327,8 @@ def log_runtime_event(category: str, message: str, level: str = "INFO") -> None:
         pass
 
 
-def load_user_preferences() -> dict:
-    """从本地磁盘加载用户偏好设置，若不存在则返回标准默认配置"""
-    defaults = {
+def _default_user_preferences() -> dict:
+    return {
         "lyricLineHeight": 1.4,
         "lyricLetterSpacing": 0,
         "dockWidth": 720,
@@ -310,7 +348,10 @@ def load_user_preferences() -> dict:
         "ripFormat": "flac",
         "audioOutputMode": "waveout",
     }
-    path = get_preferences_file_path()
+
+
+def _read_user_preferences_unlocked(path: str) -> dict:
+    defaults = _default_user_preferences()
     if os.path.isfile(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -323,21 +364,27 @@ def load_user_preferences() -> dict:
     return defaults
 
 
+def load_user_preferences() -> dict:
+    """从本地磁盘加载用户偏好设置，若不存在则返回标准默认配置"""
+    path = get_preferences_file_path()
+    with _PREFS_LOCK:
+        return _read_user_preferences_unlocked(path)
+
+
 def save_user_preferences(prefs: dict) -> bool:
-    """将用户偏好设置安全写入物理磁盘配置文件"""
+    """将用户偏好设置加锁并原子写入物理磁盘配置文件"""
     if not isinstance(prefs, dict):
         return False
     path = get_preferences_file_path()
-    try:
-        current = load_user_preferences()
-        current.update(prefs)
-        current.pop("closeToTray", None)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(current, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception:
-        return False
+    with _PREFS_LOCK:
+        try:
+            current = _read_user_preferences_unlocked(path)
+            current.update(prefs)
+            current.pop("closeToTray", None)
+            _atomic_write_json(path, current)
+            return True
+        except Exception:
+            return False
 
 
 
@@ -390,11 +437,18 @@ def generate_cover_thumbnail(
             thumb_bytes = buf.getvalue()
 
         if thumb_path:
+            tmp_thumb = f"{thumb_path}.{os.getpid()}.{threading.get_ident()}.tmp"
             try:
-                with open(thumb_path, "wb") as tf:
+                with open(tmp_thumb, "wb") as tf:
                     tf.write(thumb_bytes)
+                    tf.flush()
+                os.replace(tmp_thumb, thumb_path)
             except Exception:
-                pass
+                try:
+                    if os.path.isfile(tmp_thumb):
+                        os.remove(tmp_thumb)
+                except OSError:
+                    pass
         return f"data:image/jpeg;base64,{base64.b64encode(thumb_bytes).decode('ascii')}"
     except Exception:
         return ""
@@ -427,6 +481,14 @@ class RippingProgress:
     is_completed: bool = False
 
 
+_WIN_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+_LOCAL_TRACK_FIELDS = frozenset(f.name for f in fields(LocalTrackInfo))
+
+
 class DiscflowLibraryManager:
     """本地黑胶唱片资料库管理服务"""
 
@@ -443,8 +505,60 @@ class DiscflowLibraryManager:
             pass
 
     def get_album_dir(self, disc_id: str) -> str:
-        safe_id = "".join(c for c in disc_id if c.isalnum() or c in ("-", "_"))
+        raw_id = str(disc_id or "").strip()
+        safe_id = "".join(c for c in raw_id if c.isalnum() or c in ("-", "_")).strip(".")
+        if not safe_id or safe_id in (".", "..") or safe_id.upper() in _WIN_RESERVED_NAMES:
+            raise ValueError(f"非法的唱片标识: {disc_id!r}")
         return os.path.join(self.base_dir, safe_id)
+
+    def _resolve_existing_album_dir(self, disc_id: str) -> str:
+        """定位已存在的专辑目录（兼容 DiscID 含 '.' 的旧版目录名），并确保路径严格落在 base_dir 内。"""
+        raw_id = str(disc_id or "").strip()
+        if not raw_id or raw_id in (".", ".."):
+            return ""
+        abs_base = os.path.abspath(self.base_dir)
+        candidates: List[str] = []
+        try:
+            candidates.append(self.get_album_dir(raw_id))
+        except ValueError:
+            pass
+        if (
+            "/" not in raw_id
+            and "\\" not in raw_id
+            and ".." not in raw_id
+            and raw_id.strip(".").upper() not in _WIN_RESERVED_NAMES
+        ):
+            candidates.append(os.path.join(self.base_dir, raw_id))
+
+        for cand in candidates:
+            abs_c = os.path.abspath(cand)
+            if abs_c != abs_base and _is_within_dir(abs_base, abs_c) and os.path.isdir(cand):
+                return cand
+
+        # 兜底扫描目录内 album.json 精确匹配 disc_id（含旧版含点目录）
+        try:
+            safe_raw = "".join(c for c in raw_id if c.isalnum() or c in ("-", "_"))
+            for entry in os.listdir(self.base_dir):
+                if ".rip_staging_" in entry or ".rip_backup_" in entry:
+                    continue
+                sub = os.path.join(self.base_dir, entry)
+                if not os.path.isdir(sub):
+                    continue
+                meta_p = os.path.join(sub, "album.json")
+                if not os.path.isfile(meta_p):
+                    continue
+                try:
+                    with open(meta_p, "r", encoding="utf-8") as mf:
+                        mdata = json.load(mf)
+                    md_id = str(mdata.get("disc_id") or "")
+                    md_safe = "".join(c for c in md_id if c.isalnum() or c in ("-", "_"))
+                    if md_id == raw_id or (safe_raw and md_safe == safe_raw):
+                        return sub
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return ""
 
     def list_albums(self, force_refresh: bool = False) -> List[LocalAlbumInfo]:
         with self._lock:
@@ -456,6 +570,8 @@ class DiscflowLibraryManager:
 
             try:
                 for entry in os.listdir(self.base_dir):
+                    if ".rip_staging_" in entry or ".rip_backup_" in entry:
+                        continue
                     sub_dir = os.path.join(self.base_dir, entry)
                     if not os.path.isdir(sub_dir):
                         continue
@@ -467,24 +583,31 @@ class DiscflowLibraryManager:
                         with open(meta_path, "r", encoding="utf-8") as f:
                             data = json.load(f)
 
-                        tracks_data = [LocalTrackInfo(**t) for t in data.get("tracks", [])]
+                        tracks_data = [
+                            LocalTrackInfo(**{k: v for k, v in t.items() if k in _LOCAL_TRACK_FIELDS})
+                            for t in (data.get("tracks") or [])
+                            if isinstance(t, dict)
+                        ]
                         cover_data_url = data.get("cover_data_url", "")
                         thumb_data_url = ""
 
                         # 如果未存 Base64，但有 cover.jpg / cover.png 文件，则即时生成
-                        cover_file = data.get("cover_file", "")
+                        cover_file = str(data.get("cover_file") or "")
                         raw_cover_bytes = b""
+                        safe_cover_path = ""
                         if cover_file:
-                            full_cover = os.path.join(sub_dir, cover_file)
-                            if os.path.isfile(full_cover) and not cover_data_url:
-                                try:
-                                    with open(full_cover, "rb") as cf:
-                                        raw_cover_bytes = cf.read()
-                                        mime = "image/png" if cover_file.lower().endswith(".png") else "image/jpeg"
-                                        b64 = base64.b64encode(raw_cover_bytes).decode("ascii")
-                                        cover_data_url = f"data:{mime};base64,{b64}"
-                                except Exception:
-                                    pass
+                            cand_cover = os.path.join(sub_dir, cover_file)
+                            if _is_within_dir(sub_dir, cand_cover) and os.path.isfile(cand_cover):
+                                safe_cover_path = cand_cover
+                        if safe_cover_path and not cover_data_url:
+                            try:
+                                with open(safe_cover_path, "rb") as cf:
+                                    raw_cover_bytes = cf.read()
+                                    mime = "image/png" if cover_file.lower().endswith(".png") else "image/jpeg"
+                                    b64 = base64.b64encode(raw_cover_bytes).decode("ascii")
+                                    cover_data_url = f"data:{mime};base64,{b64}"
+                            except Exception:
+                                pass
 
                         thumb_path = os.path.join(sub_dir, COVER_THUMB_FILENAME)
                         if os.path.isfile(thumb_path):
@@ -494,15 +617,13 @@ class DiscflowLibraryManager:
                                     thumb_data_url = f"data:image/jpeg;base64,{tb64}"
                             except Exception:
                                 pass
-                        elif cover_data_url or cover_file:
-                            if not raw_cover_bytes and cover_file:
-                                full_cover = os.path.join(sub_dir, cover_file)
-                                if os.path.isfile(full_cover):
-                                    try:
-                                        with open(full_cover, "rb") as cf:
-                                            raw_cover_bytes = cf.read()
-                                    except Exception:
-                                        pass
+                        elif cover_data_url or safe_cover_path:
+                            if not raw_cover_bytes and safe_cover_path:
+                                try:
+                                    with open(safe_cover_path, "rb") as cf:
+                                        raw_cover_bytes = cf.read()
+                                except Exception:
+                                    pass
                             if not raw_cover_bytes and "," in cover_data_url:
                                 try:
                                     raw_cover_bytes = base64.b64decode(cover_data_url.split(",", 1)[1])
@@ -541,6 +662,12 @@ class DiscflowLibraryManager:
         强制删除目录树：逐文件重试，兼容 Windows 上音频文件句柄延迟释放导致 rmtree 半途失败的情况。
         返回 (是否删除干净, 仍无法删除的路径列表)。
         """
+        if not path:
+            return False, []
+        abs_base = os.path.abspath(self.base_dir)
+        abs_target = os.path.abspath(path)
+        if abs_target == abs_base or not _is_within_dir(abs_base, abs_target):
+            return False, [path]
         if not os.path.isdir(path):
             return True, []
 
@@ -573,7 +700,12 @@ class DiscflowLibraryManager:
         {"ok": bool, "existed": bool, "path": str, "failed": [残留文件...]}
         """
         with self._lock:
-            sub_dir = self.get_album_dir(disc_id)
+            sub_dir = self._resolve_existing_album_dir(disc_id)
+            if not sub_dir:
+                try:
+                    sub_dir = self.get_album_dir(disc_id)
+                except ValueError:
+                    return {"ok": False, "existed": False, "path": "", "failed": [], "reason": "非法的唱片标识"}
             existed = os.path.isdir(sub_dir)
             ok, failed = self._force_remove_tree(sub_dir)
             self._cached_albums = None
@@ -589,7 +721,9 @@ class DiscflowLibraryManager:
         track_artists: Optional[Dict[int, str]] = None,
     ) -> bool:
         with self._lock:
-            sub_dir = self.get_album_dir(disc_id)
+            sub_dir = self._resolve_existing_album_dir(disc_id)
+            if not sub_dir:
+                return False
             meta_path = os.path.join(sub_dir, "album.json")
             if not os.path.isfile(meta_path):
                 return False
@@ -613,8 +747,7 @@ class DiscflowLibraryManager:
                         t_num = t.get("track_number")
                         if t_num in track_artists:
                             t["artist"] = track_artists[t_num]
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                _atomic_write_json(meta_path, data)
                 self._cached_albums = None
                 return True
             except Exception:
@@ -622,26 +755,58 @@ class DiscflowLibraryManager:
 
     def update_album_cover(self, disc_id: str, cover_data_url: str) -> bool:
         with self._lock:
-            sub_dir = self.get_album_dir(disc_id)
+            sub_dir = self._resolve_existing_album_dir(disc_id)
+            if not sub_dir:
+                return False
             meta_path = os.path.join(sub_dir, "album.json")
             if not os.path.isfile(meta_path):
                 return False
             try:
-                # 若包含 base64，提取并写入 cover.jpg 与 cover_thumb.jpg
-                if "," in cover_data_url:
-                    _, b64data = cover_data_url.split(",", 1)
-                    raw_bytes = base64.b64decode(b64data)
-                    cover_jpg_path = os.path.join(sub_dir, "cover.jpg")
-                    with open(cover_jpg_path, "wb") as f_cov:
-                        f_cov.write(raw_bytes)
-                    generate_cover_thumbnail(raw_bytes, thumb_path=os.path.join(sub_dir, COVER_THUMB_FILENAME))
-
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                data["cover_file"] = "cover.jpg"
-                data["cover_data_url"] = cover_data_url
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                cover_str = str(cover_data_url or "").strip()
+                if not cover_str:
+                    # 显式清空封面：删除旧封面文件及缩略图
+                    for stale in ("cover.jpg", "cover.png", COVER_THUMB_FILENAME):
+                        sp = os.path.join(sub_dir, stale)
+                        if os.path.isfile(sp):
+                            try:
+                                os.remove(sp)
+                            except OSError:
+                                pass
+                    data["cover_file"] = ""
+                    data["cover_data_url"] = ""
+                else:
+                    cover_filename = "cover.jpg"
+                    if "," in cover_str:
+                        hdr, b64data = cover_str.split(",", 1)
+                        raw_bytes = base64.b64decode(b64data)
+                        is_png = raw_bytes[:8].startswith(b"\x89PNG") or ("image/png" in hdr.lower())
+                        cover_filename = "cover.png" if is_png else "cover.jpg"
+                        other_filename = "cover.jpg" if is_png else "cover.png"
+                        other_path = os.path.join(sub_dir, other_filename)
+                        if os.path.isfile(other_path):
+                            try:
+                                os.remove(other_path)
+                            except OSError:
+                                pass
+                        cover_path = os.path.join(sub_dir, cover_filename)
+                        tmp_cov = f"{cover_path}.{os.getpid()}.tmp"
+                        try:
+                            with open(tmp_cov, "wb") as f_cov:
+                                f_cov.write(raw_bytes)
+                                f_cov.flush()
+                            os.replace(tmp_cov, cover_path)
+                        finally:
+                            if os.path.isfile(tmp_cov):
+                                try:
+                                    os.remove(tmp_cov)
+                                except OSError:
+                                    pass
+                        generate_cover_thumbnail(raw_bytes, thumb_path=os.path.join(sub_dir, COVER_THUMB_FILENAME))
+                    data["cover_file"] = cover_filename
+                    data["cover_data_url"] = cover_str
+                _atomic_write_json(meta_path, data)
                 self._cached_albums = None
                 return True
             except Exception:
@@ -663,11 +828,12 @@ class DiscflowLibraryManager:
         - 手动指定时同时写入 source / song_id / locked，锁定后自动流程不再覆盖。
         """
         with self._lock:
-            sub_dir = self.get_album_dir(disc_id)
+            sub_dir = self._resolve_existing_album_dir(disc_id)
+            if not sub_dir:
+                return False
             meta_path = os.path.join(sub_dir, "album.json")
             if not os.path.isfile(meta_path):
                 return False
-            tmp_path = meta_path + ".tmp"
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -689,27 +855,21 @@ class DiscflowLibraryManager:
                         break
                 if not hit:
                     return False
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, meta_path)
+                _atomic_write_json(meta_path, data)
                 self._cached_albums = None
                 return True
             except Exception:
-                try:
-                    if os.path.isfile(tmp_path):
-                        os.remove(tmp_path)
-                except Exception:
-                    pass
                 return False
 
     def update_track_song_id(self, disc_id: str, track_number: int, source: str, song_id: str) -> bool:
         """只记录该曲目对应的歌曲 ID（不写歌词、不锁定），供后续按 ID 直取歌词"""
         with self._lock:
-            sub_dir = self.get_album_dir(disc_id)
+            sub_dir = self._resolve_existing_album_dir(disc_id)
+            if not sub_dir:
+                return False
             meta_path = os.path.join(sub_dir, "album.json")
             if not os.path.isfile(meta_path):
                 return False
-            tmp_path = meta_path + ".tmp"
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -722,27 +882,21 @@ class DiscflowLibraryManager:
                         break
                 if not hit:
                     return False
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, meta_path)
+                _atomic_write_json(meta_path, data)
                 self._cached_albums = None
                 return True
             except Exception:
-                try:
-                    if os.path.isfile(tmp_path):
-                        os.remove(tmp_path)
-                except Exception:
-                    pass
                 return False
 
     def update_track_lyric_offset(self, disc_id: str, track_number: int, offset: float) -> bool:
         """持久化保存单曲歌词时间轴微调偏移量 (秒) 到 album.json"""
         with self._lock:
-            sub_dir = self.get_album_dir(disc_id)
+            sub_dir = self._resolve_existing_album_dir(disc_id)
+            if not sub_dir:
+                return False
             meta_path = os.path.join(sub_dir, "album.json")
             if not os.path.isfile(meta_path):
                 return False
-            tmp_path = meta_path + ".tmp"
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -754,27 +908,26 @@ class DiscflowLibraryManager:
                         break
                 if not hit:
                     return False
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, meta_path)
+                _atomic_write_json(meta_path, data)
                 self._cached_albums = None
                 return True
             except Exception:
-                try:
-                    if os.path.isfile(tmp_path):
-                        os.remove(tmp_path)
-                except Exception:
-                    pass
                 return False
 
     def export_library_zip(self, target_zip_path: str) -> bool:
         import zipfile
         with self._lock:
             try:
-                with zipfile.ZipFile(target_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                abs_target = os.path.abspath(target_zip_path)
+                parent = os.path.dirname(abs_target)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                with zipfile.ZipFile(abs_target, "w", zipfile.ZIP_DEFLATED) as zf:
                     for root, _, files in os.walk(self.base_dir):
                         for file in files:
                             full_path = os.path.join(root, file)
+                            if os.path.abspath(full_path) == abs_target:
+                                continue
                             rel_path = os.path.relpath(full_path, self.base_dir)
                             zf.write(full_path, rel_path)
                 return True
@@ -787,7 +940,12 @@ class DiscflowLibraryManager:
             if not os.path.isfile(source_zip_path):
                 return False
             try:
+                abs_base = os.path.abspath(self.base_dir)
                 with zipfile.ZipFile(source_zip_path, "r") as zf:
+                    for info in zf.infolist():
+                        target = os.path.abspath(os.path.join(abs_base, info.filename))
+                        if not _is_within_dir(abs_base, target):
+                            return False
                     zf.extractall(self.base_dir)
                 self._cached_albums = None
                 return True
@@ -797,34 +955,29 @@ class DiscflowLibraryManager:
     def get_album_toc(self, disc_id: str) -> Optional[CdDiscToc]:
         albums = self.list_albums()
         target: Optional[LocalAlbumInfo] = None
-        safe_id = "".join(c for c in disc_id if c.isalnum() or c in ("-", "_"))
+        safe_id = "".join(c for c in str(disc_id or "") if c.isalnum() or c in ("-", "_"))
 
         for a in albums:
             a_safe = "".join(c for c in a.disc_id if c.isalnum() or c in ("-", "_"))
-            if a.disc_id == disc_id or a_safe == safe_id or a.disc_id == safe_id:
+            if a.disc_id == disc_id or (safe_id and (a_safe == safe_id or a.disc_id == safe_id)):
                 target = a
                 break
         if not target or not target.tracks:
             return None
 
-        # 优先探测实际存在的磁盘目录
-        possible_dirs = [
-            self.get_album_dir(target.disc_id),
-            self.get_album_dir(disc_id),
-            os.path.join(self.base_dir, target.disc_id),
-            os.path.join(self.base_dir, disc_id),
-        ]
-        album_dir = ""
-        for d in possible_dirs:
-            if os.path.isdir(d):
-                album_dir = d
-                break
+        album_dir = self._resolve_existing_album_dir(target.disc_id) or self._resolve_existing_album_dir(disc_id)
         if not album_dir:
-            album_dir = self.get_album_dir(disc_id)
+            try:
+                album_dir = self.get_album_dir(target.disc_id)
+            except ValueError:
+                return None
 
         tracks: List[CdTrackInfo] = []
         for t in target.tracks:
-            full_path = os.path.join(album_dir, t.file_name)
+            fname = str(t.file_name or "")
+            full_path = os.path.join(album_dir, fname) if fname else ""
+            if full_path and not _is_within_dir(album_dir, full_path):
+                continue
             trk = CdTrackInfo(
                 track_number=t.track_number,
                 start_lba=0,
@@ -838,6 +991,8 @@ class DiscflowLibraryManager:
                 lyrics_offset=float(getattr(t, "lyrics_offset", 0.0)),
             )
             tracks.append(trk)
+        if not tracks:
+            return None
 
         return CdDiscToc(
             drive_letter="LIB:" + target.disc_id[:8],
@@ -861,15 +1016,15 @@ class DiscflowLibraryManager:
         wav_tracks = 0
         wav_bytes = 0
         for alb in albums:
-            alb_dir = self.get_album_dir(alb.disc_id)
-            if not os.path.isdir(alb_dir):
-                alb_dir = os.path.join(self.base_dir, alb.disc_id)
+            alb_dir = self._resolve_existing_album_dir(alb.disc_id)
+            if not alb_dir:
+                continue
             has_wav = False
             for t in (alb.tracks or []):
                 fname = str(getattr(t, "file_name", "") or "")
                 if fname.lower().endswith(".wav"):
                     fpath = os.path.join(alb_dir, fname)
-                    if os.path.isfile(fpath):
+                    if _is_within_dir(alb_dir, fpath) and os.path.isfile(fpath):
                         has_wav = True
                         wav_tracks += 1
                         try:
@@ -899,7 +1054,7 @@ class DiscflowLibraryManager:
     ) -> dict:
         """
         将资料库中旧 WAV 音轨逐轨无损转码为 FLAC 并写入元数据/内嵌封面：
-        严格先校验新 FLAC 帧数与原 WAV 一致，原子更新 album.json 后再删除旧 WAV。
+        严格先校验新 FLAC 帧数与原 WAV 一致，加锁重新读取并原子更新 album.json 后再删除旧 WAV。
         """
         import soundfile as sf
 
@@ -933,9 +1088,9 @@ class DiscflowLibraryManager:
             if should_cancel and should_cancel():
                 result["cancelled"] = True
                 break
-            alb_dir = self.get_album_dir(alb.disc_id)
-            if not os.path.isdir(alb_dir):
-                alb_dir = os.path.join(self.base_dir, alb.disc_id)
+            alb_dir = self._resolve_existing_album_dir(alb.disc_id)
+            if not alb_dir:
+                continue
             meta_path = os.path.join(alb_dir, "album.json")
             if not os.path.isfile(meta_path):
                 continue
@@ -945,7 +1100,7 @@ class DiscflowLibraryManager:
             cover_mime = "image/jpeg"
             if alb.cover_file:
                 cp = os.path.join(alb_dir, alb.cover_file)
-                if os.path.isfile(cp):
+                if _is_within_dir(alb_dir, cp) and os.path.isfile(cp):
                     try:
                         with open(cp, "rb") as cf:
                             cover_bytes = cf.read()
@@ -957,14 +1112,15 @@ class DiscflowLibraryManager:
                 try:
                     hdr, b64 = alb.cover_data_url.split(",", 1)
                     cover_bytes = base64.b64decode(b64)
-                    if "png" in hdr.lower():
+                    if "png" in hdr.lower() or cover_bytes[:8].startswith(b"\x89PNG"):
                         cover_mime = "image/png"
                 except Exception:
                     pass
 
             try:
-                with open(meta_path, "r", encoding="utf-8") as mf:
-                    meta_data = json.load(mf)
+                with self._lock:
+                    with open(meta_path, "r", encoding="utf-8") as mf:
+                        meta_data = json.load(mf)
             except Exception as e:
                 result["errors"].append(f"{alb.title}: 读取 album.json 失败 ({e})")
                 continue
@@ -981,13 +1137,16 @@ class DiscflowLibraryManager:
                 if not fname.lower().endswith(".wav"):
                     continue
                 wav_path = os.path.join(alb_dir, fname)
-                if not os.path.isfile(wav_path):
+                if not _is_within_dir(alb_dir, wav_path) or not os.path.isfile(wav_path):
                     continue
 
                 flac_name = os.path.splitext(fname)[0] + ".flac"
                 flac_path = os.path.join(alb_dir, flac_name)
+                if not _is_within_dir(alb_dir, flac_path):
+                    continue
                 tmp_flac_path = flac_path + ".tmp"
                 trk_title = str(trk_dict.get("title") or fname)
+                trk_no = trk_dict.get("track_number")
 
                 if on_progress:
                     on_progress({
@@ -1033,7 +1192,7 @@ class DiscflowLibraryManager:
                         artist=str(trk_dict.get("artist") or alb.artist or ""),
                         album=str(alb.title or ""),
                         year=str(alb.year or ""),
-                        track_number=int(trk_dict.get("track_number") or 0),
+                        track_number=int(trk_no or 0),
                         total_tracks=total_in_album,
                         cover_bytes=cover_bytes,
                         cover_mime=cover_mime,
@@ -1041,18 +1200,24 @@ class DiscflowLibraryManager:
 
                     os.replace(tmp_flac_path, flac_path)
                     flac_size = os.path.getsize(flac_path)
-                    trk_dict["file_name"] = flac_name
 
-                    # 先持久化 album.json 再删除旧 WAV，断电也不丢音轨
-                    with open(meta_path, "w", encoding="utf-8") as mf:
-                        json.dump(meta_data, mf, ensure_ascii=False, indent=2)
+                    # 加锁重新读取最新 album.json 并原子写回，再删除旧 WAV
+                    with self._lock:
+                        with open(meta_path, "r", encoding="utf-8") as mf:
+                            fresh_meta = json.load(mf)
+                        for ft in (fresh_meta.get("tracks") or []):
+                            if (trk_no is not None and ft.get("track_number") == trk_no) or ft.get("file_name") == fname:
+                                ft["file_name"] = flac_name
+                                break
+                        _atomic_write_json(meta_path, fresh_meta)
+                        self._cached_albums = None
                     try:
                         os.remove(wav_path)
                     except OSError:
                         pass
 
                     result["convertedTracks"] += 1
-                    result["savedBytes"] += max(0, wav_size - flac_size)
+                    result["savedBytes"] += (wav_size - flac_size)
                     result["savedMb"] = round(result["savedBytes"] / (1024.0 * 1024.0), 1)
                     album_converted_any = True
                 except Exception as e:
@@ -1068,6 +1233,9 @@ class DiscflowLibraryManager:
 
             if album_converted_any:
                 result["convertedAlbums"] += 1
+
+        if result["errors"]:
+            result["ok"] = False
 
         with self._lock:
             self._cached_albums = None
@@ -1144,23 +1312,27 @@ class _TrackAudioWriter:
         self._sf = None
 
     def __enter__(self):
-        if self.fmt == "wav":
-            self._f_wav = open(self.filepath, "wb", buffering=1024 * 1024)
-            self._wf = wave.open(self._f_wav, "wb")
-            self._wf.setnchannels(2)
-            self._wf.setsampwidth(2)
-            self._wf.setframerate(44100)
-        else:
-            import soundfile as sf
-            self._sf = sf.SoundFile(
-                self.filepath,
-                mode="w",
-                samplerate=44100,
-                channels=2,
-                subtype="PCM_16",
-                format="FLAC",
-            )
-        return self
+        try:
+            if self.fmt == "wav":
+                self._f_wav = open(self.filepath, "wb", buffering=1024 * 1024)
+                self._wf = wave.open(self._f_wav, "wb")
+                self._wf.setnchannels(2)
+                self._wf.setsampwidth(2)
+                self._wf.setframerate(44100)
+            else:
+                import soundfile as sf
+                self._sf = sf.SoundFile(
+                    self.filepath,
+                    mode="w",
+                    samplerate=44100,
+                    channels=2,
+                    subtype="PCM_16",
+                    format="FLAC",
+                )
+            return self
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
 
     def write_pcm(self, pcm_buf) -> None:
         if self._wf is not None:
@@ -1215,39 +1387,65 @@ class CdRipperTask:
         self.on_progress = on_progress
         self.rip_format = "wav" if str(rip_format or "").strip().lower() == "wav" else "flac"
 
+        self._lock = threading.Lock()
         self._cancelled = False
         self._progress = RippingProgress()
 
     def cancel(self):
-        self._cancelled = True
+        with self._lock:
+            self._cancelled = True
 
     def get_progress(self) -> RippingProgress:
-        return self._progress
+        with self._lock:
+            return RippingProgress(**asdict(self._progress))
+
+    def _update_progress(self, **kwargs) -> RippingProgress:
+        with self._lock:
+            for k, v in kwargs.items():
+                setattr(self._progress, k, v)
+            return RippingProgress(**asdict(self._progress))
 
     def run(self):
         audio_tracks = [
             t for t in (self.toc.tracks or [])
             if not getattr(t, "is_data_track", False) and (t.end_lba > t.start_lba)
         ]
-        self._progress.is_ripping = True
-        self._progress.total_tracks = len(audio_tracks)
-        self._progress.status_text = "正在初始化无损抓轨引擎..."
+        snap = self._update_progress(
+            is_ripping=True,
+            total_tracks=len(audio_tracks),
+            status_text="正在初始化无损抓轨引擎...",
+        )
         if self.on_progress:
-            self.on_progress(self._progress)
+            self.on_progress(snap)
 
         if not audio_tracks:
-            self._progress.is_ripping = False
-            self._progress.error_message = "当前光盘没有可抓取的音频音轨"
-            self._progress.status_text = "抓轨失败：未检测到音频音轨"
+            snap = self._update_progress(
+                is_ripping=False,
+                error_message="当前光盘没有可抓取的音频音轨",
+                status_text="抓轨失败：未检测到音频音轨",
+            )
             if self.on_progress:
-                self.on_progress(self._progress)
+                self.on_progress(snap)
             return
 
-        target_dir = self.library_mgr.get_album_dir(self.toc.disc_id)
-        had_album_json = os.path.isfile(os.path.join(target_dir, "album.json"))
-        os.makedirs(target_dir, exist_ok=True)
+        try:
+            target_dir = self.library_mgr.get_album_dir(self.toc.disc_id)
+        except ValueError as e:
+            snap = self._update_progress(
+                is_ripping=False,
+                error_message=str(e),
+                status_text=f"抓轨失败：{e}",
+            )
+            if self.on_progress:
+                self.on_progress(snap)
+            return
 
-        # 保存高清封面图
+        staging_dir = f"{target_dir}.rip_staging_{os.getpid()}_{threading.get_ident()}"
+        if os.path.isdir(staging_dir):
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        os.makedirs(staging_dir, exist_ok=True)
+
+        # 保存高清封面图至暂存目录
         cover_file = ""
         cover_raw_bytes = b""
         cover_mime = "image/jpeg"
@@ -1256,24 +1454,30 @@ class CdRipperTask:
                 if "," in self.cover_data_url:
                     header, b64_data = self.cover_data_url.split(",", 1)
                     raw_img = base64.b64decode(b64_data)
-                    ext = "png" if "png" in header else "jpg"
+                    is_png = raw_img[:8].startswith(b"\x89PNG") or ("png" in header.lower())
+                    ext = "png" if is_png else "jpg"
                     cover_mime = "image/png" if ext == "png" else "image/jpeg"
                     cover_raw_bytes = raw_img
                     cover_file = f"cover.{ext}"
-                    with open(os.path.join(target_dir, cover_file), "wb") as f_cov:
+                    with open(os.path.join(staging_dir, cover_file), "wb") as f_cov:
                         f_cov.write(raw_img)
-                    generate_cover_thumbnail(raw_img, thumb_path=os.path.join(target_dir, COVER_THUMB_FILENAME))
+                    generate_cover_thumbnail(raw_img, thumb_path=os.path.join(staging_dir, COVER_THUMB_FILENAME))
             except Exception:
                 pass
 
-        h_drive = WindowsCdDriveManager.open_drive_handle(self.toc.drive_letter, read_access=True)
+        h_drive = WindowsCdDriveManager.open_drive_handle(
+            self.toc.drive_letter, read_access=True, allow_zero_fallback=False
+        )
         if h_drive is None:
             log_runtime_event("RIP", f"无法以读取权限打开光驱 {self.toc.drive_letter}", level="ERROR")
-            self._progress.is_ripping = False
-            self._progress.error_message = f"无法以读取权限打开光驱 {self.toc.drive_letter}"
-            self._progress.status_text = "抓轨失败：无法访问光驱硬件"
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            snap = self._update_progress(
+                is_ripping=False,
+                error_message=f"无法以读取权限打开光驱 {self.toc.drive_letter}",
+                status_text="抓轨失败：无法访问光驱硬件",
+            )
             if self.on_progress:
-                self.on_progress(self._progress)
+                self.on_progress(snap)
             return
 
         log_runtime_event(
@@ -1283,10 +1487,10 @@ class CdRipperTask:
 
         # 自适应批次读取（v1.11 提速 + 零拷贝/流式写入优化）：
         # 优先以 64 扇区（约 147KB）大批量传输，显著减少 DeviceIoControl 往返次数；
-        # 若光驱/驱动在首次探测时拒绝大批量，自动逐级降档 48 → 32 → 27 → 16（以及 12 → 8 兼容 32KB 上限 USB 桥接器）；
+        # 若光驱/驱动在首次探测时拒绝大批量，自动逐级降档 48 → 32 → 27 → 16（以及 12 → 8 → 4 → 1 兼容受限 USB 桥接器）；
         # 若某一批已稳定成功过，后续偶发单点划痕只针对该批单扇区兜底，不永久降速整张专辑。
         BATCH_CANDIDATES = (64, 48, 32, 27, 16)
-        SUB_BATCH_CANDIDATES = (12, 8)
+        SUB_BATCH_CANDIDATES = (12, 8, 4, 1)
         sectors_per_batch = BATCH_CANDIDATES[0]
         raw_buffer = ctypes.create_string_buffer(CD_SECTOR_RAW_BYTES * BATCH_CANDIDATES[0])
         raw_mv = memoryview(raw_buffer)
@@ -1303,24 +1507,26 @@ class CdRipperTask:
         sectors_ripped_so_far = 0
         consecutive_hardware_errors = 0
         batch_succeeded_once = False
-        rip_succeeded = False
         rip_start_ts = time.perf_counter()
 
         try:
             for idx, trk in enumerate(audio_tracks):
                 if self._cancelled:
-                    self._progress.status_text = "抓轨任务已由用户取消"
+                    self._update_progress(status_text="抓轨任务已由用户取消")
                     break
 
-                self._progress.current_track_index = idx + 1
-                self._progress.track_title = trk.title or f"Track {trk.track_number:02d}"
-                self._progress.status_text = f"正在抓取 ({idx + 1}/{len(audio_tracks)}): {self._progress.track_title}"
+                trk_title = trk.title or f"Track {trk.track_number:02d}"
+                snap = self._update_progress(
+                    current_track_index=idx + 1,
+                    track_title=trk_title,
+                    status_text=f"正在抓取 ({idx + 1}/{len(audio_tracks)}): {trk_title}",
+                )
                 if self.on_progress:
-                    self.on_progress(self._progress)
+                    self.on_progress(snap)
 
                 ext = "wav" if self.rip_format == "wav" else "flac"
                 track_filename = f"track_{trk.track_number:02d}.{ext}"
-                track_path = os.path.join(target_dir, track_filename)
+                track_path = os.path.join(staging_dir, track_filename)
 
                 cur_lba = trk.start_lba
                 end_lba = trk.end_lba
@@ -1391,7 +1597,8 @@ class CdRipperTask:
                                 else:
                                     consecutive_hardware_errors += 1
                                     if consecutive_hardware_errors >= 80:
-                                        raise RuntimeError(f"光驱扇区持续读取失败 (错误码 {kernel32.GetLastError()})，请检查光驱或光盘")
+                                        err_code = ctypes.get_last_error() or kernel32.GetLastError()
+                                        raise RuntimeError(f"光驱扇区持续读取失败 (错误码 {err_code})，请检查光驱或光盘")
                                     fallback_pcm.extend(b"\x00" * CD_SECTOR_RAW_BYTES)
                             if self._cancelled:
                                 break
@@ -1402,23 +1609,24 @@ class CdRipperTask:
 
                         track_pct = round(((cur_lba - trk.start_lba) / track_total_sectors) * 100, 1)
                         overall_pct = round((sectors_ripped_so_far / max(1, total_audio_sectors)) * 100, 1)
-                        self._progress.track_progress_pct = min(100.0, track_pct)
-                        self._progress.overall_progress_pct = min(100.0, overall_pct)
-                        # 进度回调节流：最多每 120ms 唤醒一次 UI，避免大批量传输时被跨线程刷新拖慢
                         now_ts = time.time()
                         elapsed_rip = max(0.05, time.perf_counter() - rip_start_ts)
                         speed_x = (sectors_ripped_so_far / 75.0) / elapsed_rip
                         mb_s = (sectors_ripped_so_far * CD_SECTOR_RAW_BYTES) / (1024.0 * 1024.0 * elapsed_rip)
                         fmt_label = "FLAC" if self.rip_format == "flac" else "WAV"
-                        self._progress.status_text = (
-                            f"正在抓取 ({idx + 1}/{len(audio_tracks)}) · {fmt_label} · "
-                            f"{speed_x:.1f}x ({mb_s:.2f} MB/s) · 批{sectors_per_batch}扇区"
+                        snap = self._update_progress(
+                            track_progress_pct=min(100.0, track_pct),
+                            overall_progress_pct=min(100.0, overall_pct),
+                            status_text=(
+                                f"正在抓取 ({idx + 1}/{len(audio_tracks)}) · {fmt_label} · "
+                                f"{speed_x:.1f}x ({mb_s:.2f} MB/s) · 批{sectors_per_batch}扇区"
+                            ),
                         )
                         if self.on_progress and (
                             now_ts - last_progress_ts >= PROGRESS_MIN_INTERVAL or cur_lba >= end_lba
                         ):
                             last_progress_ts = now_ts
-                            self.on_progress(self._progress)
+                            self.on_progress(snap)
 
                 if self._cancelled:
                     break
@@ -1451,7 +1659,7 @@ class CdRipperTask:
                 )
 
             if not self._cancelled:
-                # 写入 album.json 元数据文件
+                # 写入 album.json 元数据文件至暂存目录，随后原子切换至正式目录
                 meta_payload = {
                     "disc_id": self.toc.disc_id,
                     "title": self.album_title,
@@ -1462,12 +1670,33 @@ class CdRipperTask:
                     "ripped_at": time.time(),
                     "tracks": [asdict(t) for t in saved_tracks],
                 }
-                meta_json_path = os.path.join(target_dir, "album.json")
-                with open(meta_json_path, "w", encoding="utf-8") as f_meta:
-                    json.dump(meta_payload, f_meta, ensure_ascii=False, indent=2)
+                meta_json_path = os.path.join(staging_dir, "album.json")
+                _atomic_write_json(meta_json_path, meta_payload)
+
+                existing_dir = self.library_mgr._resolve_existing_album_dir(self.toc.disc_id) or target_dir
+                backup_dir = ""
+                if (
+                    existing_dir
+                    and os.path.abspath(existing_dir) != os.path.abspath(staging_dir)
+                    and os.path.isdir(existing_dir)
+                ):
+                    backup_dir = f"{existing_dir}.rip_backup_{os.getpid()}_{threading.get_ident()}"
+                    if os.path.exists(backup_dir):
+                        shutil.rmtree(backup_dir, ignore_errors=True)
+                    os.replace(existing_dir, backup_dir)
+                try:
+                    os.replace(staging_dir, target_dir)
+                except Exception:
+                    if backup_dir and os.path.isdir(backup_dir) and not os.path.exists(existing_dir):
+                        try:
+                            os.replace(backup_dir, existing_dir)
+                        except Exception:
+                            pass
+                    raise
+                if backup_dir and os.path.isdir(backup_dir):
+                    shutil.rmtree(backup_dir, ignore_errors=True)
 
                 self.library_mgr.list_albums(force_refresh=True)
-                rip_succeeded = True
                 total_rip_sec = max(0.05, time.perf_counter() - rip_start_ts)
                 avg_speed_x = (sectors_ripped_so_far / 75.0) / total_rip_sec
                 avg_mb_s = (sectors_ripped_so_far * CD_SECTOR_RAW_BYTES) / (1024.0 * 1024.0 * total_rip_sec)
@@ -1476,30 +1705,32 @@ class CdRipperTask:
                     f"抓轨完成 album=《{self.album_title}》 format={self.rip_format} tracks={len(saved_tracks)} batch={sectors_per_batch} elapsed={total_rip_sec:.1f}s speed={avg_speed_x:.1f}x ({avg_mb_s:.2f} MB/s)",
                 )
 
-                self._progress.is_ripping = False
-                self._progress.is_completed = True
-                self._progress.overall_progress_pct = 100.0
-                self._progress.status_text = f"专辑《{self.album_title}》已成功归档至黑胶资料库！"
+                snap = self._update_progress(
+                    is_ripping=False,
+                    is_completed=True,
+                    overall_progress_pct=100.0,
+                    status_text=f"专辑《{self.album_title}》已成功归档至黑胶资料库！",
+                )
                 if self.on_progress:
-                    self.on_progress(self._progress)
+                    self.on_progress(snap)
         except Exception as e:
             log_runtime_event("RIP", f"抓轨异常 album=《{self.album_title}》 err={e}", level="ERROR")
-            self._progress.is_ripping = False
-            self._progress.error_message = str(e)
-            self._progress.status_text = f"抓轨失败: {e}"
+            snap = self._update_progress(
+                is_ripping=False,
+                error_message=str(e),
+                status_text=f"抓轨失败: {e}",
+            )
             if self.on_progress:
-                self.on_progress(self._progress)
+                self.on_progress(snap)
         finally:
             kernel32.CloseHandle(h_drive)
-            if not rip_succeeded and not had_album_json:
-                # 抓轨取消或失败时清理本次新建的半成品目录，避免资料库残留残缺 WAV
-                try:
-                    shutil.rmtree(target_dir, ignore_errors=True)
-                except Exception:
-                    pass
+            if os.path.isdir(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
             if self._cancelled:
                 log_runtime_event("RIP", f"抓轨已取消 album=《{self.album_title}》", level="WARNING")
-                self._progress.is_ripping = False
-                self._progress.status_text = "抓轨任务已取消"
+                snap = self._update_progress(
+                    is_ripping=False,
+                    status_text="抓轨任务已取消",
+                )
                 if self.on_progress:
-                    self.on_progress(self._progress)
+                    self.on_progress(snap)

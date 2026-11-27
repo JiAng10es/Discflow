@@ -75,13 +75,15 @@
           applyTheme(prefs.themeMode, false);
         }
         applyCustomPrefs(currentCustomPrefs);
-        if (typeof prefs.autoPlay === "boolean") {
-          if (typeof appState !== "undefined") appState.autoPlayDisc = prefs.autoPlay;
-          const label = document.getElementById("autoPlayLabel");
-          if (label) label.textContent = prefs.autoPlay ? "已开启" : "已关闭";
-          const apSwitch = document.getElementById("autoPlaySwitch");
-          if (apSwitch) apSwitch.checked = prefs.autoPlay;
-        }
+        const showTrans = prefs.showTranslation !== false;
+        if (typeof appState !== "undefined") appState.showTranslation = showTrans;
+        applyTranslationVisibility(showTrans);
+        const isAuto = typeof prefs.autoPlay === "boolean" ? prefs.autoPlay : true;
+        if (typeof appState !== "undefined") appState.autoPlayDisc = isAuto;
+        const label = document.getElementById("autoPlayLabel");
+        if (label) label.textContent = isAuto ? "已开启" : "已关闭";
+        const apSwitch = document.getElementById("autoPlaySwitch");
+        if (apSwitch) apSwitch.checked = isAuto;
       }
     } catch (e) {
       console.warn("syncPreferencesFromBackend error:", e);
@@ -216,8 +218,11 @@
       rng.addEventListener("pointerdown", () => modal.classList.add("is-peeking"));
       rng.addEventListener("pointerup", stopPeek);
       rng.addEventListener("pointercancel", stopPeek);
+      rng.addEventListener("lostpointercapture", stopPeek);
     });
     window.addEventListener("pointerup", stopPeek);
+    window.addEventListener("pointercancel", stopPeek);
+    window.addEventListener("blur", stopPeek);
   })();
 
   function onDockBlurChange(val) {
@@ -286,11 +291,20 @@
   async function waitForLyricsBatch(maxMs = 180000) {
     const hint = document.getElementById("matchMetaHint");
     const startTs = Date.now();
+    const startDiscId = appState.discId || "";
+    let sawRunning = false;
     while (Date.now() - startTs < maxMs) {
+      if (startDiscId && appState.discId && appState.discId !== startDiscId) {
+        return { cancelled: true };
+      }
+      try {
+        await pollBackendState();
+      } catch (e) {}
       const b = appState.lyricsBatch || {};
       if (b.running) {
+        sawRunning = true;
         if (hint) hint.textContent = `正在批量匹配歌词 ${b.done}/${b.total}，已命中 ${b.matched} 首…`;
-      } else if ((b.total || 0) > 0) {
+      } else if ((sawRunning && (b.total || 0) >= 0) || (Date.now() - startTs > 1500 && (b.total || 0) > 0)) {
         return b;
       }
       await new Promise(r => setTimeout(r, 350));
@@ -299,6 +313,8 @@
   }
 
   let albumCandidateCache = [];
+  let _albumSearchSeq = 0;
+  let _albumApplyInFlight = false;
 
   async function submitMatchMetadata() {
     const tEl = document.getElementById("matchAlbumTitle");
@@ -314,12 +330,14 @@
     }
     if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.search_album_candidates_for_current) return;
 
+    const mySeq = ++_albumSearchSeq;
     if (btn) { btn.disabled = true; btn.textContent = "检索中…"; }
     if (hint) hint.textContent = "正在从 QQ 音乐 / iTunes / 网易云 三源并发检索…";
     if (box) box.innerHTML = "";
     albumCandidateCache = [];
     try {
       const list = await window.pywebview.api.search_album_candidates_for_current(title, artist);
+      if (mySeq !== _albumSearchSeq) return;
       albumCandidateCache = Array.isArray(list) ? list : [];
       renderAlbumCandidates(albumCandidateCache);
       if (hint) {
@@ -328,10 +346,11 @@
           : "没有找到匹配的专辑，试试换个更准确的专辑名或补上艺术家。";
       }
     } catch (e) {
+      if (mySeq !== _albumSearchSeq) return;
       console.error("search_album_candidates error:", e);
       if (hint) hint.textContent = "检索失败：" + e;
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "搜索"; }
+      if (btn && mySeq === _albumSearchSeq) { btn.disabled = false; btn.textContent = "搜索"; }
     }
   }
 
@@ -379,9 +398,15 @@
   }
 
   async function applyAlbumCandidate(index) {
-    const cand = albumCandidateCache[index];
+    const idx = Number(index);
+    const cand = Number.isInteger(idx) ? albumCandidateCache[idx] : null;
     if (!cand) return;
+    if (_albumApplyInFlight) {
+      alertToast("正在套用专辑信息，请稍候…");
+      return;
+    }
     if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.apply_album_candidate) return;
+    _albumApplyInFlight = true;
     const hint = document.getElementById("matchMetaHint");
     if (hint) hint.textContent = "正在套用专辑信息与封面…";
     try {
@@ -410,6 +435,8 @@
     } catch (e) {
       console.error("apply_album_candidate error:", e);
       if (hint) hint.textContent = "套用失败：" + e;
+    } finally {
+      _albumApplyInFlight = false;
     }
   }
 
@@ -417,20 +444,23 @@
   let lyricMatchTrackNumber = null;
   let lyricMatchDuration = 0;
   let lyricCandidateCache = [];
+  let _lyricSearchSeq = 0;
+  let _lyricApplyInFlight = false;
 
   const LYRIC_SOURCE_LABEL = { netease: "网易云", qq: "QQ 音乐", lrclib: "LRCLIB" };
 
   function openLyricMatchModal(event, idx) {
     if (event) event.stopPropagation();
-    const t = (appState.tracks || [])[idx];
+    const tIdx = Number(idx);
+    const t = Number.isInteger(tIdx) ? (appState.tracks || [])[tIdx] : null;
     if (!t) return;
-    lyricMatchTrackNumber = t.track_number;
+    lyricMatchTrackNumber = Number(t.track_number) || (tIdx + 1);
     lyricMatchDuration = Number(t.duration_sec) || 0;
     lyricCandidateCache = [];
 
     const info = document.getElementById("lyricMatchTrackInfo");
     if (info) {
-      info.textContent = `第 ${t.track_number} 轨 · ${t.title} · ${t.artist} · ${formatTime(t.duration_sec)}`;
+      info.textContent = `第 ${lyricMatchTrackNumber} 轨 · ${t.title} · ${t.artist} · ${formatTime(t.duration_sec)}`;
     }
     const tEl = document.getElementById("lyricMatchTitle");
     const aEl = document.getElementById("lyricMatchArtist");
@@ -455,11 +485,17 @@
     const title = tEl ? tEl.value.trim() : "";
     const artist = aEl ? aEl.value.trim() : "";
 
+    const mySeq = ++_lyricSearchSeq;
+    const targetTrack = lyricMatchTrackNumber;
+    const targetDisc = appState.discId || "";
     if (btn) { btn.disabled = true; btn.textContent = "检索中…"; }
     if (hint) hint.textContent = "正在同时检索网易云 / QQ 音乐 / LRCLIB…";
     if (box) box.innerHTML = "";
     try {
-      const list = await window.pywebview.api.search_track_lyric_candidates(lyricMatchTrackNumber, title, artist);
+      const list = await window.pywebview.api.search_track_lyric_candidates(targetTrack, title, artist);
+      if (mySeq !== _lyricSearchSeq || targetTrack !== lyricMatchTrackNumber || (targetDisc && targetDisc !== (appState.discId || ""))) {
+        return;
+      }
       lyricCandidateCache = Array.isArray(list) ? list : [];
       renderLyricCandidates(lyricCandidateCache);
       if (hint) {
@@ -468,10 +504,11 @@
           : "没有找到候选，试试把歌名改得更简短或换一种写法。";
       }
     } catch (e) {
+      if (mySeq !== _lyricSearchSeq) return;
       console.error("search_track_lyric_candidates error:", e);
       if (hint) hint.textContent = "检索失败：" + e;
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "搜索"; }
+      if (btn && mySeq === _lyricSearchSeq) { btn.disabled = false; btn.textContent = "搜索"; }
     }
   }
 
@@ -508,9 +545,15 @@
   }
 
   async function applyLyricCandidate(index) {
-    const cand = lyricCandidateCache[index];
+    const idx = Number(index);
+    const cand = Number.isInteger(idx) ? lyricCandidateCache[idx] : null;
     if (!cand) return;
+    if (_lyricApplyInFlight) {
+      alertToast("正在更新歌词，请稍候…");
+      return;
+    }
     if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.apply_track_lyrics) return;
+    _lyricApplyInFlight = true;
     const hint = document.getElementById("lyricMatchHint");
     if (hint) hint.textContent = "正在套用并锁定这首歌的歌词…";
     try {
@@ -529,11 +572,15 @@
     } catch (e) {
       console.error("apply_track_lyrics error:", e);
       if (hint) hint.textContent = "套用失败：" + e;
+    } finally {
+      _lyricApplyInFlight = false;
     }
   }
 
   async function clearTrackLyrics() {
+    if (_lyricApplyInFlight) return;
     if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.clear_track_lyrics) return;
+    _lyricApplyInFlight = true;
     const hint = document.getElementById("lyricMatchHint");
     try {
       await window.pywebview.api.clear_track_lyrics(lyricMatchTrackNumber);
@@ -542,11 +589,15 @@
       renderQueueList();
     } catch (e) {
       if (hint) hint.textContent = "清除失败：" + e;
+    } finally {
+      _lyricApplyInFlight = false;
     }
   }
 
   async function autoMatchTrackLyrics() {
+    if (_lyricApplyInFlight) return;
     if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.auto_match_track_lyrics) return;
+    _lyricApplyInFlight = true;
     const hint = document.getElementById("lyricMatchHint");
     if (hint) hint.textContent = "正在按曲名重新自动匹配…";
     try {
@@ -560,6 +611,8 @@
       renderQueueList();
     } catch (e) {
       if (hint) hint.textContent = "自动匹配失败：" + e;
+    } finally {
+      _lyricApplyInFlight = false;
     }
   }
 
@@ -887,23 +940,25 @@ function toggleDiscflowMenu(event) {
   }
 
   async function onAudioOutputModeChange(mode) {
+    const prevMode = currentCustomPrefs.audioOutputMode || "waveout";
     const norm = ["waveout", "wasapi_shared", "wasapi_exclusive"].includes(mode) ? mode : "waveout";
     applyAudioOutputModeUI(norm);
     currentCustomPrefs.audioOutputMode = norm;
-    try {
-      localStorage.setItem("discflow_custom_prefs", JSON.stringify(currentCustomPrefs));
-    } catch (e) {}
+    saveCustomPrefs();
     if (window.pywebview && window.pywebview.api && window.pywebview.api.set_audio_output_mode) {
       try {
         const res = await window.pywebview.api.set_audio_output_mode(norm);
         if (res && res.ok) {
           alertToast(`音频输出引擎：${res.label || norm}`);
+        } else if (res && res.ok === false) {
+          currentCustomPrefs.audioOutputMode = prevMode;
+          applyAudioOutputModeUI(prevMode);
+          saveCustomPrefs();
+          alertToast(res.reason || "切换音频输出引擎失败");
         }
       } catch (e) {
         console.warn("set_audio_output_mode error:", e);
       }
-    } else {
-      saveCustomPrefs();
     }
   }
 
@@ -1084,7 +1139,10 @@ function toggleDiscflowMenu(event) {
     activeLyricIndex: -1,
     lastCoverSignature: "",
     showTranslation: currentCustomPrefs.showTranslation !== false,
-    autoPlayDisc: true
+    autoPlayDisc: true,
+    isLocal: false,
+    isMaximized: false,
+    lyricsBatch: {}
   };
   window._discflowAppReady = true;
 
@@ -1213,17 +1271,37 @@ function toggleDiscflowMenu(event) {
   let isDraggingVolume = false;
   let userScrollLockUntil = 0;
 
+  var _vpScrollAnim = new WeakMap();
+  var _resizeRecenterTimer = null;
+  function _onLyricUserInteract(vp) {
+    userScrollLockUntil = Date.now() + 2600;
+    const animId = _vpScrollAnim.get(vp);
+    if (animId) {
+      cancelAnimationFrame(animId);
+      _vpScrollAnim.delete(vp);
+    }
+  }
+
   const lyricsViewport = document.getElementById("lyricsViewport");
   if (lyricsViewport) {
-    lyricsViewport.addEventListener("wheel", () => {
-      userScrollLockUntil = Date.now() + 2600;
-    }, { passive: true });
+    ["wheel", "touchstart", "pointerdown"].forEach(evt => {
+      lyricsViewport.addEventListener(evt, () => _onLyricUserInteract(lyricsViewport), { passive: true });
+    });
   }
   const standaloneLyricsVp = document.getElementById("standaloneLyricsViewport");
   if (standaloneLyricsVp) {
-    standaloneLyricsVp.addEventListener("wheel", () => {
-      userScrollLockUntil = Date.now() + 2600;
-    }, { passive: true });
+    ["wheel", "touchstart", "pointerdown"].forEach(evt => {
+      standaloneLyricsVp.addEventListener(evt, () => _onLyricUserInteract(standaloneLyricsVp), { passive: true });
+    });
+  }
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("resize", () => {
+      if (_resizeRecenterTimer) clearTimeout(_resizeRecenterTimer);
+      _resizeRecenterTimer = setTimeout(() => {
+        _resizeRecenterTimer = null;
+        if (typeof recenterActiveLyric === "function") recenterActiveLyric();
+      }, 120);
+    });
   }
 
   function formatTime(sec) {
@@ -1233,7 +1311,9 @@ function toggleDiscflowMenu(event) {
     return `${m}:${r < 10 ? "0" : ""}${r}`;
   }
 
+  var _paletteSeq = 0;
   function extractPaletteFromDataUrl(dataUrl) {
+    const mySeq = ++_paletteSeq;
     const meshEl = document.getElementById("meshCanvas");
     const ambientEl = document.getElementById("ambientShadow");
     const imgEl = document.getElementById("artworkImg");
@@ -1248,6 +1328,9 @@ function toggleDiscflowMenu(event) {
       ambientEl.style.backgroundImage = "none";
       if (backdropEl) backdropEl.style.backgroundImage = "none";
       document.body.classList.remove("has-artwork");
+      ["--mesh-c1", "--mesh-c2", "--mesh-c3", "--ambient-primary", "--ambient-secondary", "--vinyl-tint-highlight", "--vinyl-tint-base", "--vinyl-tint-dark"].forEach(prop => {
+        document.documentElement.style.removeProperty(prop);
+      });
       return;
     }
 
@@ -1262,6 +1345,7 @@ function toggleDiscflowMenu(event) {
 
     const tempImg = new Image();
     tempImg.onload = () => {
+      if (mySeq !== _paletteSeq) return;
       try {
         const canvas = document.createElement("canvas");
         const size = 48;
@@ -1607,7 +1691,6 @@ function toggleDiscflowMenu(event) {
     renderKaraokeWords(activeIdx, effectiveProbe);
   }
 
-  const _vpScrollAnim = new WeakMap();
   function smoothScrollViewport(vp, targetTop, durationMs = 220) {
     const prevId = _vpScrollAnim.get(vp);
     if (prevId) cancelAnimationFrame(prevId);
@@ -1880,15 +1963,15 @@ function toggleDiscflowMenu(event) {
       const cancelBtn = document.getElementById("ripCancelBtn");
       if (p.is_completed) {
         ripFinishedOk = true;
-        clearInterval(ripPollTimer);
-        ripPollTimer = null;
+        if (ripPollTimer) { clearInterval(ripPollTimer); ripPollTimer = null; }
         if (doneBtn) { doneBtn.textContent = "前往资料库"; doneBtn.style.display = "inline-flex"; }
         if (cancelBtn) cancelBtn.style.display = "none";
-      } else if (!p.is_ripping && p.error_message) {
+      } else if (!p.is_ripping) {
         ripFinishedOk = false;
-        clearInterval(ripPollTimer);
-        ripPollTimer = null;
-        document.getElementById("ripStatusText").textContent = `错误: ${p.error_message}`;
+        if (ripPollTimer) { clearInterval(ripPollTimer); ripPollTimer = null; }
+        if (p.error_message) {
+          document.getElementById("ripStatusText").textContent = `错误: ${p.error_message}`;
+        }
         if (cancelBtn) cancelBtn.style.display = "none";
         if (doneBtn) { doneBtn.textContent = "关闭"; doneBtn.style.display = "inline-flex"; }
       }
@@ -1968,7 +2051,10 @@ function toggleDiscflowMenu(event) {
     executeModalSearch();
   }
 
+  let _modalSearchSeq = 0;
+
   async function executeModalSearch() {
+    const mySeq = ++_modalSearchSeq;
     const input = document.getElementById("modalSearchInput");
     const term = (input ? input.value : "").trim().toLowerCase();
     const resEl = document.getElementById("modalSearchResults");
@@ -1991,6 +2077,7 @@ function toggleDiscflowMenu(event) {
           cachedLocalAlbums = (await window.pywebview.api.list_local_albums()) || [];
         } catch(e) {}
       }
+      if (mySeq !== _modalSearchSeq) return;
     }
 
     const matched = [];
@@ -2023,17 +2110,17 @@ function toggleDiscflowMenu(event) {
     matched.forEach(item => {
       const alb = item.album;
       const coverSrc = alb.thumb_data_url || alb.cover_data_url || "";
-      const discIdSafe = alb.disc_id.replace(/'/g, "\'");
+      const safeDiscAttr = escapeHtml(alb.disc_id || "");
       const trackHighlight = item.matchedTracks.length > 0
         ? `· 命中歌曲: ${item.matchedTracks.map(t => escapeHtml(t.title)).join(", ")}`
         : "";
 
       html += `
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: var(--radius-panel); background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-hairline);">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: var(--radius-panel); background: var(--bg-pill); border: 1px solid var(--border-hairline);">
           <div style="display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1;">
             ${coverSrc
               ? `<img src="${coverSrc}" style="width: 44px; height: 44px; border-radius: var(--radius-chip); object-fit: cover; flex-shrink: 0;" />`
-              : `<div style="width: 44px; height: 44px; border-radius: var(--radius-chip); background: #222; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">💿</div>`
+              : `<div style="width: 44px; height: 44px; border-radius: var(--radius-chip); background: var(--bg-pill); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">💿</div>`
             }
             <div style="min-width: 0; flex: 1;">
               <div style="font-weight: 600; font-size: 13.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
@@ -2045,12 +2132,21 @@ function toggleDiscflowMenu(event) {
             </div>
           </div>
           <div style="display: flex; gap: 6px; margin-left: 10px; flex-shrink: 0;">
-            <button class="pill-btn active" onclick="playLocalAlbumFromSearch('${discIdSafe}')" style="padding: 3px 12px; font-size: 12px;">▶ 播放</button>
+            <button class="pill-btn active" data-action="play-search" data-disc-id="${safeDiscAttr}" style="padding: 3px 12px; font-size: 12px;">▶ 播放</button>
           </div>
         </div>
       `;
     });
     resEl.innerHTML = html;
+    if (!resEl._delegatedBound) {
+      resEl._delegatedBound = true;
+      resEl.addEventListener("click", (ev) => {
+        const btn = ev.target && ev.target.closest ? ev.target.closest('button[data-action="play-search"]') : null;
+        if (btn && btn.dataset.discId !== undefined) {
+          playLocalAlbumFromSearch(btn.dataset.discId);
+        }
+      });
+    }
   }
 
   async function playLocalAlbumFromSearch(discId) {
@@ -2161,6 +2257,10 @@ function toggleDiscflowMenu(event) {
       }).join("||");
 
       if (!forceReload && hasRenderedCards && window._libraryRenderSig === nextSig) {
+        const libSearchInput = document.getElementById("librarySearchInput");
+        if (libSearchInput && libSearchInput.value.trim()) {
+          filterLibraryCards(libSearchInput.value);
+        }
         return;
       }
       window._libraryRenderSig = nextSig;
@@ -2170,11 +2270,11 @@ function toggleDiscflowMenu(event) {
         const coverSrc = alb.thumb_data_url || alb.cover_data_url || "";
         const durFormatted = formatTime(alb.total_duration_sec);
         const trackCount = alb.tracks ? alb.tracks.length : 0;
-        const discIdSafe = alb.disc_id.replace(/'/g, "\'");
+        const safeDiscAttr = escapeHtml(alb.disc_id || "");
         const trackNamesSafe = (alb.tracks || []).map(t => (t.title || '').toLowerCase()).join(' ');
 
         html += `
-          <div class="vinyl-card" data-tracks="${escapeHtml(trackNamesSafe)}" onclick="playLocalAlbumWithAnimation(this, '${discIdSafe}')" title="点击免光驱无损播放《${escapeHtml(alb.title)}》">
+          <div class="vinyl-card" data-disc-id="${safeDiscAttr}" data-tracks="${escapeHtml(trackNamesSafe)}" title="点击免光驱无损播放《${escapeHtml(alb.title)}》">
             <div class="vinyl-stage">
               <!-- 纸质唱片封套 -->
               <div class="vinyl-sleeve">
@@ -2192,18 +2292,40 @@ function toggleDiscflowMenu(event) {
             <div class="vinyl-info-footer">
               <span>${trackCount} 首 · ${durFormatted}</span>
               <span class="vinyl-card-ops">
-                <button class="vinyl-delete-btn" onclick="openEditLocalAlbumModal(event, '${discIdSafe}')" title="编辑专辑与曲目名">编辑</button>
-                <button class="vinyl-delete-btn" onclick="pickAlbumCover(event, '${discIdSafe}')" title="更换封面">封面</button>
-                <button class="vinyl-delete-btn" onclick="deleteLocalAlbum(event, '${discIdSafe}')" title="移除唱片">删除</button>
+                <button class="vinyl-delete-btn" data-action="edit" data-disc-id="${safeDiscAttr}" title="编辑专辑与曲目名">编辑</button>
+                <button class="vinyl-delete-btn" data-action="cover" data-disc-id="${safeDiscAttr}" title="更换封面">封面</button>
+                <button class="vinyl-delete-btn" data-action="delete" data-disc-id="${safeDiscAttr}" title="移除唱片">删除</button>
               </span>
             </div>
           </div>
         `;
       });
       grid.innerHTML = html;
+      if (!grid._delegatedBound) {
+        grid._delegatedBound = true;
+        grid.addEventListener("click", (ev) => {
+          const opBtn = ev.target && ev.target.closest ? ev.target.closest("button[data-action][data-disc-id]") : null;
+          if (opBtn) {
+            const action = opBtn.dataset.action;
+            const dId = opBtn.dataset.discId || "";
+            if (action === "edit") openEditLocalAlbumModal(ev, dId);
+            else if (action === "cover") pickAlbumCover(ev, dId);
+            else if (action === "delete") deleteLocalAlbum(ev, dId);
+            return;
+          }
+          const card = ev.target && ev.target.closest ? ev.target.closest(".vinyl-card[data-disc-id]") : null;
+          if (card && card.dataset.discId !== undefined) {
+            playLocalAlbumWithAnimation(card, card.dataset.discId);
+          }
+        });
+      }
+      const libSearchInput = document.getElementById("librarySearchInput");
+      if (libSearchInput && libSearchInput.value.trim()) {
+        filterLibraryCards(libSearchInput.value);
+      }
     } catch (e) {
       console.error("renderLibraryCards failed:", e);
-      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #FF453A; padding: 40px;">加载资料库失败: ${e}</div>`;
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--danger-text, #FF453A); padding: 40px;">加载资料库失败: ${escapeHtml(e)}</div>`;
     }
   }
 
@@ -2212,11 +2334,11 @@ function toggleDiscflowMenu(event) {
     const alb = cache.find(a => a && a.disc_id === discId);
     if (!alb || typeof window.applyBackendState !== "function") return false;
     const tracks = (alb.tracks || []).map((t, idx) => ({
-      trackNumber: t.track_number || (idx + 1),
+      track_number: Number(t.track_number) || (idx + 1),
       title: t.title || `Track ${String(idx + 1).padStart(2, "0")}`,
       artist: t.artist || alb.artist || "",
-      durationSec: Number(t.duration_sec || 0),
-      durationFormatted: formatTime(Number(t.duration_sec || 0)),
+      duration_sec: Number(t.duration_sec || 0),
+      lyrics: Array.isArray(t.lyrics) ? t.lyrics : [],
       lyricsLocked: Boolean(t.lyrics_locked),
       lyricsMissed: false,
     }));
@@ -2224,14 +2346,16 @@ function toggleDiscflowMenu(event) {
     window.applyBackendState({
       discId: alb.disc_id,
       drive: "",
+      isLocal: true,
       albumTitle: alb.title || "Local Album",
       artist: alb.artist || "Local Artist",
       year: alb.year || "",
       coverDataUrl: alb.cover_data_url || alb.thumb_data_url || "",
       tracks,
+      lyrics: (first && Array.isArray(first.lyrics)) ? first.lyrics : [],
       currentTrackIndex: 0,
       elapsedSec: 0,
-      durationSec: first ? first.durationSec : 0,
+      durationSec: first ? first.duration_sec : 0,
       isPlaying: true,
       isPaused: false,
       isLoading: false,
@@ -2294,16 +2418,19 @@ function toggleDiscflowMenu(event) {
   }
 
   async function deleteLocalAlbum(e, discId) {
-    e.stopPropagation();
-    if (!confirm("确定要从资源库删除这张唱片吗？\n\n专辑音频文件（WAV）、封面与元数据将被一并物理删除，且不可恢复。")) {
+    if (e) e.stopPropagation();
+    if (!confirm("确定要从资源库删除这张唱片吗？\n\n专辑音频文件、封面与元数据将被一并物理删除，且不可恢复。")) {
       return;
     }
     if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.delete_local_album) return;
     try {
       const res = await window.pywebview.api.delete_local_album(discId);
       if (res && res.ok) {
-        appState.currentTrackIndex = 0;
-        await renderLibraryCards();
+        if (appState.isLocal && appState.discId === discId) {
+          appState.currentTrackIndex = 0;
+          triggerImmediatePoll();
+        }
+        await renderLibraryCards(true);
         return;
       }
       const failedList = (res && res.failed) ? res.failed : [];
@@ -2403,7 +2530,7 @@ function toggleDiscflowMenu(event) {
         if (ok) {
           closeModal("editLocalAlbumModal");
           showToast("专辑与曲目信息已更新");
-          renderLibraryCards();
+          await renderLibraryCards(true);
           triggerImmediatePoll();
         } else {
           showToast("保存失败");
@@ -2497,11 +2624,17 @@ function toggleDiscflowMenu(event) {
     let isDraggingFluidVol = false;
     function handleFluidVolPointer(e) {
       const rect = fluidVolHit.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
       const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
       const pct = Math.round((x / rect.width) * 100);
       setVolumePercent(pct);
       syncFluidControls();
     }
+    const endFluidVolDrag = () => {
+      if (!isDraggingFluidVol) return;
+      isDraggingFluidVol = false;
+      schedulePersistVolume();
+    };
     fluidVolHit.addEventListener("pointerdown", (e) => {
       isDraggingFluidVol = true;
       fluidVolHit.setPointerCapture(e.pointerId);
@@ -2510,9 +2643,9 @@ function toggleDiscflowMenu(event) {
     fluidVolHit.addEventListener("pointermove", (e) => {
       if (isDraggingFluidVol) handleFluidVolPointer(e);
     });
-    fluidVolHit.addEventListener("pointerup", () => {
-      isDraggingFluidVol = false;
-    });
+    fluidVolHit.addEventListener("pointerup", endFluidVolDrag);
+    fluidVolHit.addEventListener("pointercancel", endFluidVolDrag);
+    fluidVolHit.addEventListener("lostpointercapture", endFluidVolDrag);
   }
 
   // ================= 谜底黑胶 (MD Vinyl) 沉浸播放模式交互 =================
@@ -2548,6 +2681,66 @@ function toggleDiscflowMenu(event) {
     setPlayMode(nextMode);
   }
 
+  var _arrowSeekTargetSec = null;
+  var _arrowSeekActiveUntil = 0;
+  var _arrowSeekCommitTimer = null;
+
+  function _closeTopOpenModal(topModal) {
+    if (!topModal) return;
+    if (topModal.id === "ripModal") {
+      if (typeof ripFinishedOk !== "undefined" && ripFinishedOk) {
+        finishRippingAndShowLibrary();
+      } else {
+        cancelRippingAndClose();
+      }
+      return;
+    }
+    closeModal(topModal.id);
+  }
+
+  function _accumulateArrowSeek(deltaSec) {
+    const dur = Math.max(0, Number(appState.durationSec) || 0);
+    if (dur <= 0 || !appState.tracks || !appState.tracks.length) return;
+    const now = Date.now();
+    const baseSec = (now < _arrowSeekActiveUntil && typeof _arrowSeekTargetSec === "number")
+      ? _arrowSeekTargetSec
+      : (appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0));
+    const nextSec = Math.min(dur, Math.max(0, baseSec + deltaSec));
+    _arrowSeekTargetSec = nextSec;
+    _arrowSeekActiveUntil = now + 1500;
+    appState.elapsedSec = nextSec;
+    karaokeClock = nextSec;
+    karaokeLastTs = performance.now();
+    userScrollLockUntil = 0;
+
+    const pct = dur > 0 ? Math.min(100, Math.max(0, (nextSec / dur) * 100)) : 0;
+    const rem = Math.max(0, dur - nextSec);
+    const sf = document.getElementById("scrubberFill");
+    if (sf) sf.style.width = `${pct}%`;
+    const et = document.getElementById("elapsedTime");
+    if (et) et.textContent = formatTime(nextSec);
+    const rt = document.getElementById("remainingTime");
+    if (rt) rt.textContent = `-${formatTime(rem)}`;
+    const df = document.getElementById("dockScrubberFill");
+    if (df) df.style.width = `${pct}%`;
+    const de = document.getElementById("dockElapsedTime");
+    if (de) de.textContent = formatTime(nextSec);
+    const dr = document.getElementById("dockRemainingTime");
+    if (dr) dr.textContent = `-${formatTime(rem)}`;
+
+    updateActiveLyric(nextSec, true);
+    renderKaraokeWords(appState.activeLyricIndex, nextSec - (Number(currentTrackLyricOffset) || 0.0));
+
+    if (_arrowSeekCommitTimer) clearTimeout(_arrowSeekCommitTimer);
+    _arrowSeekCommitTimer = setTimeout(() => {
+      _arrowSeekCommitTimer = null;
+      const commitSec = _arrowSeekTargetSec;
+      if (typeof commitSec === "number" && window.pywebview && window.pywebview.api) {
+        window.pywebview.api.seek_to(commitSec).then(() => triggerImmediatePoll()).catch(() => {});
+      }
+    }, 90);
+  }
+
   // 全局键盘快捷键与多媒体键全面支持 (Stage 4)
   window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
@@ -2563,16 +2756,17 @@ function toggleDiscflowMenu(event) {
       toggleFullscreenImmersive();
       return;
     }
-    // 忽略在输入框、下拉框或可编辑区域内的按键
+    const openModals = document.querySelectorAll(".popup-modal-overlay.open");
+    if (e.key === "Escape" && openModals.length > 0) {
+      e.preventDefault();
+      _closeTopOpenModal(openModals[openModals.length - 1]);
+      return;
+    }
+    // 忽略在输入框、下拉框或可编辑区域内的非 Esc 快捷键
     if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT" || e.target.isContentEditable)) {
       return;
     }
 
-    const openModals = document.querySelectorAll(".popup-modal-overlay.open");
-    if (e.key === "Escape" && openModals.length > 0) {
-      openModals[openModals.length - 1].classList.remove("open");
-      return;
-    }
     if (openModals.length > 0) {
       return;
     }
@@ -2590,23 +2784,20 @@ function toggleDiscflowMenu(event) {
       e.preventDefault();
       togglePlayPause();
     } else if (e.key === "ArrowRight" || e.code === "ArrowRight") {
-      // 快进 5 秒
+      // 快进 5 秒（支持连按累加）
       e.preventDefault();
-      const targetSec = Math.min((appState.durationSec || 0), (appState.elapsedSec || 0) + 5);
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
-      }
+      _accumulateArrowSeek(5);
     } else if (e.key === "ArrowLeft" || e.code === "ArrowLeft") {
-      // 快退 5 秒
+      // 快退 5 秒（支持连按累加）
       e.preventDefault();
-      const targetSec = Math.max(0, (appState.elapsedSec || 0) - 5);
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
-      }
+      _accumulateArrowSeek(-5);
     } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault();
       const cur = typeof appState.volume === "number" ? appState.volume : 80;
       setVolumePercent(cur + (e.key === "ArrowUp" ? 5 : -5), true);
+    } else if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "t" || e.key === "T" || e.code === "KeyT")) {
+      e.preventDefault();
+      toggleBilingualLyrics();
     } else if (e.key === "MediaTrackNext") {
       nextTrack();
     } else if (e.key === "MediaTrackPrevious") {
@@ -2724,13 +2915,30 @@ function toggleDiscflowMenu(event) {
     }
   }
 
+  var _toastTimer = null;
   function alertToast(msg) {
+    const text = String(msg || "").trim();
+    if (!text) return;
+    const toastEl = document.getElementById("appToast");
+    if (toastEl) {
+      toastEl.textContent = text;
+      toastEl.setAttribute("aria-hidden", "false");
+      toastEl.classList.add("visible");
+      if (_toastTimer) clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => {
+        _toastTimer = null;
+        toastEl.classList.remove("visible");
+        toastEl.setAttribute("aria-hidden", "true");
+      }, 3000);
+      return;
+    }
     const dot = document.getElementById("statusText");
     if (dot) {
-      const old = dot.textContent;
-      dot.textContent = msg;
-      setTimeout(() => { dot.textContent = old; }, 3200);
+      dot.textContent = text;
     }
+  }
+  function showToast(msg) {
+    return alertToast(msg);
   }
 
   function escapeHtml(str) {
@@ -2738,7 +2946,8 @@ function toggleDiscflowMenu(event) {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   let localMetaVer = -1;
@@ -2746,6 +2955,7 @@ function toggleDiscflowMenu(event) {
   let pollInFlight = false;
   let pollPending = false;
   let lastCoverRecoveryKey = "";
+  let lastLyricsRecoveryKey = "";
 
   window.applyBackendState = function(payload) {
     if (!payload) return;
@@ -2760,6 +2970,42 @@ function toggleDiscflowMenu(event) {
     }
 
     Object.assign(appState, payload);
+    if ("currentTrackIndex" in payload) {
+      const coercedIdx = Number(payload.currentTrackIndex);
+      appState.currentTrackIndex = Number.isFinite(coercedIdx) ? Math.max(0, Math.trunc(coercedIdx)) : 0;
+    }
+    if ("themeMode" in payload && (payload.themeMode === "light" || payload.themeMode === "dark")) {
+      if (currentCustomPrefs.themeMode !== payload.themeMode) {
+        applyTheme(payload.themeMode, false);
+      }
+    }
+    if ("showTranslation" in payload) {
+      const nextShow = payload.showTranslation !== false;
+      appState.showTranslation = nextShow;
+      if (currentCustomPrefs.showTranslation !== nextShow) {
+        currentCustomPrefs.showTranslation = nextShow;
+        applyTranslationVisibility(nextShow);
+      }
+    }
+    if ("autoPlayDisc" in payload && typeof payload.autoPlayDisc === "boolean") {
+      currentCustomPrefs.autoPlay = payload.autoPlayDisc;
+      const apLabel = document.getElementById("autoPlayLabel");
+      if (apLabel) apLabel.textContent = payload.autoPlayDisc ? "已开启" : "已关闭";
+      const apSwitch = document.getElementById("autoPlaySwitch");
+      if (apSwitch) apSwitch.checked = payload.autoPlayDisc;
+    }
+    if ("audioOutputMode" in payload && typeof payload.audioOutputMode === "string") {
+      const normMode = ["waveout", "wasapi_shared", "wasapi_exclusive"].includes(payload.audioOutputMode)
+        ? payload.audioOutputMode
+        : "waveout";
+      if (currentCustomPrefs.audioOutputMode !== normMode) {
+        currentCustomPrefs.audioOutputMode = normMode;
+        applyAudioOutputModeUI(normMode);
+      }
+    }
+    if ("isMaximized" in payload) {
+      syncMaximizedUI(!!payload.isMaximized);
+    }
     if (typeof payload.lyricOffset === "number") {
       const curKey = _getLyricOffsetTrackKey();
       if (curKey !== _lyricOffsetGuardTrackKey || Date.now() > _lyricOffsetGuardUntil) {
@@ -2841,9 +3087,11 @@ function toggleDiscflowMenu(event) {
         (appState.lyrics || [])
           .map(l => `${l.time}|${l.text}|${l.translation || ""}`)
           .join("\n");
+      const hasNonCreditLines = Array.isArray(appState.lyrics) && appState.lyrics.some(
+        (l, idx) => l && !isCreditLyricLine(l.text, idx, l.time) && String(l.text || "").trim()
+      );
       const missingWordDom = Boolean(
-        appState.lyrics &&
-        appState.lyrics.length > 0 &&
+        hasNonCreditLines &&
         !document.querySelector("#lyricsViewport .lyric-word")
       );
       if (window._lastLyricsSig !== sig || missingWordDom) {
@@ -2923,7 +3171,7 @@ function toggleDiscflowMenu(event) {
 
   window.__onBackendStatePush = function(res) {
     if (!res) return;
-    // 防乱序覆盖：忽略或剥离版本号低于本地已应用版本的过时元数据/歌词快照；
+    // 防乱序覆盖：若整包元数据版本低于本地已应用版本，直接丢弃整份过时快照并触发一次补拉；
     // 仅当包内确实携带 tracks/albumTitle 或 lyrics 载荷时才确认推进对应版本号，避免空包提前确认丢数据。
     const patch = { ...res };
     const hasMetaPayload = ("tracks" in patch) || ("albumTitle" in patch);
@@ -2932,17 +3180,8 @@ function toggleDiscflowMenu(event) {
 
     if (typeof patch.metaVersion === "number") {
       if (patch.metaVersion < localMetaVer) {
-        delete patch.albumTitle;
-        delete patch.artist;
-        delete patch.year;
-        delete patch.source;
-        delete patch.coverDataUrl;
-        delete patch.tracks;
-        delete patch.drive;
-        delete patch.drives;
-        delete patch.discId;
-        delete patch.freedbId;
-        patch.metaVersion = localMetaVer;
+        triggerImmediatePoll();
+        return;
       } else if (hasMetaPayload) {
         localMetaVer = patch.metaVersion;
       } else if (patch.metaVersion > localMetaVer) {
@@ -2952,6 +3191,7 @@ function toggleDiscflowMenu(event) {
     if (typeof patch.lyricsVersion === "number") {
       if (patch.lyricsVersion < localLyricsVer) {
         delete patch.lyrics;
+        delete patch.lyricOffset;
         patch.lyricsVersion = localLyricsVer;
       } else if (hasLyricsPayload) {
         localLyricsVer = patch.lyricsVersion;
@@ -2977,12 +3217,17 @@ function toggleDiscflowMenu(event) {
     }
     pollInFlight = true;
     try {
-      // 自愈兜底：当前有唱片但前端尚未拿到歌词/封面时，请求后端补发最新完整状态
+      // 自愈兜底：当前有唱片但前端尚未拿到歌词/封面时，请求后端补发最新完整状态（按 Key 去重，避免无词曲目轮询抖动）
+      const lyricsRecKey = `${appState.discId || ""}#${appState.currentTrackIndex || 0}#${localLyricsVer}`;
       const needLyricsRecovery = Boolean(
         appState.discId &&
         (appState.tracks || []).length > 0 &&
-        (!appState.lyrics || appState.lyrics.length === 0)
+        (!appState.lyrics || appState.lyrics.length === 0) &&
+        lastLyricsRecoveryKey !== lyricsRecKey
       );
+      if (needLyricsRecovery) {
+        lastLyricsRecoveryKey = lyricsRecKey;
+      }
       const coverKey = `${appState.discId || ""}#${appState.albumTitle || ""}`;
       const needCoverRecovery = Boolean(
         appState.discId &&
@@ -3023,16 +3268,30 @@ function toggleDiscflowMenu(event) {
     setTimeout(pollBackendState, 0);
   }
 
+  function _optimisticSeekUi(targetSec) {
+    appState.elapsedSec = targetSec;
+    karaokeClock = targetSec;
+    karaokeLastTs = performance.now();
+    userScrollLockUntil = 0;
+    updateActiveLyric(targetSec, true);
+    renderKaraokeWords(appState.activeLyricIndex, targetSec - (Number(currentTrackLyricOffset) || 0.0));
+  }
+
   const scrubberHit = document.getElementById("scrubberHit");
   function handleScrubberPointer(e, commit) {
+    if (!scrubberHit) return;
     const rect = scrubberHit.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const targetSec = ratio * (appState.durationSec || 0);
     document.getElementById("scrubberFill").style.width = `${ratio * 100}%`;
     document.getElementById("elapsedTime").textContent = formatTime(targetSec);
     document.getElementById("remainingTime").textContent = `-${formatTime((appState.durationSec || 0) - targetSec)}`;
-    if (commit && window.pywebview && window.pywebview.api) {
-      window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
+    if (commit) {
+      _optimisticSeekUi(targetSec);
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
+      }
     }
   }
 
@@ -3047,12 +3306,15 @@ function toggleDiscflowMenu(event) {
     if (isDraggingScrubber) handleScrubberPointer(e, false);
   });
 
-  scrubberHit.addEventListener("pointerup", (e) => {
+  const endMainScrubber = (e, commit) => {
     if (!isDraggingScrubber) return;
     isDraggingScrubber = false;
     scrubberHit.classList.remove("dragging");
-    handleScrubberPointer(e, true);
-  });
+    if (commit) handleScrubberPointer(e, true);
+  };
+  scrubberHit.addEventListener("pointerup", (e) => endMainScrubber(e, true));
+  scrubberHit.addEventListener("pointercancel", (e) => endMainScrubber(e, false));
+  scrubberHit.addEventListener("lostpointercapture", (e) => endMainScrubber(e, false));
 
   const immScrubberHit = document.getElementById("immScrubberHit");
   if (immScrubberHit) {
@@ -3064,16 +3326,20 @@ function toggleDiscflowMenu(event) {
     immScrubberHit.addEventListener("pointermove", (e) => {
       if (isDraggingScrubber) handleImmScrubberPointer(e, false);
     });
-    immScrubberHit.addEventListener("pointerup", (e) => {
+    const endImmScrubber = (e, commit) => {
       if (!isDraggingScrubber) return;
       isDraggingScrubber = false;
-      handleImmScrubberPointer(e, true);
-    });
+      if (commit) handleImmScrubberPointer(e, true);
+    };
+    immScrubberHit.addEventListener("pointerup", (e) => endImmScrubber(e, true));
+    immScrubberHit.addEventListener("pointercancel", (e) => endImmScrubber(e, false));
+    immScrubberHit.addEventListener("lostpointercapture", (e) => endImmScrubber(e, false));
   }
 
   function handleImmScrubberPointer(e, commit) {
     if (!immScrubberHit) return;
     const rect = immScrubberHit.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const targetSec = ratio * (appState.durationSec || 0);
     const fillEl = document.getElementById("immScrubberFill");
@@ -3082,14 +3348,19 @@ function toggleDiscflowMenu(event) {
     if (elTime) elTime.textContent = formatTime(targetSec);
     const remTime = document.getElementById("immRemainingTime");
     if (remTime) remTime.textContent = `-${formatTime((appState.durationSec || 0) - targetSec)}`;
-    if (commit && window.pywebview && window.pywebview.api) {
-      window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
+    if (commit) {
+      _optimisticSeekUi(targetSec);
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
+      }
     }
   }
 
   const volHit = document.getElementById("volHit");
   function handleVolPointer(e) {
+    if (!volHit) return;
     const rect = volHit.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     setVolumePercent(Math.round(ratio * 100));
   }
@@ -3102,9 +3373,14 @@ function toggleDiscflowMenu(event) {
   volHit.addEventListener("pointermove", (e) => {
     if (isDraggingVolume) handleVolPointer(e);
   });
-  volHit.addEventListener("pointerup", () => {
+  const endVolHitDrag = () => {
+    if (!isDraggingVolume) return;
     isDraggingVolume = false;
-  });
+    schedulePersistVolume();
+  };
+  volHit.addEventListener("pointerup", endVolHitDrag);
+  volHit.addEventListener("pointercancel", endVolHitDrag);
+  volHit.addEventListener("lostpointercapture", endVolHitDrag);
 
   // ---------- 音量状态（var 声明避免渲染循环早于此处执行时的 TDZ 报错） ----------
   var isDraggingDockVol = false;
@@ -3200,9 +3476,11 @@ function toggleDiscflowMenu(event) {
     }
   }
   function playTrackIndex(idx) {
-    appState.currentTrackIndex = idx;
-    if (appState.tracks && appState.tracks[idx]) {
-      const title = appState.tracks[idx].title || `音轨 ${appState.tracks[idx].track_number}`;
+    const nIdx = Number(idx);
+    if (!Number.isInteger(nIdx) || nIdx < 0) return;
+    appState.currentTrackIndex = nIdx;
+    if (appState.tracks && appState.tracks[nIdx]) {
+      const title = appState.tracks[nIdx].title || `音轨 ${appState.tracks[nIdx].track_number}`;
       const titleEl = document.getElementById("immersiveTrackTitle");
       if (titleEl) titleEl.textContent = title;
       const lblEl = document.getElementById("mdLabelTrackTitle");
@@ -3213,7 +3491,7 @@ function toggleDiscflowMenu(event) {
     const rows = document.querySelectorAll("#fluidTrackList .fluid-track-row");
     rows.forEach((r, i) => {
       const numSpan = r.querySelector(".fluid-track-num");
-      if (i === idx) {
+      if (i === nIdx) {
         r.classList.add("is-current");
         if (numSpan) numSpan.textContent = "▶";
       } else {
@@ -3222,12 +3500,14 @@ function toggleDiscflowMenu(event) {
       }
     });
 
-    selectTrack(idx);
+    selectTrack(nIdx);
   }
 
   function selectTrack(idx) {
+    const nIdx = Number(idx);
+    if (!Number.isInteger(nIdx) || nIdx < 0) return;
     if (window.pywebview && window.pywebview.api) {
-      window.pywebview.api.play_track_index(idx).then(() => triggerImmediatePoll());
+      window.pywebview.api.play_track_index(nIdx).then(() => triggerImmediatePoll());
     }
   }
   function rescanDrive() {
@@ -3324,16 +3604,23 @@ function toggleDiscflowMenu(event) {
     }
   }
 
+  function syncMaximizedUI(isMax) {
+    const maxState = !!isMax;
+    if (typeof appState !== "undefined") appState.isMaximized = maxState;
+    document.documentElement.classList.toggle("is-maximized", maxState);
+    const btn = document.getElementById("winMaxBtn");
+    if (btn) {
+      btn.innerHTML = maxState
+        ? '<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="3.2" y="1.8" width="7" height="7" rx="1.3" stroke="currentColor" stroke-width="1.2"/><path d="M1.8 4.2v4.5A1.5 1.5 0 0 0 3.3 10.2h4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>'
+        : '<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="2" y="2" width="8" height="8" rx="1.6" stroke="currentColor" stroke-width="1.25"/></svg>';
+    }
+  }
+
   async function toggleMaximizeWindow() {
     if (window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize_window) {
       try {
         const isMax = await window.pywebview.api.toggle_maximize_window();
-        const btn = document.getElementById("winMaxBtn");
-        if (btn) {
-          btn.innerHTML = isMax
-            ? '<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="3.2" y="1.8" width="7" height="7" rx="1.3" stroke="currentColor" stroke-width="1.2"/><path d="M1.8 4.2v4.5A1.5 1.5 0 0 0 3.3 10.2h4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>'
-            : '<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="2" y="2" width="8" height="8" rx="1.6" stroke="currentColor" stroke-width="1.25"/></svg>';
-        }
+        syncMaximizedUI(isMax);
       } catch (e) {}
     }
   }
@@ -3410,7 +3697,7 @@ function toggleDiscflowMenu(event) {
       banner.classList.remove("is-latest");
       if (title) {
         title.textContent = `发现新版本 v${info.latestVersion}`;
-        title.style.color = "#4ade80";
+        title.style.color = "var(--success-text, #4ade80)";
       }
       const noteLine = (info.notes || "").split(/\r?\n/).find(l => l.trim()) || "点击右侧直接在软件内下载并覆盖安装最新版本";
       if (sub) sub.textContent = noteLine.replace(/^#+\s*/, "");
@@ -3506,7 +3793,7 @@ function toggleDiscflowMenu(event) {
       isUpdateDownloading = true;
       if (title) {
         title.textContent = `正在下载新版本 (${Math.round(pct)}%)`;
-        title.style.color = "#4ade80";
+        title.style.color = "var(--success-text, #4ade80)";
       }
       if (sub) sub.textContent = prog.statusText || "正在从发布服务器流式拉取安装包...";
       if (dlBtn) {
@@ -3518,7 +3805,7 @@ function toggleDiscflowMenu(event) {
       if (pBar) pBar.style.width = "100%";
       if (title) {
         title.textContent = "正在覆盖安装并重启...";
-        title.style.color = "#4ade80";
+        title.style.color = "var(--success-text, #4ade80)";
       }
       if (sub) sub.textContent = prog.statusText || "下载完成，即将自动替换旧版本并重启 Discflow";
       if (dlBtn) {
@@ -3534,7 +3821,7 @@ function toggleDiscflowMenu(event) {
       if (pBar) pBar.style.width = "100%";
       if (title) {
         title.textContent = "更新包下载并覆盖完成";
-        title.style.color = "#4ade80";
+        title.style.color = "var(--success-text, #4ade80)";
       }
       if (sub) sub.textContent = prog.statusText || "已完成覆盖安装";
       if (dlBtn) {
@@ -3549,12 +3836,18 @@ function toggleDiscflowMenu(event) {
       }
       if (title) {
         title.textContent = prog.status === "error" ? "更新下载失败" : "更新已取消";
-        title.style.color = "#f87171";
+        title.style.color = "var(--danger-text, #f87171)";
       }
       if (sub) sub.textContent = prog.error || prog.statusText || "请检查网络连接后重试";
       if (dlBtn) {
         dlBtn.disabled = false;
         dlBtn.textContent = "重试更新";
+      }
+    } else if (!prog.status || prog.status === "idle") {
+      isUpdateDownloading = false;
+      if (updateDownloadTimer) {
+        clearInterval(updateDownloadTimer);
+        updateDownloadTimer = null;
       }
     }
   }
@@ -3719,16 +4012,20 @@ function toggleDiscflowMenu(event) {
     dockScrubberHit.addEventListener("pointermove", (e) => {
       if (isDraggingScrubber) handleDockScrubberPointer(e, false);
     });
-    dockScrubberHit.addEventListener("pointerup", (e) => {
+    const endDockScrubber = (e, commit) => {
       if (!isDraggingScrubber) return;
       isDraggingScrubber = false;
-      handleDockScrubberPointer(e, true);
-    });
+      if (commit) handleDockScrubberPointer(e, true);
+    };
+    dockScrubberHit.addEventListener("pointerup", (e) => endDockScrubber(e, true));
+    dockScrubberHit.addEventListener("pointercancel", (e) => endDockScrubber(e, false));
+    dockScrubberHit.addEventListener("lostpointercapture", (e) => endDockScrubber(e, false));
   }
 
   function handleDockScrubberPointer(e, commit) {
     if (!dockScrubberHit) return;
     const rect = dockScrubberHit.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
     const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const targetSec = ratio * (appState.durationSec || 0);
     const fill = document.getElementById("dockScrubberFill");
@@ -3737,8 +4034,11 @@ function toggleDiscflowMenu(event) {
     if (elTime) elTime.textContent = formatTime(targetSec);
     const remTime = document.getElementById("dockRemainingTime");
     if (remTime) remTime.textContent = `-${formatTime((appState.durationSec || 0) - targetSec)}`;
-    if (commit && window.pywebview && window.pywebview.api) {
-      window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
+    if (commit) {
+      _optimisticSeekUi(targetSec);
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.seek_to(targetSec).then(() => triggerImmediatePoll()).catch(() => {});
+      }
     }
   }
 
@@ -3779,6 +4079,7 @@ function toggleDiscflowMenu(event) {
   function handleDockVolPointer(e) {
     if (!dockVolHit) return;
     const rect = dockVolHit.getBoundingClientRect();
+    if (!rect || rect.height <= 0) return;
     // 竖向计算：从下到上为 0% 到 100%
     const ratio = Math.min(1, Math.max(0, (rect.bottom - e.clientY) / rect.height));
     const pct = ratio * 100;

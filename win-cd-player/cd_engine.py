@@ -6,6 +6,7 @@ Discflow 底层光驱硬件通信、CD-TEXT 读取、MusicBrainz/FreeDB DiscID �
 """
 
 import base64
+import collections
 import ctypes
 from ctypes import wintypes
 import hashlib
@@ -374,6 +375,16 @@ class WindowsCdDriveManager:
         if len(payload) < 18:
             return "", "", {}, {}
 
+        # 依据 MMC/Red Book CD-TEXT 规范过滤扩展标志 (pack[1] & 0x80) 与多语言 Block (pack[3] >> 4 & 0x07)
+        available_blocks = set()
+        for offset in range(0, len(payload) - 17, 18):
+            pack = payload[offset : offset + 18]
+            if pack[0] in (0x80, 0x81) and not (pack[1] & 0x80):
+                available_blocks.add((pack[3] >> 4) & 0x07)
+        if not available_blocks:
+            return "", "", {}, {}
+        primary_block = 0 if 0 in available_blocks else min(available_blocks)
+
         title_buffers: Dict[int, bytearray] = {}
         artist_buffers: Dict[int, bytearray] = {}
         double_byte_tracks = set()
@@ -381,6 +392,11 @@ class WindowsCdDriveManager:
         for offset in range(0, len(payload) - 17, 18):
             pack = payload[offset : offset + 18]
             pack_type = pack[0]
+            if pack[1] & 0x80:
+                continue
+            block_num = (pack[3] >> 4) & 0x07
+            if block_num != primary_block:
+                continue
             trk_no = pack[1] & 0x7F
             is_double_byte = bool(pack[3] & 0x80)
             text_chunk = pack[4:16]
@@ -485,15 +501,20 @@ class WindowsCdDriveManager:
                 ctypes.byref(bytes_returned),
                 None,
             )
-            if not ok:
+            if not ok or bytes_returned.value < 4:
                 return None
 
             first_track = int(toc.FirstTrack)
             last_track = int(toc.LastTrack)
-            if last_track < first_track or first_track < 1:
+            if last_track < first_track or first_track < 1 or last_track > 99:
                 return None
 
             num_tracks = last_track - first_track + 1
+            if num_tracks <= 0 or num_tracks > 99:
+                return None
+            required_toc_bytes = 4 + (num_tracks + 1) * ctypes.sizeof(TRACK_DATA)
+            if bytes_returned.value < required_toc_bytes:
+                return None
             raw_entries = []
 
             for i in range(num_tracks + 1):
@@ -570,10 +591,12 @@ class _ReadChunk:
     seek_gen: int = 0
     is_track_boundary: bool = False
     is_eof: bool = False
+    is_error: bool = False
+    error_msg: str = ""
 
 
 class _LocalAudioReader:
-    """统一本地无损音频流读取器：无缝兼容 WAV（标准库）与 FLAC（soundfile/libsndfile）。"""
+    """统一本地无损音频流读取器：优先通过 soundfile/libsndfile 读取 WAV 与 FLAC（自动支持 8/16/24/32-bit 与 float -> int16），仅在 16-bit WAV 时允许回退标准库 wave。"""
 
     TARGET_SAMPLE_RATE = 44100
 
@@ -584,18 +607,26 @@ class _LocalAudioReader:
         self._total_frames = 0
         self._channels = 2
         self._samplerate = self.TARGET_SAMPLE_RATE
-        if filepath.lower().endswith(".wav"):
-            import wave
-            self._wave = wave.open(filepath, "rb")
-            self._total_frames = int(self._wave.getnframes())
-            self._channels = int(self._wave.getnchannels() or 2)
-            self._samplerate = int(self._wave.getframerate() or self.TARGET_SAMPLE_RATE)
-        else:
+        try:
             import soundfile as sf
             self._sf = sf.SoundFile(filepath, mode="r")
             self._total_frames = int(len(self._sf))
             self._channels = int(self._sf.channels or 2)
             self._samplerate = int(self._sf.samplerate or self.TARGET_SAMPLE_RATE)
+        except Exception:
+            self._sf = None
+            if filepath.lower().endswith(".wav"):
+                import wave
+                wf = wave.open(filepath, "rb")
+                if int(wf.getsampwidth()) != 2:
+                    wf.close()
+                    raise ValueError(f"不支持的 WAV 位深（仅回退支持 16-bit PCM，实际 {wf.getsampwidth() * 8}-bit）")
+                self._wave = wf
+                self._total_frames = int(self._wave.getnframes())
+                self._channels = int(self._wave.getnchannels() or 2)
+                self._samplerate = int(self._wave.getframerate() or self.TARGET_SAMPLE_RATE)
+            else:
+                raise
 
     @property
     def samplerate(self) -> int:
@@ -655,7 +686,13 @@ class _LocalAudioReader:
             elif arr.shape[1] > 2:
                 arr = arr[:, :2]
             if need_resample:
-                arr = self._resample_int16_stereo(arr, frames)
+                actual_src = arr.shape[0]
+                target_out = (
+                    frames
+                    if actual_src == src_frames
+                    else max(1, int(round(actual_src * float(self.TARGET_SAMPLE_RATE) / float(self._samplerate))))
+                )
+                arr = self._resample_int16_stereo(arr, target_out)
             return np.ascontiguousarray(arr, dtype="<i2").tobytes()
         if self._sf is not None:
             import numpy as np
@@ -667,7 +704,13 @@ class _LocalAudioReader:
             elif arr.shape[1] > 2:
                 arr = arr[:, :2]
             if need_resample:
-                arr = self._resample_int16_stereo(arr, frames)
+                actual_src = arr.shape[0]
+                target_out = (
+                    frames
+                    if actual_src == src_frames
+                    else max(1, int(round(actual_src * float(self.TARGET_SAMPLE_RATE) / float(self._samplerate))))
+                )
+                arr = self._resample_int16_stereo(arr, target_out)
             return np.ascontiguousarray(arr, dtype="<i2").tobytes()
         return b""
 
@@ -706,6 +749,7 @@ class CddaWaveOutPlayer:
     ):
         self._lock = threading.Lock()
         self._device_lock = threading.Lock()
+        self._wave_handle_lock = threading.Lock()
         self._session_id: int = 0
         self._drive_letter: str = ""
         self._track: Optional[CdTrackInfo] = None
@@ -732,8 +776,10 @@ class CddaWaveOutPlayer:
 
         # 复用音频输出句柄与读线程空闲信号
         self._h_wave: Optional[wintypes.HANDLE] = None
+        self._active_readers: int = 0
         self._reader_idle_event = threading.Event()
         self._reader_idle_event.set()
+        self._session_done_event: Optional[threading.Event] = None
 
         self.on_position = on_position
         self.on_finished = on_finished
@@ -765,9 +811,13 @@ class CddaWaveOutPlayer:
             self._next_track_index = track_index
 
     def load_and_play(self, drive_letter: str, track: CdTrackInfo, track_index: int = 0):
+        read_q: queue.Queue = queue.Queue(maxsize=25)
+        done_event = threading.Event()
         with self._lock:
             self._session_id += 1
             session_id = self._session_id
+            prev_done_event = self._session_done_event
+            self._session_done_event = done_event
             self._drive_letter = drive_letter
             self._track = track
             self._current_track_index = track_index
@@ -778,17 +828,19 @@ class CddaWaveOutPlayer:
             self._seek_generation = 0
             self._pause_change_pending = None
             self._volume_dirty = True
+            self._read_ahead_queue = read_q
 
-            # 清空上一轮预读队列
-            while not self._read_ahead_queue.empty():
+        # 若上一会话正在 waveOut 阻塞等待中，先立即复位唤醒其退出
+        with self._wave_handle_lock:
+            if self._h_wave and self._h_wave.value:
                 try:
-                    self._read_ahead_queue.get_nowait()
+                    winmm.waveOutReset(self._h_wave)
                 except Exception:
-                    break
+                    pass
 
         t = threading.Thread(
             target=self._run_loop,
-            args=(session_id, drive_letter, track, track_index),
+            args=(session_id, drive_letter, track, track_index, read_q, prev_done_event, done_event),
             daemon=True,
         )
         t.start()
@@ -813,7 +865,8 @@ class CddaWaveOutPlayer:
                 return
             offset_sectors = int(max(0.0, seconds) * CD_FRAMES_PER_SECOND)
             target_lba = self._track.start_lba + offset_sectors
-            self._current_lba = min(max(self._track.start_lba, target_lba), self._track.end_lba - 1)
+            max_lba = max(self._track.start_lba, self._track.end_lba - 1)
+            self._current_lba = max(self._track.start_lba, min(target_lba, max_lba))
             self._seek_target_lba = self._current_lba
             self._seek_reset_pending = True
             self._seek_generation += 1
@@ -830,10 +883,11 @@ class CddaWaveOutPlayer:
     def set_volume(self, volume_0_to_1: float):
         with self._lock:
             self._volume = max(0.0, min(1.0, volume_0_to_1))
+            vol = self._volume
             self._volume_dirty = True
-        with self._device_lock:
+        with self._wave_handle_lock:
             if self._h_wave and self._h_wave.value:
-                self._apply_hardware_volume(self._h_wave, self._volume)
+                self._apply_hardware_volume(self._h_wave, vol)
 
     def stop(self):
         """非阻塞立即失效当前播放代数令牌，并复位清空输出缓冲"""
@@ -847,7 +901,7 @@ class CddaWaveOutPlayer:
                     self._read_ahead_queue.get_nowait()
                 except Exception:
                     break
-        with self._device_lock:
+        with self._wave_handle_lock:
             if self._h_wave and self._h_wave.value:
                 try:
                     winmm.waveOutReset(self._h_wave)
@@ -861,7 +915,11 @@ class CddaWaveOutPlayer:
     def close(self):
         """彻底关闭并释放 waveOut 硬件句柄"""
         self.stop()
-        with self._device_lock:
+        with self._lock:
+            done_evt = self._session_done_event
+        if done_evt is not None:
+            done_evt.wait(timeout=2.0)
+        with self._wave_handle_lock:
             if self._h_wave and self._h_wave.value:
                 try:
                     winmm.waveOutReset(self._h_wave)
@@ -882,9 +940,16 @@ class CddaWaveOutPlayer:
         initial_drive: str,
         initial_track: CdTrackInfo,
         initial_index: int,
+        read_q: Optional[queue.Queue] = None,
+        pre_registered: bool = False,
     ):
         """内存预读线程 (RAM Read-Ahead Worker)：后台连续读取扇区，支持无缝复用句柄平滑跨轨"""
-        self._reader_idle_event.clear()
+        target_q = read_q if read_q is not None else self._read_ahead_queue
+        with self._lock:
+            if not pre_registered:
+                self._active_readers += 1
+            self._reader_idle_event.clear()
+
         cur_drv = initial_drive
         cur_trk = initial_track
         cur_idx = initial_index
@@ -897,6 +962,7 @@ class CddaWaveOutPlayer:
         current_opened_drive = ""
         wf_reader = None
         local_seek_gen = 0
+        rollback_next = None
 
         def open_media(trk: CdTrackInfo, drv: str):
             nonlocal h_drive, wf_reader, current_opened_drive
@@ -940,18 +1006,34 @@ class CddaWaveOutPlayer:
                     h_drive = WindowsCdDriveManager.open_drive_handle(drv)
                     current_opened_drive = drv
 
-        def push_chunk(chunk: _ReadChunk) -> str:
+        def push_chunk(chunk: _ReadChunk, ignore_seek: bool = False) -> str:
             while True:
                 with self._lock:
                     if self._session_id != my_session_id:
                         return "stopped"
-                    if self._seek_generation != chunk.seek_gen:
+                    if not ignore_seek and self._seek_generation != chunk.seek_gen:
                         return "stale_seek"
                 try:
-                    self._read_ahead_queue.put(chunk, timeout=0.08)
+                    target_q.put(chunk, timeout=0.08)
                     return "ok"
                 except queue.Full:
                     continue
+
+        def push_error_sentinel(msg: str):
+            with self._lock:
+                cur_gen = self._seek_generation
+            push_chunk(
+                _ReadChunk(
+                    lba=-1,
+                    data=b"",
+                    track=cur_trk,
+                    track_index=cur_idx,
+                    seek_gen=cur_gen,
+                    is_error=True,
+                    error_msg=msg,
+                ),
+                ignore_seek=True,
+            )
 
         try:
             open_media(cur_trk, cur_drv)
@@ -963,15 +1045,34 @@ class CddaWaveOutPlayer:
                         break
                     cur_seek_gen = self._seek_generation
                     seek_lba = self._seek_target_lba
+                    active_track = self._track
+                    active_idx = self._current_track_index
+                    active_drv = self._drive_letter
+
+                if active_track is cur_trk:
+                    rollback_next = None
 
                 if cur_seek_gen != local_seek_gen:
                     local_seek_gen = cur_seek_gen
+                    # 若在跨轨预读窗口内（播放仍在上一轨）触发了 Seek，回滚预读曲目并恢复 next_track
+                    if active_track is not None and active_track is not cur_trk:
+                        with self._lock:
+                            if (
+                                self._next_track is None
+                                and rollback_next is not None
+                                and rollback_next[1] is not active_track
+                            ):
+                                self._next_drive, self._next_track, self._next_track_index = rollback_next
+                        rollback_next = None
+                        cur_drv = active_drv or cur_drv
+                        cur_trk = active_track
+                        cur_idx = active_idx
+                        open_media(cur_trk, cur_drv)
                     cur_lba = seek_lba
                     if wf_reader is not None:
                         try:
                             target_frame = int(max(0, (cur_lba - cur_trk.start_lba) * 588))
-                            total_frames = wf_reader.getnframes()
-                            wf_reader.setpos(min(total_frames, target_frame))
+                            wf_reader.setpos(target_frame)
                         except Exception:
                             pass
 
@@ -985,6 +1086,8 @@ class CddaWaveOutPlayer:
 
                     if next_trk is not None:
                         # 顺序过渡到下一轨：同一光驱复用句柄，物理连续扇区免寻道
+                        prev_state = (cur_drv, cur_trk, cur_idx, cur_lba)
+                        rollback_next = (next_drv or cur_drv, next_trk, next_idx)
                         cur_drv = next_drv or cur_drv
                         cur_trk = next_trk
                         cur_idx = next_idx
@@ -1003,6 +1106,15 @@ class CddaWaveOutPlayer:
                         )
                         if push_res == "stopped":
                             break
+                        if push_res == "stale_seek":
+                            # 跨轨瞬间触发 Seek，立即回滚到原轨并保留下一轨供稍后再次预读
+                            cur_drv, cur_trk, cur_idx, cur_lba = prev_state
+                            with self._lock:
+                                if self._next_track is None and rollback_next is not None:
+                                    self._next_drive, self._next_track, self._next_track_index = rollback_next
+                            rollback_next = None
+                            open_media(cur_trk, cur_drv)
+                            continue
                         continue
                     else:
                         # 全部曲目读取完毕，压入 EOF 标记
@@ -1020,10 +1132,22 @@ class CddaWaveOutPlayer:
                             continue
                         if push_res == "stopped":
                             break
+                        # 保持读线程待命直至会话结束或播放完成；若在最后 5 秒内用户向后 Seek 则立即唤醒恢复读取
+                        resume_reading = False
+                        while True:
+                            with self._lock:
+                                if self._session_id != my_session_id or not self._is_active:
+                                    break
+                                if self._seek_generation != local_seek_gen or self._next_track is not None:
+                                    resume_reading = True
+                                    break
+                            time.sleep(0.03)
+                        if resume_reading:
+                            continue
                         break
 
                 # 控制预读上限 (约 5 秒音频)，避免无限制占用内存
-                if self._read_ahead_queue.qsize() >= 25:
+                if target_q.qsize() >= 25:
                     time.sleep(0.02)
                     continue
 
@@ -1042,14 +1166,12 @@ class CddaWaveOutPlayer:
                     except Exception as e:
                         consecutive_read_errors += 1
                         if consecutive_read_errors >= 8:
-                            if self.on_error:
-                                self.on_error(f"读取本地音频失败: {e}")
+                            push_error_sentinel(f"读取本地音频失败: {e}")
                             break
                         pcm_bytes = b"\x00" * required_bytes
                 else:
                     if h_drive is None:
-                        if self.on_error:
-                            self.on_error(f"无法访问光驱设备 {cur_drv}")
+                        push_error_sentinel(f"无法访问光驱设备 {cur_drv}")
                         break
                     raw_info = RAW_READ_INFO()
                     raw_info.DiskOffset = cur_lba * 2048
@@ -1072,8 +1194,7 @@ class CddaWaveOutPlayer:
                     else:
                         consecutive_read_errors += 1
                         if consecutive_read_errors >= 8:
-                            if self.on_error:
-                                self.on_error("光盘已弹出或光驱读取中断")
+                            push_error_sentinel("光盘已弹出或光驱读取中断")
                             break
                         pcm_bytes = b"\x00" * required_bytes
 
@@ -1091,6 +1212,8 @@ class CddaWaveOutPlayer:
                 if push_res == "stale_seek":
                     continue
                 cur_lba += chunk_count
+        except Exception as e:
+            push_error_sentinel(f"音频读取线程异常: {e}")
         finally:
             if h_drive is not None:
                 try:
@@ -1102,7 +1225,10 @@ class CddaWaveOutPlayer:
                     wf_reader.close()
                 except Exception:
                     pass
-            self._reader_idle_event.set()
+            with self._lock:
+                self._active_readers = max(0, self._active_readers - 1)
+                if self._active_readers == 0:
+                    self._reader_idle_event.set()
 
     @staticmethod
     def _scale_pcm16_volume(pcm_bytes: bytes, vol_0_to_1: float) -> bytes:
@@ -1117,8 +1243,13 @@ class CddaWaveOutPlayer:
         np.clip(samples, -32768.0, 32767.0, out=samples)
         return samples.astype("<i2").tobytes()
 
-    def _open_wasapi_stream(self, exclusive: bool):
-        """打开 Windows WASAPI 输出流；独占模式失败时自动回退共享模式并触发提示回调。"""
+    def _open_wasapi_stream(
+        self,
+        exclusive: bool,
+        callback: Optional[Callable] = None,
+        fallback_sink: Optional[List[str]] = None,
+    ):
+        """打开 Windows WASAPI 输出流（优先回调模式）；独占模式失败时自动回退共享模式（auto_convert=True）。"""
         import sounddevice as sd
 
         wasapi_api_idx = None
@@ -1139,15 +1270,17 @@ class CddaWaveOutPlayer:
                     channels=2,
                     dtype="int16",
                     latency="low",
+                    callback=callback,
                     extra_settings=sd.WasapiSettings(exclusive=True),
                 )
                 stream.start()
                 return stream, True
             except Exception as ex:
-                if self.on_output_fallback:
-                    self.on_output_fallback(
-                        f"当前音频设备不支持 WASAPI 独占模式或已被占用（{ex}），已自动回退至 WASAPI 共享模式"
-                    )
+                msg = f"当前音频设备不支持 WASAPI 独占模式或已被占用（{ex}），已自动回退至 WASAPI 共享模式"
+                if fallback_sink is not None:
+                    fallback_sink.append(msg)
+                elif self.on_output_fallback:
+                    self.on_output_fallback(msg)
 
         stream = sd.RawOutputStream(
             device=default_dev,
@@ -1155,7 +1288,8 @@ class CddaWaveOutPlayer:
             channels=2,
             dtype="int16",
             latency="low",
-            extra_settings=sd.WasapiSettings(exclusive=False),
+            callback=callback,
+            extra_settings=sd.WasapiSettings(exclusive=False, auto_convert=True),
         )
         stream.start()
         return stream, False
@@ -1167,16 +1301,21 @@ class CddaWaveOutPlayer:
         track: CdTrackInfo,
         track_index: int,
         exclusive: bool,
+        read_q: Optional[queue.Queue] = None,
     ) -> bool:
         """
-        使用 Windows WASAPI（共享/独占）播放音频流。
+        使用 Windows WASAPI（共享/独占回调流）播放音频流。
         若 WASAPI 流成功打开并接管本轮播放则返回 True；若设备打开失败需回退 waveOut 则返回 False。
         """
-        with self._device_lock:
-            with self._lock:
-                if self._session_id != my_session_id:
-                    return True
-            # 若之前残留了 waveOut 句柄，先彻底关闭避免与 WASAPI 独占模式争抢声卡
+        import sounddevice as sd
+
+        target_q = read_q if read_q is not None else self._read_ahead_queue
+        with self._lock:
+            if self._session_id != my_session_id:
+                return True
+
+        # 若之前残留了 waveOut 句柄，先彻底关闭避免与 WASAPI 独占模式争抢声卡
+        with self._wave_handle_lock:
             if self._h_wave and self._h_wave.value:
                 try:
                     winmm.waveOutReset(self._h_wave)
@@ -1185,137 +1324,313 @@ class CddaWaveOutPlayer:
                     pass
                 self._h_wave = None
 
+        cb_lock = threading.Lock()
+        cb_items: collections.deque = collections.deque()
+        cb_buffered_bytes = 0
+        cb_max_bytes = 35280  # ~0.2s 回调环形缓冲，兼顾低延迟与抗抖动
+        cb_paused = False
+        cb_eof_queued = False
+        cb_eof_drained = False
+        cb_error_msg = ""
+        cb_played_bytes = 0
+        cb_current_lba = track.start_lba
+        cb_transitions: collections.deque = collections.deque()
+
+        def audio_callback(outdata, frames, time_info, status):
+            nonlocal cb_buffered_bytes, cb_eof_drained, cb_error_msg
+            nonlocal cb_played_bytes, cb_current_lba
+            needed = len(outdata)
+            written = 0
             try:
-                stream, _actual_exclusive = self._open_wasapi_stream(exclusive=exclusive)
-            except Exception as ex:
-                if self.on_output_fallback:
-                    self.on_output_fallback(f"WASAPI 输出打开失败（{ex}），已自动回退至标准兼容模式 (waveOut)")
-                return False
-
-            t_reader = threading.Thread(
-                target=self._reader_loop,
-                args=(my_session_id, drive_letter, track, track_index),
-                daemon=True,
-            )
-            t_reader.start()
-
-            track_completed_normally = False
-            current_playing_track = track
-            run_seek_gen = 0
-            submitted_bytes = 0
-            track_base_bytes = 0
-            track_base_sec = 0.0
-            stream_paused = False
-            latency_sec = float(getattr(stream, "latency", 0.0) or 0.0)
-
-            try:
-                while True:
-                    with self._lock:
-                        if self._session_id != my_session_id:
+                with self._lock:
+                    session_ok = (self._session_id == my_session_id)
+                    playing_now = self._is_playing
+                with cb_lock:
+                    if not session_ok:
+                        outdata[:] = b"\x00" * needed
+                        raise sd.CallbackAbort()
+                    if cb_paused or not playing_now:
+                        outdata[:] = b"\x00" * needed
+                        return
+                    while written < needed and cb_items:
+                        head = cb_items[0]
+                        kind = head[0]
+                        if kind == "boundary":
+                            cb_items.popleft()
+                            _, b_trk, b_idx = head
+                            cb_played_bytes = 0
+                            cb_current_lba = b_trk.start_lba
+                            cb_transitions.append((b_trk, b_idx))
+                            continue
+                        if kind == "eof":
+                            cb_items.popleft()
+                            cb_eof_drained = True
                             break
-                        playing = self._is_playing
-                        vol = self._volume
-                        self._volume_dirty = False
-                        pause_cmd = self._pause_change_pending
-                        self._pause_change_pending = None
-                        seek_cmd = self._seek_reset_pending
-                        self._seek_reset_pending = False
-                        cur_seek_gen = self._seek_generation
+                        data = head[1]
+                        off = head[2]
+                        avail = len(data) - off
+                        take = min(needed - written, avail)
+                        outdata[written : written + take] = data[off : off + take]
+                        written += take
+                        cb_buffered_bytes = max(0, cb_buffered_bytes - take)
+                        cb_played_bytes += take
+                        new_off = off + take
+                        cb_current_lba = head[3] + (new_off // CD_SECTOR_RAW_BYTES)
+                        if new_off >= len(data):
+                            cb_items.popleft()
+                        else:
+                            head[2] = new_off
+                    if written < needed:
+                        outdata[written:needed] = b"\x00" * (needed - written)
+                    if cb_eof_drained and not cb_items:
+                        raise sd.CallbackStop()
+            except (sd.CallbackStop, sd.CallbackAbort):
+                raise
+            except Exception as cb_ex:
+                cb_error_msg = f"WASAPI 音频输出回调异常: {cb_ex}"
+                with self._lock:
+                    if self._session_id == my_session_id:
+                        self._is_active = False
+                        self._is_playing = False
+                try:
+                    outdata[:] = b"\x00" * needed
+                except Exception:
+                    pass
+                raise sd.CallbackAbort()
 
-                    if cur_seek_gen != run_seek_gen or seek_cmd:
-                        run_seek_gen = cur_seek_gen
-                        try:
-                            stream.abort()
-                            if playing:
-                                stream.start()
-                                stream_paused = False
-                            else:
-                                stream_paused = True
-                        except Exception:
-                            pass
-                        submitted_bytes = 0
-                        track_base_bytes = 0
-                        with self._lock:
-                            track_base_sec = max(
-                                0.0,
-                                (self._seek_target_lba - current_playing_track.start_lba) / CD_FRAMES_PER_SECOND,
-                            )
+        fallback_msgs: List[str] = []
+        try:
+            with self._device_lock:
+                stream, _actual_exclusive = self._open_wasapi_stream(
+                    exclusive=exclusive,
+                    callback=audio_callback,
+                    fallback_sink=fallback_msgs,
+                )
+        except Exception as ex:
+            if self.on_output_fallback:
+                self.on_output_fallback(f"WASAPI 输出打开失败（{ex}），已自动回退至标准兼容模式 (waveOut)")
+            return False
 
-                    if pause_cmd is True and not stream_paused:
-                        try:
-                            stream.stop()
-                        except Exception:
-                            pass
-                        stream_paused = True
-                    elif pause_cmd is False and stream_paused:
-                        try:
-                            stream.start()
-                        except Exception:
-                            pass
-                        stream_paused = False
+        for msg in fallback_msgs:
+            if self.on_output_fallback:
+                self.on_output_fallback(msg)
 
-                    if not playing:
-                        time.sleep(0.025)
-                        continue
+        with self._lock:
+            self._active_readers += 1
+            self._reader_idle_event.clear()
+        t_reader = threading.Thread(
+            target=self._reader_loop,
+            args=(my_session_id, drive_letter, track, track_index, target_q, True),
+            daemon=True,
+        )
+        try:
+            t_reader.start()
+        except Exception:
+            with self._lock:
+                self._active_readers = max(0, self._active_readers - 1)
+                if self._active_readers == 0:
+                    self._reader_idle_event.set()
+            try:
+                stream.abort()
+                stream.close()
+            except Exception:
+                pass
+            raise
 
+        track_completed_normally = False
+        error_to_report = ""
+        current_playing_track = track
+        run_seek_gen = 0
+        track_base_sec = 0.0
+        stream_paused = False
+        latency_sec = float(getattr(stream, "latency", 0.0) or 0.0)
+
+        try:
+            while True:
+                with self._lock:
+                    if self._session_id != my_session_id:
+                        break
+                    playing = self._is_playing
+                    vol = self._volume
+                    self._volume_dirty = False
+                    pause_cmd = self._pause_change_pending
+                    self._pause_change_pending = None
+                    seek_cmd = self._seek_reset_pending
+                    self._seek_reset_pending = False
+                    cur_seek_gen = self._seek_generation
+
+                if cur_seek_gen != run_seek_gen or seek_cmd:
+                    run_seek_gen = cur_seek_gen
+                    with cb_lock:
+                        cb_items.clear()
+                        cb_buffered_bytes = 0
+                        cb_eof_queued = False
+                        cb_eof_drained = False
+                        cb_played_bytes = 0
+                        cb_transitions.clear()
+                        cb_paused = not playing
                     try:
-                        chunk: _ReadChunk = self._read_ahead_queue.get(timeout=0.04)
-                    except queue.Empty:
-                        continue
-
-                    if chunk.seek_gen != run_seek_gen:
-                        continue
-
-                    if chunk.is_track_boundary:
-                        current_playing_track = chunk.track
-                        track_base_bytes = submitted_bytes
-                        track_base_sec = 0.0
-                        with self._lock:
-                            self._track = chunk.track
-                            self._current_track_index = chunk.track_index
-                            self._current_lba = chunk.track.start_lba
-                        if self.on_track_transition:
-                            self.on_track_transition(chunk.track, chunk.track_index)
-                        continue
-
-                    if chunk.is_eof:
+                        stream.abort()
+                        if playing:
+                            stream.start()
+                            stream_paused = False
+                        else:
+                            stream_paused = True
+                    except Exception as ex:
+                        error_to_report = f"WASAPI 定位重置失败: {ex}"
                         with self._lock:
                             if self._session_id == my_session_id:
-                                track_completed_normally = True
                                 self._is_active = False
                                 self._is_playing = False
                         break
+                    with self._lock:
+                        track_base_sec = max(
+                            0.0,
+                            (self._seek_target_lba - current_playing_track.start_lba) / CD_FRAMES_PER_SECOND,
+                        )
 
-                    out_bytes = self._scale_pcm16_volume(chunk.data, vol)
+                if pause_cmd is True and not stream_paused:
+                    with cb_lock:
+                        cb_paused = True
                     try:
-                        stream.write(out_bytes)
+                        stream.stop()
+                    except Exception:
+                        pass
+                    stream_paused = True
+                elif pause_cmd is False and stream_paused:
+                    with cb_lock:
+                        cb_paused = False
+                    try:
+                        stream.start()
                     except Exception as ex:
-                        if self.on_error:
-                            self.on_error(f"WASAPI 音频写入中断: {ex}")
+                        error_to_report = f"WASAPI 恢复播放失败: {ex}"
+                        with self._lock:
+                            if self._session_id == my_session_id:
+                                self._is_active = False
+                                self._is_playing = False
                         break
+                    stream_paused = False
 
-                    submitted_bytes += len(chunk.data)
-                    chunk_sec_count = len(chunk.data) // CD_SECTOR_RAW_BYTES
+                # 在锁外触发跨轨事件回调
+                pending_transitions = []
+                with cb_lock:
+                    while cb_transitions:
+                        pending_transitions.append(cb_transitions.popleft())
+                    local_cb_err = cb_error_msg
+                    local_eof_drained = cb_eof_drained
+                    local_eof_queued = cb_eof_queued
+                    cur_played_bytes = cb_played_bytes
+                    cur_cb_lba = cb_current_lba
+                    cur_buffered = cb_buffered_bytes
+
+                for b_trk, b_idx in pending_transitions:
+                    current_playing_track = b_trk
+                    track_base_sec = 0.0
+                    with self._lock:
+                        self._track = b_trk
+                        self._current_track_index = b_idx
+                        self._current_lba = b_trk.start_lba
+                    if self.on_track_transition:
+                        self.on_track_transition(b_trk, b_idx)
+
+                if local_cb_err:
+                    error_to_report = local_cb_err
+                    with self._lock:
+                        if self._session_id == my_session_id:
+                            self._is_active = False
+                            self._is_playing = False
+                    break
+
+                if local_eof_drained:
+                    # 等待 PortAudio 排空硬件尾部缓冲（最多 2.5s，支持 Seek/Stop 打断）
+                    drain_deadline = time.time() + 2.5
+                    seek_interrupted = False
+                    while getattr(stream, "active", False) and time.time() < drain_deadline:
+                        with self._lock:
+                            if self._session_id != my_session_id:
+                                break
+                            if self._seek_generation != run_seek_gen or self._seek_reset_pending:
+                                seek_interrupted = True
+                                break
+                        time.sleep(0.02)
+                    if seek_interrupted:
+                        continue
+                    with self._lock:
+                        if self._session_id == my_session_id:
+                            track_completed_normally = True
+                            self._is_active = False
+                            self._is_playing = False
+                    break
+
+                if playing and not stream_paused and not local_eof_queued and not getattr(stream, "active", True):
+                    error_to_report = "WASAPI 音频流意外中止"
+                    with self._lock:
+                        if self._session_id == my_session_id:
+                            self._is_active = False
+                            self._is_playing = False
+                    break
+
+                if playing:
                     with self._lock:
                         if self._session_id != my_session_id:
                             break
-                        self._current_lba = chunk.lba + chunk_sec_count
-
-                    played_sec = max(0.0, (submitted_bytes - track_base_bytes) / 176400.0 - latency_sec)
+                        self._current_lba = cur_cb_lba
+                    played_sec = max(0.0, cur_played_bytes / 176400.0 - latency_sec)
                     elapsed_sec = max(0.0, track_base_sec + played_sec)
                     if self.on_position:
                         self.on_position(elapsed_sec)
-            finally:
-                try:
-                    stream.abort()
-                except Exception:
-                    pass
-                try:
-                    stream.close()
-                except Exception:
-                    pass
 
-        if track_completed_normally and self.on_finished:
+                if not playing or local_eof_queued or cur_buffered >= cb_max_bytes:
+                    time.sleep(0.02)
+                    continue
+
+                try:
+                    chunk: _ReadChunk = target_q.get(timeout=0.04)
+                except queue.Empty:
+                    continue
+
+                if chunk.is_error:
+                    error_to_report = chunk.error_msg or "音频读取失败"
+                    with self._lock:
+                        if self._session_id == my_session_id:
+                            self._is_active = False
+                            self._is_playing = False
+                    break
+
+                if chunk.seek_gen != run_seek_gen:
+                    continue
+
+                if chunk.is_track_boundary:
+                    with cb_lock:
+                        cb_items.append(("boundary", chunk.track, chunk.track_index))
+                    continue
+
+                if chunk.is_eof:
+                    with cb_lock:
+                        cb_items.append(("eof",))
+                        cb_eof_queued = True
+                    continue
+
+                out_bytes = self._scale_pcm16_volume(chunk.data, vol)
+                with cb_lock:
+                    cb_items.append(["pcm", out_bytes, 0, chunk.lba, chunk.track, chunk.track_index])
+                    cb_buffered_bytes += len(out_bytes)
+        finally:
+            try:
+                if track_completed_normally:
+                    stream.stop()
+                else:
+                    stream.abort()
+            except Exception:
+                pass
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+        if error_to_report and self.on_error:
+            self.on_error(error_to_report)
+        elif track_completed_normally and self.on_finished:
             self.on_finished()
         return True
 
@@ -1325,74 +1640,123 @@ class CddaWaveOutPlayer:
         drive_letter: str,
         track: CdTrackInfo,
         track_index: int = 0,
+        read_q: Optional[queue.Queue] = None,
+        prev_done_event: Optional[threading.Event] = None,
+        done_event: Optional[threading.Event] = None,
     ):
-        with self._lock:
-            out_mode = self._output_mode
+        try:
+            if prev_done_event is not None:
+                prev_done_event.wait(timeout=2.0)
 
-        if out_mode in ("wasapi_shared", "wasapi_exclusive"):
-            handled = self._run_wasapi_loop(
-                my_session_id,
-                drive_letter,
-                track,
-                track_index,
-                exclusive=(out_mode == "wasapi_exclusive"),
-            )
-            if handled:
-                return
-
-        with self._device_lock:
+            target_q = read_q if read_q is not None else self._read_ahead_queue
             with self._lock:
                 if self._session_id != my_session_id:
                     return
+                out_mode = self._output_mode
+
+            if out_mode in ("wasapi_shared", "wasapi_exclusive"):
+                handled = self._run_wasapi_loop(
+                    my_session_id,
+                    drive_letter,
+                    track,
+                    track_index,
+                    exclusive=(out_mode == "wasapi_exclusive"),
+                    read_q=target_q,
+                )
+                if handled:
+                    return
+
+            with self._lock:
+                if self._session_id != my_session_id:
+                    return
+                init_vol = self._volume
 
             # 复用已打开的 waveOut 设备句柄，消除跨轨重开设备的爆音与延迟
-            if not self._h_wave or not self._h_wave.value:
-                wfx = WAVEFORMATEX(
-                    wFormatTag=WAVE_FORMAT_PCM,
-                    nChannels=2,
-                    nSamplesPerSec=44100,
-                    nAvgBytesPerSec=44100 * 4,
-                    nBlockAlign=4,
-                    wBitsPerSample=16,
-                    cbSize=0,
-                )
-                h_wave = wintypes.HANDLE()
-                res = winmm.waveOutOpen(ctypes.byref(h_wave), WAVE_MAPPER, ctypes.byref(wfx), 0, 0, 0)
-                if res != 0 or not h_wave.value:
-                    with self._lock:
-                        if self._session_id == my_session_id:
-                            self._is_active = False
-                            self._is_playing = False
-                    if self.on_error:
-                        self.on_error(f"无法打开音频输出设备 (错误码 {res})")
-                    return
-                self._h_wave = h_wave
-            else:
-                # 复用时仅清空残留缓冲，微秒级准备就绪
-                winmm.waveOutReset(self._h_wave)
+            open_err = 0
+            with self._wave_handle_lock:
+                if not self._h_wave or not self._h_wave.value:
+                    wfx = WAVEFORMATEX(
+                        wFormatTag=WAVE_FORMAT_PCM,
+                        nChannels=2,
+                        nSamplesPerSec=44100,
+                        nAvgBytesPerSec=44100 * 4,
+                        nBlockAlign=4,
+                        wBitsPerSample=16,
+                        cbSize=0,
+                    )
+                    h_wave = wintypes.HANDLE()
+                    res = winmm.waveOutOpen(ctypes.byref(h_wave), WAVE_MAPPER, ctypes.byref(wfx), 0, 0, 0)
+                    if res != 0 or not h_wave.value:
+                        open_err = res
+                    else:
+                        self._h_wave = h_wave
+                else:
+                    # 复用时仅清空残留缓冲，微秒级准备就绪
+                    winmm.waveOutReset(self._h_wave)
 
-            h_wave = self._h_wave
-            self._apply_hardware_volume(h_wave, self._volume)
+                h_wave = self._h_wave
+                if not open_err and h_wave and h_wave.value:
+                    self._apply_hardware_volume(h_wave, init_vol)
+
+            if open_err or not h_wave or not h_wave.value:
+                with self._lock:
+                    if self._session_id == my_session_id:
+                        self._is_active = False
+                        self._is_playing = False
+                if self.on_error:
+                    self.on_error(f"无法打开音频输出设备 (错误码 {open_err})")
+                return
 
             # 启动内存预读工作线程
+            with self._lock:
+                self._active_readers += 1
+                self._reader_idle_event.clear()
             t_reader = threading.Thread(
                 target=self._reader_loop,
-                args=(my_session_id, drive_letter, track, track_index),
+                args=(my_session_id, drive_letter, track, track_index, target_q, True),
                 daemon=True,
             )
-            t_reader.start()
+            try:
+                t_reader.start()
+            except Exception:
+                with self._lock:
+                    self._active_readers = max(0, self._active_readers - 1)
+                    if self._active_readers == 0:
+                        self._reader_idle_event.set()
+                raise
 
             num_buffers = 8
             headers = [WAVEHDR() for _ in range(num_buffers)]
             buffers = [None] * num_buffers
             buf_idx = 0
             track_completed_normally = False
+            error_to_report = ""
+            consecutive_wave_errors = 0
             current_playing_track = track
             run_seek_gen = 0
             submitted_bytes = 0
             track_base_bytes = 0
             track_base_sec = 0.0
             mmt = MMTIME()
+
+            def invalidate_wave_handle():
+                with self._wave_handle_lock:
+                    if self._h_wave is h_wave and self._h_wave and self._h_wave.value:
+                        try:
+                            winmm.waveOutReset(h_wave)
+                        except Exception:
+                            pass
+                        for hdr_item in headers:
+                            if hdr_item.dwFlags & WHDR_PREPARED:
+                                try:
+                                    winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(hdr_item), ctypes.sizeof(WAVEHDR))
+                                except Exception:
+                                    pass
+                        try:
+                            winmm.waveOutClose(h_wave)
+                        except Exception:
+                            pass
+                        self._h_wave = None
 
             try:
                 while True:
@@ -1410,25 +1774,33 @@ class CddaWaveOutPlayer:
                         cur_seek_gen = self._seek_generation
 
                     if vol_dirty:
-                        self._apply_hardware_volume(h_wave, vol)
+                        with self._wave_handle_lock:
+                            if self._h_wave is h_wave:
+                                self._apply_hardware_volume(h_wave, vol)
 
                     if cur_seek_gen != run_seek_gen or seek_cmd:
                         run_seek_gen = cur_seek_gen
-                        winmm.waveOutReset(h_wave)
-                        for h in headers:
-                            if h.dwFlags & WHDR_PREPARED:
-                                winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(h), ctypes.sizeof(WAVEHDR))
+                        with self._wave_handle_lock:
+                            if self._h_wave is h_wave:
+                                winmm.waveOutReset(h_wave)
+                                for h in headers:
+                                    if h.dwFlags & WHDR_PREPARED:
+                                        winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(h), ctypes.sizeof(WAVEHDR))
+                                if not playing:
+                                    winmm.waveOutPause(h_wave)
                         submitted_bytes = 0
                         track_base_bytes = 0
                         with self._lock:
                             track_base_sec = max(0.0, (self._seek_target_lba - current_playing_track.start_lba) / CD_FRAMES_PER_SECOND)
-                        if not playing:
-                            winmm.waveOutPause(h_wave)
 
                     if pause_cmd is True:
-                        winmm.waveOutPause(h_wave)
+                        with self._wave_handle_lock:
+                            if self._h_wave is h_wave:
+                                winmm.waveOutPause(h_wave)
                     elif pause_cmd is False:
-                        winmm.waveOutRestart(h_wave)
+                        with self._wave_handle_lock:
+                            if self._h_wave is h_wave:
+                                winmm.waveOutRestart(h_wave)
 
                     if not playing:
                         time.sleep(0.025)
@@ -1436,9 +1808,17 @@ class CddaWaveOutPlayer:
 
                     # 从内存预读缓冲队列取出数据块
                     try:
-                        chunk: _ReadChunk = self._read_ahead_queue.get(timeout=0.04)
+                        chunk: _ReadChunk = target_q.get(timeout=0.04)
                     except queue.Empty:
                         continue
+
+                    if chunk.is_error:
+                        error_to_report = chunk.error_msg or "音频读取失败"
+                        with self._lock:
+                            if self._session_id == my_session_id:
+                                self._is_active = False
+                                self._is_playing = False
+                        break
 
                     # 丢弃 Seek 之前残留的旧世代音频块
                     if chunk.seek_gen != run_seek_gen:
@@ -1458,24 +1838,57 @@ class CddaWaveOutPlayer:
                         continue
 
                     if chunk.is_eof:
-                        # 限时等待最后几个缓冲块在硬件中输出完毕
-                        wait_start = time.time()
-                        while time.time() - wait_start < 1.0:
+                        # 等待最后几个缓冲块在硬件中输出完毕（>=2.5s），期间支持暂停/恢复/音量/Seek
+                        active_drain_sec = 0.0
+                        last_tick = time.time()
+                        seeked_during_eof = False
+                        stopped_during_eof = False
+                        while active_drain_sec < 3.0:
+                            now_tick = time.time()
+                            dt = max(0.0, now_tick - last_tick)
+                            last_tick = now_tick
                             with self._lock:
                                 if self._session_id != my_session_id:
+                                    stopped_during_eof = True
                                     break
+                                if self._seek_generation != run_seek_gen or self._seek_reset_pending:
+                                    seeked_during_eof = True
+                                    break
+                                eof_playing = self._is_playing
+                                eof_vol_dirty = self._volume_dirty
+                                eof_vol = self._volume
+                                self._volume_dirty = False
+                                eof_pause = self._pause_change_pending
+                                self._pause_change_pending = None
+                            if eof_vol_dirty:
+                                with self._wave_handle_lock:
+                                    if self._h_wave is h_wave:
+                                        self._apply_hardware_volume(h_wave, eof_vol)
+                            if eof_pause is True:
+                                with self._wave_handle_lock:
+                                    if self._h_wave is h_wave:
+                                        winmm.waveOutPause(h_wave)
+                            elif eof_pause is False:
+                                with self._wave_handle_lock:
+                                    if self._h_wave is h_wave:
+                                        winmm.waveOutRestart(h_wave)
                             all_done = all(
                                 (not (h.dwFlags & WHDR_PREPARED)) or bool(h.dwFlags & WHDR_DONE)
                                 for h in headers
                             )
                             if all_done:
                                 break
+                            if eof_playing:
+                                active_drain_sec += dt
                             time.sleep(0.02)
-                        with self._lock:
-                            if self._session_id == my_session_id:
-                                track_completed_normally = True
-                                self._is_active = False
-                                self._is_playing = False
+                        if seeked_during_eof:
+                            continue
+                        if not stopped_during_eof:
+                            with self._lock:
+                                if self._session_id == my_session_id:
+                                    track_completed_normally = True
+                                    self._is_active = False
+                                    self._is_playing = False
                         break
 
                     hdr = headers[buf_idx]
@@ -1498,23 +1911,40 @@ class CddaWaveOutPlayer:
                                 inner_pause = self._pause_change_pending
                                 self._pause_change_pending = None
                             if inner_vol_dirty:
-                                self._apply_hardware_volume(h_wave, inner_vol)
+                                with self._wave_handle_lock:
+                                    if self._h_wave is h_wave:
+                                        self._apply_hardware_volume(h_wave, inner_vol)
                             if inner_pause is True:
-                                winmm.waveOutPause(h_wave)
+                                with self._wave_handle_lock:
+                                    if self._h_wave is h_wave:
+                                        winmm.waveOutPause(h_wave)
                             elif inner_pause is False:
-                                winmm.waveOutRestart(h_wave)
+                                with self._wave_handle_lock:
+                                    if self._h_wave is h_wave:
+                                        winmm.waveOutRestart(h_wave)
                             time.sleep(0.006)
                         if aborted:
                             continue
-                        unprep_res = winmm.waveOutUnprepareHeader(
-                            h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR)
-                        )
-                        if unprep_res != 0:
-                            time.sleep(0.01)
+                        with self._wave_handle_lock:
                             unprep_res = winmm.waveOutUnprepareHeader(
                                 h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR)
                             )
+                        if unprep_res != 0:
+                            time.sleep(0.01)
+                            with self._wave_handle_lock:
+                                unprep_res = winmm.waveOutUnprepareHeader(
+                                    h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR)
+                                )
                             if unprep_res != 0:
+                                consecutive_wave_errors += 1
+                                if consecutive_wave_errors >= 5:
+                                    invalidate_wave_handle()
+                                    error_to_report = f"音频设备缓冲释放失败 (错误码 {unprep_res})"
+                                    with self._lock:
+                                        if self._session_id == my_session_id:
+                                            self._is_active = False
+                                            self._is_playing = False
+                                    break
                                 continue
 
                     pcm_bytes = chunk.data
@@ -1526,14 +1956,30 @@ class CddaWaveOutPlayer:
                     hdr.dwFlags = 0
                     hdr.dwLoops = 0
 
-                    prep_res = winmm.waveOutPrepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
-                    if prep_res != 0:
+                    with self._wave_handle_lock:
+                        prep_res = winmm.waveOutPrepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                        if prep_res == 0:
+                            write_res = winmm.waveOutWrite(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                            if write_res != 0:
+                                winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                                hdr.dwFlags = 0
+                        else:
+                            write_res = 0
+
+                    if prep_res != 0 or write_res != 0:
+                        err_code = prep_res if prep_res != 0 else write_res
+                        consecutive_wave_errors += 1
+                        if consecutive_wave_errors >= 5:
+                            invalidate_wave_handle()
+                            error_to_report = f"音频输出设备写入失败 (错误码 {err_code})"
+                            with self._lock:
+                                if self._session_id == my_session_id:
+                                    self._is_active = False
+                                    self._is_playing = False
+                            break
                         continue
-                    write_res = winmm.waveOutWrite(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
-                    if write_res != 0:
-                        winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
-                        hdr.dwFlags = 0
-                        continue
+
+                    consecutive_wave_errors = 0
                     submitted_bytes += len(pcm_bytes)
 
                     buf_idx = (buf_idx + 1) % num_buffers
@@ -1547,7 +1993,13 @@ class CddaWaveOutPlayer:
 
                     # 优先从声卡硬件位置读取真实已输出的音频进度，消除环形队列提前量
                     mmt.wType = TIME_BYTES
-                    if winmm.waveOutGetPosition(h_wave, ctypes.byref(mmt), ctypes.sizeof(mmt)) == 0 and mmt.wType == TIME_BYTES:
+                    with self._wave_handle_lock:
+                        pos_ok = (
+                            self._h_wave is h_wave
+                            and winmm.waveOutGetPosition(h_wave, ctypes.byref(mmt), ctypes.sizeof(mmt)) == 0
+                            and mmt.wType == TIME_BYTES
+                        )
+                    if pos_ok:
                         hw_bytes = int(mmt.u.cb)
                         if hw_bytes >= track_base_bytes:
                             elapsed_sec = max(0.0, track_base_sec + (hw_bytes - track_base_bytes) / 176400.0)
@@ -1559,10 +2011,23 @@ class CddaWaveOutPlayer:
                     if self.on_position:
                         self.on_position(elapsed_sec)
             finally:
-                winmm.waveOutReset(h_wave)
-                for hdr in headers:
-                    if hdr.dwFlags & WHDR_PREPARED:
-                        winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                with self._wave_handle_lock:
+                    if self._h_wave is h_wave and h_wave and h_wave.value:
+                        try:
+                            winmm.waveOutReset(h_wave)
+                        except Exception:
+                            pass
+                        for hdr in headers:
+                            if hdr.dwFlags & WHDR_PREPARED:
+                                try:
+                                    winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                                except Exception:
+                                    pass
 
-        if track_completed_normally and self.on_finished:
-            self.on_finished()
+            if error_to_report and self.on_error:
+                self.on_error(error_to_report)
+            elif track_completed_normally and self.on_finished:
+                self.on_finished()
+        finally:
+            if done_event is not None:
+                done_event.set()

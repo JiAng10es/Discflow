@@ -558,7 +558,7 @@
                   </div>
                   <div class="settings-item-sub">44.1kHz / 16-Bit 原生扇区流式播放</div>
                 </div>
-                <span style="font-size: 12px; color: #30d158; font-weight: 600;">已就绪</span>
+                <span style="font-size: 12px; color: var(--success-text, #30d158); font-weight: 600;">已就绪</span>
               </div>
             </div>
           </div>
@@ -629,16 +629,16 @@
             </div>
 
             <!-- 独立危险操作隔离区 (Danger Zone) -->
-            <div class="settings-card-group settings-danger-card" style="margin-top: 12px; padding: 12px 16px; background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.22); border-radius: var(--radius-panel);">
+            <div class="settings-card-group settings-danger-card" style="margin-top: 12px; padding: 12px 16px; background: var(--danger-bg, rgba(239,68,68,0.06)); border: 1px solid var(--danger-border, rgba(239,68,68,0.22)); border-radius: var(--radius-panel);">
               <div class="settings-row-item" style="padding: 0; border: none;">
                 <div class="settings-item-col">
-                  <div class="settings-item-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <div class="settings-item-title" style="color: var(--danger-text, #f87171); display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                     <span>清空资料库数据</span>
                   </div>
-                  <div class="settings-item-sub" style="color: #fca5a5;">删除全部已抓轨专辑，不可恢复</div>
+                  <div class="settings-item-sub" style="color: var(--danger-sub, #fca5a5);">删除全部已抓轨专辑，不可恢复</div>
                 </div>
-                <button class="pill-btn" onclick="confirmClearAllData()" style="background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.4); color: #f87171; font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
+                <button class="pill-btn settings-danger-btn" onclick="confirmClearAllData()" style="background: var(--danger-btn-bg, rgba(239,68,68,0.18)); border-color: var(--danger-btn-border, rgba(239,68,68,0.4)); color: var(--danger-text, #f87171); font-size: 12px; padding: 6px 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
                   <span>清空数据</span>
                 </button>
@@ -655,19 +655,19 @@
                 </span>
                 <span class="discflow-wordmark" style="font-size: 20px; font-weight: 700; color: var(--text-primary);">__APP_NAME__</span>
               </div>
-              <div style="font-size: 12px; color: #30d158; font-weight: 600; font-family: 'SF Mono', monospace;">v__APP_VERSION__ · Windows x64 Native</div>
+              <div style="font-size: 12px; color: var(--success-text, #30d158); font-weight: 600; font-family: 'SF Mono', monospace;">v__APP_VERSION__ · Windows x64 Native</div>
             </div>
 
             <div id="aboutUpdateBanner" class="about-update-banner">
               <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;">
                 <div style="min-width: 0; flex: 1;">
-                  <div id="aboutUpdateTitle" style="font-size: 13px; font-weight: 700; color: #4ade80;">发现新版本</div>
+                  <div id="aboutUpdateTitle" style="font-size: 13px; font-weight: 700; color: var(--success-text, #4ade80);">发现新版本</div>
                   <div id="aboutUpdateSub" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
                 </div>
                 <button id="aboutUpdateDownloadBtn" class="pill-btn active" onclick="openUpdateDownload()" style="font-size: 12px; padding: 5px 12px; white-space: nowrap; display: none;">立即更新</button>
               </div>
               <div id="aboutUpdateProgressWrap" style="display: none; width: 100%; height: 4px; border-radius: 999px; background: var(--track-bar-bg); overflow: hidden; margin-top: 8px;">
-                <div id="aboutUpdateProgressBar" style="width: 0%; height: 100%; border-radius: 999px; background: #30d158; transition: width 0.15s ease;"></div>
+                <div id="aboutUpdateProgressBar" style="width: 0%; height: 100%; border-radius: 999px; background: var(--success-accent, #30d158); transition: width 0.15s ease;"></div>
               </div>
             </div>
 
@@ -700,7 +700,7 @@
                   </div>
                   <div class="settings-item-sub">CD-DA Win32 IOCTL 零损直读 & 双缓冲环形渲染</div>
                 </div>
-                <span style="font-size: 12px; color: #30d158; font-weight: 600;">Direct PCM</span>
+                <span style="font-size: 12px; color: var(--success-text, #30d158); font-weight: 600;">Direct PCM</span>
               </div>
               <div class="settings-row-item">
                 <div class="settings-item-col">
@@ -735,12 +735,12 @@
             <div class="settings-card-group" style="padding: 12px 16px;">
               <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">常用快捷键速查</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 12px; color: var(--text-secondary);">
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>播放 / 暂停</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">Space</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>上一曲 / 下一曲</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">← / →</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>调节音量</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">↑ / ↓</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>双语歌词切换</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">T</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词延后 / 提前</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">[ / ]</kbd></div>
-                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词时间轴归零</span><kbd style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: rgba(255,255,255,0.08); font-family: monospace; font-size: 11px;">\</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>播放 / 暂停</span><kbd class="shortcut-kbd" style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: var(--kbd-bg, rgba(255,255,255,0.08)); border: 1px solid var(--border-hairline); color: var(--text-primary); font-family: monospace; font-size: 11px;">Space</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>快退 / 快进 5s</span><kbd class="shortcut-kbd" style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: var(--kbd-bg, rgba(255,255,255,0.08)); border: 1px solid var(--border-hairline); color: var(--text-primary); font-family: monospace; font-size: 11px;">← / →</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>调节音量</span><kbd class="shortcut-kbd" style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: var(--kbd-bg, rgba(255,255,255,0.08)); border: 1px solid var(--border-hairline); color: var(--text-primary); font-family: monospace; font-size: 11px;">↑ / ↓</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>双语歌词切换</span><kbd class="shortcut-kbd" style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: var(--kbd-bg, rgba(255,255,255,0.08)); border: 1px solid var(--border-hairline); color: var(--text-primary); font-family: monospace; font-size: 11px;">T</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词延后 / 提前</span><kbd class="shortcut-kbd" style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: var(--kbd-bg, rgba(255,255,255,0.08)); border: 1px solid var(--border-hairline); color: var(--text-primary); font-family: monospace; font-size: 11px;">[ / ]</kbd></div>
+                <div style="display: flex; justify-content: space-between; align-items: center;"><span>歌词时间轴归零</span><kbd class="shortcut-kbd" style="padding: 0 8px; line-height: 20px; border-radius: var(--radius-chip); background: var(--kbd-bg, rgba(255,255,255,0.08)); border: 1px solid var(--border-hairline); color: var(--text-primary); font-family: monospace; font-size: 11px;">\</kbd></div>
               </div>
             </div>
           </div>
@@ -880,7 +880,7 @@
             <span id="ripOverallPctText" style="font-family: var(--font-mono); font-weight: 600;">0%</span>
           </div>
           <div style="width: 100%; height: 7px; background: var(--track-bar-bg); border-radius: 999px; overflow: hidden;">
-            <div id="ripOverallBar" style="height: 100%; width: 0%; background: #30D158; border-radius: 999px; transition: width 0.2s ease;"></div>
+            <div id="ripOverallBar" style="height: 100%; width: 0%; background: var(--success-accent, #30D158); border-radius: 999px; transition: width 0.2s ease;"></div>
           </div>
         </div>
 
@@ -917,7 +917,7 @@
       </div>
 
       <!-- 搜索输入条 -->
-      <div style="display: flex; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-hairline); border-radius: var(--radius-panel); padding: 4px 4px 4px 12px;">
+      <div class="search-modal-input-bar" style="display: flex; gap: 8px; align-items: center; background: var(--input-bg, rgba(255, 255, 255, 0.08)); border: 1px solid var(--border-hairline); border-radius: var(--radius-panel); padding: 4px 4px 4px 12px;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;">
           <circle cx="10.5" cy="10.5" r="7"></circle>
           <path d="M15.5 15.5L20.5 20.5" stroke-width="2.4"></path>
@@ -993,7 +993,7 @@
               <div class="md-tonearm-stylus"></div>
             </div>
           </div>
-        </div></div>
+        </div>
       </div>
     </div>
 
@@ -1089,6 +1089,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 全局非阻塞 Toast 提示条 -->
+  <div id="appToast" class="app-toast" role="status" aria-live="polite" aria-hidden="true"></div>
 
 <script>
   window.__INITIAL_PREFS__ = __INITIAL_PREFS_JSON__;

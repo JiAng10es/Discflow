@@ -47,6 +47,7 @@ class AlbumMetadataResult:
 
 
 _METADATA_CACHE: Dict[str, AlbumMetadataResult] = {}
+_METADATA_CACHE_LOCK = threading.Lock()
 # 歌词进程内缓存：键为「曲名|艺术家|时长」，设上限避免长时间运行无限增长
 _LYRICS_CACHE: Dict[str, List[dict]] = {}
 _LYRICS_CACHE_MAX = 400
@@ -120,11 +121,18 @@ def align_translations(
 
         best_k = -1
         best_dt = window + 1e-6
-        for k in range(j, min(n, j + 4)):
-            dt = abs(trans_lines[k][0] - t)
+        k = j
+        steps = 0
+        while k < n and steps < 12:
+            t_tr = trans_lines[k][0]
+            if t_tr > t + window:
+                break
+            dt = abs(t_tr - t)
             if dt < best_dt:
                 best_dt = dt
                 best_k = k
+            k += 1
+            steps += 1
 
         if best_k >= 0:
             text = trans_lines[best_k][1]
@@ -166,7 +174,7 @@ def build_structured_bilingual_lyrics(orig_lrc: str, trans_lrc: str = "") -> Lis
 
 
 YRC_LINE_REGEX = re.compile(r"^\[(\d+),(\d+)\](.*)$")
-YRC_WORD_REGEX = re.compile(r"\((\d+),(\d+),-?\d+\)([^(]*)")
+YRC_WORD_REGEX = re.compile(r"\((\d+),(\d+),-?\d+\)(.*?)(?=\(\d+,\d+,-?\d+\)|$)")
 
 
 def parse_yrc_word_lyrics(yrc_text: str) -> List[dict]:
@@ -246,17 +254,46 @@ def merge_word_lyrics(word_lines: List[dict], plain_lines: List[dict]) -> List[d
     return word_lines
 
 
+def _is_valid_image_bytes(image_bytes: Optional[bytes], min_bytes: int = 512) -> bool:
+    if not image_bytes or len(image_bytes) < min_bytes:
+        return False
+    head = image_bytes[:12]
+    if head[:3] == b"\xff\xd8\xff":
+        return True
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return True
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return True
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return True
+    return False
+
+
 def _bytes_to_data_url(image_bytes: Optional[bytes]) -> str:
-    if not image_bytes or len(image_bytes) < 512:
+    if not _is_valid_image_bytes(image_bytes, min_bytes=512):
         return ""
-    mime = "image/png" if image_bytes[:8].startswith(b"\x89PNG") else "image/jpeg"
+    assert image_bytes is not None
+    head = image_bytes[:12]
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        mime = "image/png"
+    elif head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        mime = "image/webp"
+    elif head[:6] in (b"GIF87a", b"GIF89a"):
+        mime = "image/gif"
+    else:
+        mime = "image/jpeg"
     b64 = base64.b64encode(image_bytes).decode("ascii")
     return f"data:{mime};base64,{b64}"
 
 
 def _pick_best_musicbrainz_release(toc: CdDiscToc, releases: list) -> Optional[Tuple[dict, dict, float]]:
-    cd_track_count = len(toc.tracks)
-    cd_durations_ms = [t.duration_sec * 1000.0 for t in toc.tracks]
+    audio_tracks = [t for t in toc.tracks if not getattr(t, "is_data_track", False)]
+    if not audio_tracks:
+        audio_tracks = list(toc.tracks)
+    audio_count = len(audio_tracks)
+    all_count = len(toc.tracks)
+    audio_durations_ms = [t.duration_sec * 1000.0 for t in audio_tracks]
+    all_durations_ms = [t.duration_sec * 1000.0 for t in toc.tracks]
     best_candidate: Optional[Tuple[float, dict, dict, float]] = None
 
     for rel in releases:
@@ -265,12 +302,16 @@ def _pick_best_musicbrainz_release(toc: CdDiscToc, releases: list) -> Optional[T
 
         for medium in rel.get("media", []):
             m_tracks = medium.get("tracks", [])
-            if len(m_tracks) != cd_track_count:
+            if len(m_tracks) == audio_count:
+                ref_durations_ms = audio_durations_ms
+            elif len(m_tracks) == all_count:
+                ref_durations_ms = all_durations_ms
+            else:
                 continue
 
             total_diff_ms = 0.0
             valid_lengths = 0
-            for cd_ms, mb_trk in zip(cd_durations_ms, m_tracks):
+            for cd_ms, mb_trk in zip(ref_durations_ms, m_tracks):
                 mb_len = mb_trk.get("length")
                 if mb_len is not None and mb_len > 0:
                     total_diff_ms += abs(float(mb_len) - cd_ms)
@@ -297,7 +338,7 @@ def _fetch_cover_from_caa(release_id: str) -> Optional[bytes]:
     try:
         caa_url = f"https://coverartarchive.org/release/{release_id}/front-500"
         r = requests.get(caa_url, headers={"User-Agent": USER_AGENT}, timeout=REQ_TIMEOUT)
-        if r.status_code == 200 and len(r.content) > 1000:
+        if r.status_code == 200 and _is_valid_image_bytes(r.content, min_bytes=1001):
             return r.content
     except Exception:
         pass
@@ -326,7 +367,7 @@ def _fetch_cover_from_netease(artist: str, album_title: str) -> Optional[bytes]:
                             headers=NETEASE_HEADERS,
                             timeout=REQ_TIMEOUT,
                         )
-                        if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                        if img_resp.status_code == 200 and _is_valid_image_bytes(img_resp.content, min_bytes=1001):
                             return img_resp.content
         except Exception:
             pass
@@ -355,7 +396,7 @@ def _fetch_cover_from_itunes(artist: str, album_title: str) -> Optional[bytes]:
                     if art_url:
                         hi_res_url = art_url.replace("100x100bb", "600x600bb")
                         img_resp = requests.get(hi_res_url, headers={"User-Agent": USER_AGENT}, timeout=REQ_TIMEOUT)
-                        if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                        if img_resp.status_code == 200 and _is_valid_image_bytes(img_resp.content, min_bytes=1001):
                             return img_resp.content
         except Exception:
             pass
@@ -378,7 +419,7 @@ def _fetch_cover_from_qq(artist: str, album_title: str) -> Optional[bytes]:
                     headers={"User-Agent": USER_AGENT, "Referer": "https://y.qq.com/"},
                     timeout=REQ_TIMEOUT,
                 )
-                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                if img_resp.status_code == 200 and _is_valid_image_bytes(img_resp.content, min_bytes=1001):
                     return img_resp.content
         except Exception:
             pass
@@ -419,7 +460,7 @@ def _fetch_cover_art_bytes(
                     data = future.result()
                 except Exception:
                     data = None
-                if not data or len(data) <= 1000:
+                if not _is_valid_image_bytes(data, min_bytes=1001):
                     continue
                 results[future] = data
                 if tier_of.get(future) == 0:
@@ -438,6 +479,18 @@ def _fetch_cover_art_bytes(
     return best_bytes
 
 
+def _decode_gnudb_response(resp) -> str:
+    """将 GNUDb HTTP 响应优先按 UTF-8 解码（requests 默认 text/plain 常误用 ISO-8859-1）。"""
+    raw = getattr(resp, "content", None)
+    if isinstance(raw, (bytes, bytearray)) and raw:
+        for enc in ("utf-8", "cp932", "gb18030", "latin1"):
+            try:
+                return bytes(raw).decode(enc)
+            except UnicodeDecodeError:
+                continue
+    return str(getattr(resp, "text", "") or "")
+
+
 def lookup_album_metadata(
     toc: CdDiscToc,
     on_partial: Optional[Callable[[AlbumMetadataResult], None]] = None,
@@ -446,8 +499,12 @@ def lookup_album_metadata(
     同步查询指定 CD TOC 的专辑信息、音轨标题列表与高清 Base64 封面（供后台线程调用）。
     支持 on_partial 回调：一旦解析出专辑名与音轨名立即触发回调刷新 UI，随后再下载封面图。
     """
-    if toc.disc_id in _METADATA_CACHE:
-        cached = _METADATA_CACHE[toc.disc_id]
+    if not toc or not getattr(toc, "tracks", None):
+        return AlbumMetadataResult(disc_id=getattr(toc, "disc_id", "") if toc else "")
+
+    with _METADATA_CACHE_LOCK:
+        cached = _METADATA_CACHE.get(toc.disc_id)
+    if cached is not None:
         if on_partial:
             try:
                 on_partial(cached)
@@ -460,11 +517,11 @@ def lookup_album_metadata(
         ):
             cover_bytes = _fetch_cover_art_bytes("", cached.artist, cached.album_title, timeout=6.5)
             if cover_bytes:
-                cached.cover_data_url = _bytes_to_data_url(cover_bytes)
+                data_url = _bytes_to_data_url(cover_bytes)
+                if data_url:
+                    with _METADATA_CACHE_LOCK:
+                        cached.cover_data_url = data_url
         return cached
-
-    if not toc or not toc.tracks:
-        return AlbumMetadataResult(disc_id=getattr(toc, "disc_id", "") if toc else "")
 
     result = AlbumMetadataResult(disc_id=toc.disc_id)
     if toc.cdtext_album:
@@ -481,6 +538,9 @@ def lookup_album_metadata(
         result.track_artists[trk.track_number] = trk.artist or result.artist
 
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    audio_tracks = [t for t in toc.tracks if not getattr(t, "is_data_track", False)]
+    if not audio_tracks:
+        audio_tracks = list(toc.tracks)
 
     # 1. MusicBrainz DiscID + TOC 智能匹配
     try:
@@ -516,8 +576,9 @@ def lookup_album_metadata(
                 )
 
                 tracks_json = medium.get("tracks", [])
+                target_tracks = audio_tracks if len(tracks_json) == len(audio_tracks) else toc.tracks
                 for idx, trk_obj in enumerate(tracks_json):
-                    trk_num = toc.tracks[idx].track_number if idx < len(toc.tracks) else (idx + 1)
+                    trk_num = target_tracks[idx].track_number if idx < len(target_tracks) else (idx + 1)
                     t_title = trk_obj.get("title") or (trk_obj.get("recording") or {}).get("title")
                     if t_title:
                         result.track_titles[trk_num] = t_title
@@ -543,7 +604,8 @@ def lookup_album_metadata(
 
                 cover_bytes = _fetch_cover_art_bytes(release_id, result.artist, result.album_title)
                 result.cover_data_url = _bytes_to_data_url(cover_bytes)
-                _METADATA_CACHE[toc.disc_id] = result
+                with _METADATA_CACHE_LOCK:
+                    _METADATA_CACHE[toc.disc_id] = result
                 return result
     except Exception:
         pass
@@ -558,7 +620,8 @@ def lookup_album_metadata(
         g_resp = requests.get(f"{gnudb_base}?cmd={query_cmd}&{hello_param}", headers=headers, timeout=REQ_TIMEOUT)
 
         if g_resp.status_code == 200:
-            lines = [ln.strip() for ln in g_resp.text.splitlines() if ln.strip()]
+            g_text = _decode_gnudb_response(g_resp)
+            lines = [ln.strip() for ln in g_text.splitlines() if ln.strip()]
             category, matched_discid, artist_album = "", "", ""
             if lines and lines[0].startswith("200 "):
                 parts = lines[0].split(" ", 3)
@@ -582,8 +645,9 @@ def lookup_album_metadata(
                 read_cmd = f"cddb+read+{category}+{matched_discid}"
                 r_resp = requests.get(f"{gnudb_base}?cmd={read_cmd}&{hello_param}", headers=headers, timeout=REQ_TIMEOUT)
                 if r_resp.status_code == 200:
+                    r_text = _decode_gnudb_response(r_resp)
                     ttitles: Dict[int, str] = {}
-                    for raw_ln in r_resp.text.splitlines():
+                    for raw_ln in r_text.splitlines():
                         if raw_ln.startswith("DYEAR="):
                             result.year = raw_ln.split("=", 1)[1].strip()[:4]
                         elif raw_ln.startswith("TTITLE"):
@@ -591,8 +655,9 @@ def lookup_album_metadata(
                             if eq_idx > 6:
                                 idx_str = raw_ln[6:eq_idx]
                                 if idx_str.isdigit():
-                                    t_idx = int(idx_str) + 1
-                                    ttitles[t_idx] = ttitles.get(t_idx, "") + raw_ln[eq_idx + 1 :]
+                                    pos_idx = int(idx_str)
+                                    t_num = toc.tracks[pos_idx].track_number if 0 <= pos_idx < len(toc.tracks) else (pos_idx + 1)
+                                    ttitles[t_num] = ttitles.get(t_num, "") + raw_ln[eq_idx + 1 :]
                     for t_num, t_name in ttitles.items():
                         if t_name.strip():
                             result.track_titles[t_num] = t_name.strip()
@@ -603,7 +668,6 @@ def lookup_album_metadata(
     if result.album_title not in ("Audio CD", "CD-TEXT Album", ""):
         # 自动识盘智能补全：若 CD-TEXT / GNUDb 只拿到了专辑名，但曲目仍为占位或存在乱码或缺封面，
         # 自动结合音轨数量与逐轨时长在三源曲库中检索最吻合的非乱码候选进行补全。
-        audio_tracks = [t for t in toc.tracks if not getattr(t, "is_data_track", False)]
         has_placeholder_or_garbled = any(
             re.match(r"^Track\s*\d+$", result.track_titles.get(t.track_number, ""), re.I)
             or _looks_garbled(result.track_titles.get(t.track_number, ""))
@@ -625,6 +689,7 @@ def lookup_album_metadata(
                         c for c in cands
                         if not c.get("garbled")
                         and (c.get("tracks") or [])
+                        and float(c.get("durationFitScore") or 0) >= 0.5
                         and (float(c.get("titleSimilarity") or 0) >= 0.55 or float(c.get("durationFitScore") or 0) >= 0.65)
                     ),
                     None,
@@ -653,17 +718,19 @@ def lookup_album_metadata(
             except Exception:
                 pass
 
-    if on_partial and result.album_title != "Audio CD":
+    has_real_title = result.album_title not in ("Audio CD", "CD-TEXT Album", "")
+    if on_partial and has_real_title:
         try:
             on_partial(result)
         except Exception:
             pass
 
-    if result.album_title != "Audio CD":
+    if has_real_title:
         if not result.cover_data_url:
             cover_bytes = _fetch_cover_art_bytes("", result.artist, result.album_title)
             result.cover_data_url = _bytes_to_data_url(cover_bytes)
-        _METADATA_CACHE[toc.disc_id] = result
+        with _METADATA_CACHE_LOCK:
+            _METADATA_CACHE[toc.disc_id] = result
 
     return result
 
@@ -783,12 +850,11 @@ def _looks_garbled(text: str) -> bool:
 
 def _tracks_cleanliness(tracks: List[dict]) -> float:
     """曲目表干净度 0~1（1 = 全部干净），用于候选排序时把乱码专辑沉底"""
-    names = [str(t.get("title") or "").strip() for t in (tracks or [])]
-    names = [n for n in names if n]
-    if not names:
+    items = [t for t in (tracks or []) if str(t.get("title") or "").strip() or t.get("_raw_garbled")]
+    if not items:
         return 1.0
-    dirty = sum(1 for n in names if _looks_garbled(n))
-    return 1.0 - dirty / len(names)
+    dirty = sum(1 for t in items if t.get("_raw_garbled") or _looks_garbled(str(t.get("title") or "").strip()))
+    return 1.0 - dirty / len(items)
 
 
 
@@ -951,13 +1017,16 @@ def lookup_track_lyrics(
     # 3. 备选查询 LRCLIB
     headers = {"User-Agent": USER_AGENT}
     try:
+        lrclib_params = {
+            "track_name": track_title,
+            "artist_name": clean_artist,
+        }
+        safe_dur = float(duration_sec or 0.0)
+        if safe_dur > 0:
+            lrclib_params["duration"] = int(round(safe_dur))
         resp = requests.get(
             "https://lrclib.net/api/get",
-            params={
-                "track_name": track_title,
-                "artist_name": clean_artist,
-                "duration": round(duration_sec),
-            },
+            params=lrclib_params,
             headers=headers,
             timeout=REQ_TIMEOUT,
         )
@@ -967,7 +1036,7 @@ def lookup_track_lyrics(
                 parsed = build_structured_bilingual_lyrics(synced)
                 if parsed:
                     _lyrics_cache_put(cache_key, parsed)
-                return parsed
+                    return parsed
 
         search_resp = requests.get(
             "https://lrclib.net/api/search",
@@ -976,11 +1045,24 @@ def lookup_track_lyrics(
             timeout=REQ_TIMEOUT,
         )
         if search_resp.status_code == 200 and isinstance(search_resp.json(), list):
+            lrc_cands = []
             for candidate in search_resp.json():
-                if isinstance(candidate, dict) and candidate.get("syncedLyrics"):
-                    parsed = build_structured_bilingual_lyrics(candidate["syncedLyrics"])
-                    if parsed:
-                        _lyrics_cache_put(cache_key, parsed)
+                if not isinstance(candidate, dict) or not candidate.get("syncedLyrics"):
+                    continue
+                c_title = (candidate.get("trackName") or "").strip()
+                sim = _title_similarity(c_title, track_title) if c_title else 0.0
+                c_dur = float(candidate.get("duration") or 0.0)
+                dur_diff = abs(c_dur - safe_dur) if (c_dur > 0 and safe_dur > 0) else 5.0
+                if sim < 0.45 and dur_diff > 3.0:
+                    continue
+                if safe_dur > 0 and c_dur > 0 and dur_diff > 15.0:
+                    continue
+                lrc_cands.append((dur_diff + (1.0 - sim) * 30.0, candidate["syncedLyrics"]))
+            lrc_cands.sort(key=lambda x: x[0])
+            for _sc, synced_txt in lrc_cands:
+                parsed = build_structured_bilingual_lyrics(synced_txt)
+                if parsed:
+                    _lyrics_cache_put(cache_key, parsed)
                     return parsed
     except Exception:
         pass
@@ -1037,7 +1119,7 @@ def download_image_bytes(url: str) -> Optional[bytes]:
         return None
     try:
         resp = requests.get(url, headers={"User-Agent": USER_AGENT, "Referer": "https://y.qq.com/"}, timeout=REQ_TIMEOUT)
-        if resp.status_code == 200 and len(resp.content) > 1000:
+        if resp.status_code == 200 and _is_valid_image_bytes(resp.content, min_bytes=1001):
             return resp.content
     except Exception:
         pass
@@ -1048,9 +1130,10 @@ def update_cached_cover(disc_id: str, cover_data_url: str) -> None:
     """将后台补抓到的封面同步回写到内存元数据缓存，避免下次读盘仍无封面。"""
     if not disc_id or not cover_data_url:
         return
-    cached = _METADATA_CACHE.get(disc_id)
-    if cached is not None and not cached.cover_data_url:
-        cached.cover_data_url = cover_data_url
+    with _METADATA_CACHE_LOCK:
+        cached = _METADATA_CACHE.get(disc_id)
+        if cached is not None and not cached.cover_data_url:
+            cached.cover_data_url = cover_data_url
 
 
 def refetch_album_cover(album_title: str, artist: str) -> str:
@@ -1077,7 +1160,7 @@ def _itunes_cover_bytes(art_url: str) -> Optional[bytes]:
     hi_res = art_url.replace("100x100bb", "800x800bb").replace("100x100", "800x800")
     try:
         img = requests.get(hi_res, headers={"User-Agent": USER_AGENT}, timeout=REQ_TIMEOUT)
-        if img.status_code == 200 and len(img.content) > 1000:
+        if img.status_code == 200 and _is_valid_image_bytes(img.content, min_bytes=1001):
             return img.content
     except Exception:
         pass
@@ -1275,10 +1358,10 @@ def _primary_artist(artist: str) -> str:
 
 def _netease_search_songs(title: str, artist: str, limit: int = 8) -> List[dict]:
     artist = _primary_artist(artist)
-    queries = [q for q in (f"{artist} {title}".strip(), title.strip()) if q]
+    queries = list(dict.fromkeys(q for q in (f"{artist} {title}".strip(), title.strip()) if q))
     out: List[dict] = []
+    seen_ids = set()
     try:
-        songs_raw: List[dict] = []
         for query in queries:
             resp = requests.post(
                 "https://music.163.com/api/search/get",
@@ -1288,31 +1371,34 @@ def _netease_search_songs(title: str, artist: str, limit: int = 8) -> List[dict]
             )
             if resp.status_code == 200:
                 songs_raw = resp.json().get("result", {}).get("songs") or []
-            if len(songs_raw) >= 3:
+                for song in songs_raw:
+                    sid = str(song.get("id") or "")
+                    if not sid or sid in seen_ids:
+                        continue
+                    seen_ids.add(sid)
+                    artists = "/".join(a.get("name", "") for a in (song.get("artists") or []) if isinstance(a, dict))
+                    out.append(
+                        {
+                            "source": "netease",
+                            "song_id": sid,
+                            "title": (song.get("name") or "").strip(),
+                            "artist": artists,
+                            "duration_sec": round(float(song.get("duration") or 0) / 1000.0, 2),
+                        }
+                    )
+            if len(out) >= 3:
                 break
-        if songs_raw:
-            for song in songs_raw:
-                artists = "/".join(a.get("name", "") for a in (song.get("artists") or []) if isinstance(a, dict))
-                out.append(
-                    {
-                        "source": "netease",
-                        "song_id": str(song.get("id") or ""),
-                        "title": (song.get("name") or "").strip(),
-                        "artist": artists,
-                        "duration_sec": round(float(song.get("duration") or 0) / 1000.0, 2),
-                    }
-                )
     except Exception:
         pass
-    return out
+    return out[:limit]
 
 
 def _qq_search_songs(title: str, artist: str, limit: int = 8) -> List[dict]:
     artist = _primary_artist(artist)
-    queries = [q for q in (f"{artist} {title}".strip(), title.strip()) if q]
+    queries = list(dict.fromkeys(q for q in (f"{artist} {title}".strip(), title.strip()) if q))
     out: List[dict] = []
+    seen_ids = set()
     try:
-        songs: List[dict] = []
         for query in queries:
             resp = requests.get(
                 "https://c.y.qq.com/soso/fcgi-bin/client_search_cp",
@@ -1323,25 +1409,28 @@ def _qq_search_songs(title: str, artist: str, limit: int = 8) -> List[dict]:
             if resp.status_code == 200:
                 data = resp.json()
                 songs = ((data.get("data") or {}).get("song") or {}).get("list") or []
-            if len(songs) >= 3:
+                for song in songs:
+                    mid = str(song.get("songmid") or "")
+                    if not mid or mid in seen_ids:
+                        continue
+                    seen_ids.add(mid)
+                    singers = "/".join(
+                        s.get("name", "") for s in (song.get("singer") or []) if isinstance(s, dict)
+                    )
+                    out.append(
+                        {
+                            "source": "qq",
+                            "song_id": mid,
+                            "title": _sanitize_title(song.get("songname")),
+                            "artist": _sanitize_title(singers),
+                            "duration_sec": round(float(song.get("interval") or 0), 2),
+                        }
+                    )
+            if len(out) >= 3:
                 break
-        if songs:
-            for song in songs:
-                singers = "/".join(
-                    s.get("name", "") for s in (song.get("singer") or []) if isinstance(s, dict)
-                )
-                out.append(
-                    {
-                        "source": "qq",
-                        "song_id": str(song.get("songmid") or ""),
-                        "title": (song.get("songname") or "").strip(),
-                        "artist": singers,
-                        "duration_sec": round(float(song.get("interval") or 0), 2),
-                    }
-                )
     except Exception:
         pass
-    return out
+    return out[:limit]
 
 
 def _lrclib_search_songs(title: str, artist: str, limit: int = 8) -> List[dict]:
@@ -1414,8 +1503,14 @@ def _qq_lyrics_by_mid(songmid: str) -> List[dict]:
         data = json.loads(text)
         if int(data.get("retcode") or 0) != 0:
             return []
-        orig = base64.b64decode(data.get("lyric") or "").decode("utf-8", "ignore")
-        trans = base64.b64decode(data.get("trans") or "").decode("utf-8", "ignore")
+        orig = html.unescape(base64.b64decode(data.get("lyric") or "").decode("utf-8", "ignore"))
+        trans = ""
+        try:
+            trans_raw = data.get("trans") or ""
+            if trans_raw:
+                trans = html.unescape(base64.b64decode(trans_raw).decode("utf-8", "ignore"))
+        except Exception:
+            trans = ""
         return build_structured_bilingual_lyrics(orig, trans)
     except Exception:
         return []
@@ -1503,12 +1598,26 @@ def enrich_lyrics_with_word_timings(
                 break
 
         candidates.sort(key=lambda x: x[0])
+        base_trans_cnt = sum(1 for ln in base_lines if isinstance(ln, dict) and ln.get("translation"))
+        base_body = " ".join(_normalize_song_title(ln.get("text") or "") for ln in base_lines if isinstance(ln, dict))
         for _sc, sid in candidates[:2]:
             ne_lines = _fetch_netease_song_lyrics(sid)
             if ne_lines and any(ln.get("words") for ln in ne_lines):
+                if len(ne_lines) < max(2, int(len(base_lines) * 0.7)):
+                    continue
+                ne_body = " ".join(_normalize_song_title(ln.get("text") or "") for ln in ne_lines if isinstance(ln, dict))
+                if base_body and ne_body:
+                    text_sim = difflib.SequenceMatcher(None, base_body[:1200], ne_body[:1200]).ratio()
+                    if text_sim < 0.45:
+                        continue
                 merged = merge_word_lyrics(ne_lines, base_lines)
-                if any(ln.get("words") for ln in merged):
-                    return merged
+                if not any(ln.get("words") for ln in merged):
+                    continue
+                if base_trans_cnt >= 3:
+                    merged_trans_cnt = sum(1 for ln in merged if isinstance(ln, dict) and ln.get("translation"))
+                    if merged_trans_cnt < base_trans_cnt * 0.7:
+                        continue
+                return merged
     except Exception:
         pass
     return base_lines
@@ -1584,11 +1693,13 @@ def search_lyric_candidates(
     picked = [cand for _, cand in scored[:limit]]
 
     results: List[dict] = []
+    detail_n = max(0, int(detail_top or 0))
     if picked:
-        with ThreadPoolExecutor(max_workers=min(4, len(picked[:detail_top]))) as pool:
-            detailed = list(pool.map(_candidate_summary, picked[:detail_top]))
-        results.extend(detailed)
-        for cand in picked[detail_top:]:
+        if detail_n > 0:
+            with ThreadPoolExecutor(max_workers=min(4, len(picked[:detail_n]))) as pool:
+                detailed = list(pool.map(_candidate_summary, picked[:detail_n]))
+            results.extend(detailed)
+        for cand in picked[detail_n:]:
             summary = {k: v for k, v in cand.items() if not k.startswith("_")}
             summary.update({"line_count": 0, "has_translation": False, "has_words": False,
                             "translation_ratio": 0.0, "preview": ""})
@@ -1622,16 +1733,20 @@ def _qq_album_search(query: str, limit: int = 6) -> List[dict]:
             mid = (alb.get("albumMID") or "").strip()
             if not mid:
                 continue
+            raw_title = str(alb.get("albumName") or "")
+            raw_artist = str(alb.get("singerName") or "")
+            raw_garbled = _looks_garbled(raw_title) or _looks_garbled(raw_artist)
             out.append(
                 {
                     "source": "qq",
                     "album_id": mid,
-                    "title": _sanitize_title(alb.get("albumName")),
-                    "artist": _sanitize_title(alb.get("singerName")),
+                    "title": _sanitize_title(raw_title),
+                    "artist": _sanitize_title(raw_artist),
                     "year": "",
                     "track_count": int(alb.get("song_count") or 0),
                     "cover_url": QQ_ALBUM_COVER.format(mid),
                     "tracks": [],
+                    "_raw_garbled": raw_garbled,
                 }
             )
     except Exception:
@@ -1658,11 +1773,13 @@ def _qq_album_detail(album_mid: str) -> Tuple[str, List[dict]]:
             year = ""
         tracks = []
         for song in (data.get("list") or []):
+            raw_nm = str(song.get("songname") or "")
             tracks.append(
                 {
-                    "title": _sanitize_title(song.get("songname")),
+                    "title": _sanitize_title(raw_nm),
                     "duration_sec": round(float(song.get("interval") or 0), 2),
                     "song_id": str(song.get("songmid") or ""),
+                    "_raw_garbled": _looks_garbled(raw_nm),
                 }
             )
         return year, tracks
@@ -1696,16 +1813,20 @@ def _netease_album_search(query: str, limit: int = 6) -> List[dict]:
                     year = str(time.localtime(ts).tm_year)
             except Exception:
                 year = ""
+            raw_title = str(alb.get("name") or "")
+            raw_artist = str(art.get("name") or "") if isinstance(art, dict) else ""
+            raw_garbled = _looks_garbled(raw_title) or _looks_garbled(raw_artist)
             out.append(
                 {
                     "source": "netease",
                     "album_id": str(aid),
-                    "title": _sanitize_title(alb.get("name")),
-                    "artist": _sanitize_title(art.get("name")) if isinstance(art, dict) else "",
+                    "title": _sanitize_title(raw_title),
+                    "artist": _sanitize_title(raw_artist),
                     "year": year,
                     "track_count": int(alb.get("size") or 0),
                     "cover_url": (alb.get("picUrl") or "").strip(),
                     "tracks": [],
+                    "_raw_garbled": raw_garbled,
                 }
             )
     except Exception:
@@ -1719,17 +1840,21 @@ def _itunes_album_search_lite(query: str, country: str, limit: int = 6) -> List[
         cid = alb.get("collectionId")
         if not cid:
             continue
+        raw_title = str(alb.get("collectionName") or "")
+        raw_artist = str(alb.get("artistName") or "")
+        raw_garbled = _looks_garbled(raw_title) or _looks_garbled(raw_artist)
         out.append(
             {
                 "source": "itunes",
                 "album_id": str(cid),
-                "title": _sanitize_title(alb.get("collectionName")),
-                "artist": _sanitize_title(alb.get("artistName")),
+                "title": _sanitize_title(raw_title),
+                "artist": _sanitize_title(raw_artist),
                 "year": (alb.get("releaseDate") or "")[:4],
                 "track_count": int(alb.get("trackCount") or 0),
                 "cover_url": (alb.get("artworkUrl100") or "").replace("100x100bb", "600x600bb"),
                 "tracks": [],
                 "_country": country,
+                "_raw_garbled": raw_garbled,
             }
         )
     return out
@@ -1754,8 +1879,10 @@ def _netease_album_detail(album_id: str) -> List[dict]:
         songs = ((data.get("album") or {}).get("songs")) or data.get("songs") or []
         tracks: List[dict] = []
         for song in songs:
-            nm = _sanitize_title(song.get("name"))
-            if not nm:
+            raw_nm = str(song.get("name") or "")
+            raw_garbled = _looks_garbled(raw_nm)
+            nm = _sanitize_title(raw_nm)
+            if not nm and not raw_garbled:
                 continue
             sid = str(song.get("id") or "").strip()
             dur_ms = float(song.get("duration") or song.get("dt") or 0)
@@ -1765,6 +1892,7 @@ def _netease_album_detail(album_id: str) -> List[dict]:
                     "duration_sec": round(dur_ms / 1000.0, 2) if dur_ms > 0 else 0.0,
                     "song_id": sid,
                     "source": "netease",
+                    "_raw_garbled": raw_garbled,
                 }
             )
         return tracks
@@ -1791,6 +1919,7 @@ def _fill_album_tracks(cand: dict) -> dict:
                 "duration_sec": round(float(s.get("trackTimeMillis") or 0) / 1000.0, 2),
                 "song_id": "",
                 "source": "itunes",
+                "_raw_garbled": _looks_garbled(str(s.get("trackName") or "")),
             }
             for s in songs
         ]
@@ -1799,7 +1928,7 @@ def _fill_album_tracks(cand: dict) -> dict:
     cand["supports_track_ids"] = any(t.get("song_id") for t in (cand.get("tracks") or []))
     cand["_cleanliness"] = _tracks_cleanliness(cand.get("tracks") or [])
     cand["_dirty_tracks"] = sum(
-        1 for t in (cand.get("tracks") or []) if _looks_garbled(t.get("title") or "")
+        1 for t in (cand.get("tracks") or []) if t.get("_raw_garbled") or _looks_garbled(t.get("title") or "")
     )
     return cand
 
@@ -1847,7 +1976,7 @@ def _backfill_empty_album_tracks(detailed: List[dict], expected_track_count: int
             cand["supports_track_ids"] = any(t.get("song_id") for t in borrowed)
             cand["_cleanliness"] = _tracks_cleanliness(borrowed)
             cand["_dirty_tracks"] = sum(
-                1 for t in borrowed if _looks_garbled(t.get("title") or "")
+                1 for t in borrowed if t.get("_raw_garbled") or _looks_garbled(t.get("title") or "")
             )
 
 
@@ -1998,7 +2127,7 @@ def search_album_candidates(
             elif fit_ratio < 0.4:
                 penalty += 28.0 * (1.0 - fit_ratio)
         cand["_final_score"] = round(base + penalty, 1)
-        cand["_garbled"] = int(cand.get("_dirty_tracks") or 0) > 0
+        cand["_garbled"] = bool(cand.get("_raw_garbled")) or int(cand.get("_dirty_tracks") or 0) > 0
         cand["_dur_fit"] = dur_fit
         reranked.append((cand["_final_score"], cand))
     reranked.sort(key=lambda item: item[0])
@@ -2006,6 +2135,12 @@ def search_album_candidates(
     results = []
     for _, cand in reranked:
         out = {k: v for k, v in cand.items() if not k.startswith("_")}
+        if isinstance(out.get("tracks"), list):
+            out["tracks"] = [
+                {tk: tv for tk, tv in t.items() if not str(tk).startswith("_")}
+                if isinstance(t, dict) else t
+                for t in out["tracks"]
+            ]
         dur_fit = cand.get("_dur_fit") or {}
         out["score"] = cand.get("_final_score", cand.get("_score", 0))
         out["titleSimilarity"] = cand.get("_title_sim", 0)
