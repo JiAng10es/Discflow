@@ -70,7 +70,7 @@
     --lyric-item-pad-y: clamp(10px, 1.6vh, 20px);
     --lyric-item-pad-x: clamp(14px, 1.6vw, 24px);
 
-    --queue-title-size: clamp(17px, 1.7vw, 24px);
+    --queue-title-size: 20px;
     --queue-item-pad-y: clamp(9px, 1.3vh, 16px);
     --queue-item-pad-x: clamp(12px, 1.4vw, 20px);
     --queue-track-name: clamp(14px, 1.4vw, 18px);
@@ -905,7 +905,6 @@
     gap: var(--stage-gap);
     align-items: center;
     padding: 4px clamp(8px, 1.2vw, 24px);
-    transition: grid-template-columns 0.55s var(--spring-fluid);
   }
 
   .main-stage.single-column {
@@ -1336,22 +1335,43 @@
   .queue-header {
     padding: 8px 14px 12px 14px;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .queue-header-top {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .queue-header-title {
     font-size: var(--queue-title-size);
     font-weight: 700;
+    line-height: 1.3;
     color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .queue-header-meta {
-    font-size: clamp(11px, 1.1vw, 13px);
+    font-size: 12px;
     font-family: var(--font-mono);
     color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .queue-header-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .track-row {

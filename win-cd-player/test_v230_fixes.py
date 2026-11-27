@@ -1588,6 +1588,48 @@ setTimeout(function () {
         for token in ("function toggleFullscreenImmersive(", "function scheduleFullscreenHudHide(", 'e.key === "F11"'):
             self.assertIn(token, js)
 
+    def test_waveout_sync_resampling_and_queue_header_stability(self):
+        import struct
+        import wave
+        import cd_engine
+
+        # 1. 验证 48kHz 本地 WAV 读取器会自动重采样到 44.1kHz 立体声
+        with tempfile.TemporaryDirectory() as td:
+            wav_path = os.path.join(td, "test48k.wav")
+            n_frames_48k = 4800  # 0.1s @ 48kHz
+            with wave.open(wav_path, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(48000)
+                wf.writeframes(struct.pack("<" + "h" * n_frames_48k, *([1000] * n_frames_48k)))
+
+            reader = cd_engine._LocalAudioReader(wav_path)
+            try:
+                self.assertEqual(reader.samplerate, 48000)
+                pcm = reader.readframes(4410)  # 0.1s @ 44.1kHz stereo
+                self.assertEqual(len(pcm), 4410 * 4)
+            finally:
+                reader.close()
+
+        # 2. 验证 waveOut 不再有 0.25s 超时截断导致覆写未播完缓冲
+        base_dir = os.path.dirname(__file__)
+        with open(os.path.join(base_dir, "cd_engine.py"), "r", encoding="utf-8") as f:
+            engine_src = f.read()
+        self.assertNotIn("spin_start < 0.25", engine_src)
+        self.assertIn("unprep_res = winmm.waveOutUnprepareHeader", engine_src)
+        self.assertIn("write_res = winmm.waveOutWrite", engine_src)
+
+        # 3. 验证曲目页头部采用独立顶行 + 工具栏，固定标题字号防缩放抖动
+        with open(os.path.join(base_dir, "ui", "styles.css"), "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(os.path.join(base_dir, "ui", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("--queue-title-size: 20px;", css)
+        self.assertIn(".queue-header-top", css)
+        self.assertIn(".queue-header-toolbar", css)
+        self.assertIn('class="queue-header-top"', js)
+        self.assertIn('class="queue-header-toolbar"', js)
+
 
 if __name__ == "__main__":
     unittest.main()

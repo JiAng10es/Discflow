@@ -1763,33 +1763,35 @@ function toggleDiscflowMenu(event) {
 
     let html = `
       <div class="queue-header">
-        <div style="min-width: 0; flex: 1;">
-          <div class="queue-header-title">${escapeHtml(appState.albumTitle || "Discflow 曲目队列")}</div>
+        <div class="queue-header-top">
+          <div class="queue-header-title" title="${escapeHtml(appState.albumTitle || "Discflow 曲目队列")}">${escapeHtml(appState.albumTitle || "Discflow 曲目队列")}</div>
           <div class="queue-header-meta">DiscID: ${escapeHtml((appState.discId || "--").slice(0, 10))} · 共 ${tracks.length} 首</div>
         </div>
-        <div class="play-mode-group" role="radiogroup" aria-label="播放模式">
-          <button class="mode-pill-btn ${curMode === 'order' ? 'active' : ''}" data-mode="order" onclick="setPlayMode('order')" title="顺序播放 (列表循环)">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            <span>顺序</span>
-          </button>
-          <button class="mode-pill-btn ${curMode === 'shuffle' ? 'active' : ''}" data-mode="shuffle" onclick="setPlayMode('shuffle')" title="随机播放">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20l6.2-6.2M21 3l-7.8 7.8"/><path d="M21 21h-5v-5"/><path d="M15.2 15.2l5.8 5.8M4 4l9.6 9.6"/></svg>
-            <span>随机</span>
-          </button>
-          <button class="mode-pill-btn ${curMode === 'one' ? 'active' : ''}" data-mode="one" onclick="setPlayMode('one')" title="单曲循环">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><path d="M11.2 10.5l1.6-1.1v5.2m-1.2 0h2.4" stroke-width="1.8"/></svg>
-            <span>单曲</span>
-          </button>
-        </div>
-        <div class="queue-actions" style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
-          <button id="refreshAlbumLyricsBtn" class="mode-pill-btn match-meta-btn" onclick="refreshCurrentAlbumLyrics()" title="强制重新匹配整张专辑全部曲目的逐字与双语歌词">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-            <span>重刷歌词</span>
-          </button>
-          <button class="mode-pill-btn match-meta-btn" onclick="openMatchMetadataModal()" title="手动匹配专辑信息（封面 / 曲名 / 歌词）">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-            <span>匹配</span>
-          </button>
+        <div class="queue-header-toolbar">
+          <div class="play-mode-group" role="radiogroup" aria-label="播放模式">
+            <button class="mode-pill-btn ${curMode === 'order' ? 'active' : ''}" data-mode="order" onclick="setPlayMode('order')" title="顺序播放 (列表循环)">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              <span>顺序</span>
+            </button>
+            <button class="mode-pill-btn ${curMode === 'shuffle' ? 'active' : ''}" data-mode="shuffle" onclick="setPlayMode('shuffle')" title="随机播放">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20l6.2-6.2M21 3l-7.8 7.8"/><path d="M21 21h-5v-5"/><path d="M15.2 15.2l5.8 5.8M4 4l9.6 9.6"/></svg>
+              <span>随机</span>
+            </button>
+            <button class="mode-pill-btn ${curMode === 'one' ? 'active' : ''}" data-mode="one" onclick="setPlayMode('one')" title="单曲循环">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><path d="M11.2 10.5l1.6-1.1v5.2m-1.2 0h2.4" stroke-width="1.8"/></svg>
+              <span>单曲</span>
+            </button>
+          </div>
+          <div class="queue-actions" style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
+            <button id="refreshAlbumLyricsBtn" class="mode-pill-btn match-meta-btn" onclick="refreshCurrentAlbumLyrics()" title="强制重新匹配整张专辑全部曲目的逐字与双语歌词">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+              <span>重刷歌词</span>
+            </button>
+            <button class="mode-pill-btn match-meta-btn" onclick="openMatchMetadataModal()" title="手动匹配专辑信息（封面 / 曲名 / 歌词）">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+              <span>匹配</span>
+            </button>
+          </div>
         </div>
       </div>
     `;

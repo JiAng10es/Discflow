@@ -575,47 +575,99 @@ class _ReadChunk:
 class _LocalAudioReader:
     """统一本地无损音频流读取器：无缝兼容 WAV（标准库）与 FLAC（soundfile/libsndfile）。"""
 
+    TARGET_SAMPLE_RATE = 44100
+
     def __init__(self, filepath: str):
         self.filepath = filepath
         self._wave = None
         self._sf = None
         self._total_frames = 0
         self._channels = 2
+        self._samplerate = self.TARGET_SAMPLE_RATE
         if filepath.lower().endswith(".wav"):
             import wave
             self._wave = wave.open(filepath, "rb")
             self._total_frames = int(self._wave.getnframes())
             self._channels = int(self._wave.getnchannels() or 2)
+            self._samplerate = int(self._wave.getframerate() or self.TARGET_SAMPLE_RATE)
         else:
             import soundfile as sf
             self._sf = sf.SoundFile(filepath, mode="r")
             self._total_frames = int(len(self._sf))
             self._channels = int(self._sf.channels or 2)
+            self._samplerate = int(self._sf.samplerate or self.TARGET_SAMPLE_RATE)
+
+    @property
+    def samplerate(self) -> int:
+        return self._samplerate
 
     def getnframes(self) -> int:
         return self._total_frames
 
     def setpos(self, frame: int) -> None:
-        pos = max(0, min(self._total_frames, int(frame)))
+        if self._samplerate != self.TARGET_SAMPLE_RATE and self._samplerate > 0:
+            scaled = int(round(frame * self._samplerate / float(self.TARGET_SAMPLE_RATE)))
+        else:
+            scaled = int(frame)
+        pos = max(0, min(self._total_frames, scaled))
         if self._wave is not None:
             self._wave.setpos(pos)
         elif self._sf is not None:
             self._sf.seek(pos)
 
+    @staticmethod
+    def _resample_int16_stereo(arr, target_frames: int):
+        import numpy as np
+        src_frames = arr.shape[0]
+        if src_frames <= 0 or target_frames <= 0 or src_frames == target_frames:
+            return arr
+        x_old = np.linspace(0.0, 1.0, num=src_frames, endpoint=False)
+        x_new = np.linspace(0.0, 1.0, num=target_frames, endpoint=False)
+        ch0 = np.interp(x_new, x_old, arr[:, 0].astype(np.float32))
+        ch1 = np.interp(x_new, x_old, arr[:, 1].astype(np.float32))
+        out = np.stack([ch0, ch1], axis=1)
+        np.clip(out, -32768.0, 32767.0, out=out)
+        return out.astype("<i2")
+
     def readframes(self, frames: int) -> bytes:
         if frames <= 0:
             return b""
+        need_resample = self._samplerate != self.TARGET_SAMPLE_RATE and self._samplerate > 0
+        src_frames = (
+            max(1, int(round(frames * self._samplerate / float(self.TARGET_SAMPLE_RATE))))
+            if need_resample
+            else frames
+        )
         if self._wave is not None:
-            return self._wave.readframes(frames)
+            raw = self._wave.readframes(src_frames)
+            if not raw:
+                return b""
+            if not need_resample and self._channels == 2:
+                return raw
+            import numpy as np
+            arr = np.frombuffer(raw, dtype="<i2")
+            if self._channels > 1:
+                arr = arr.reshape(-1, self._channels)
+            else:
+                arr = arr.reshape(-1, 1)
+            if arr.shape[1] == 1:
+                arr = np.repeat(arr, 2, axis=1)
+            elif arr.shape[1] > 2:
+                arr = arr[:, :2]
+            if need_resample:
+                arr = self._resample_int16_stereo(arr, frames)
+            return np.ascontiguousarray(arr, dtype="<i2").tobytes()
         if self._sf is not None:
             import numpy as np
-            arr = self._sf.read(frames, dtype="int16", always_2d=True)
+            arr = self._sf.read(src_frames, dtype="int16", always_2d=True)
             if arr.size == 0:
                 return b""
             if arr.shape[1] == 1:
                 arr = np.repeat(arr, 2, axis=1)
             elif arr.shape[1] > 2:
                 arr = arr[:, :2]
+            if need_resample:
+                arr = self._resample_int16_stereo(arr, frames)
             return np.ascontiguousarray(arr, dtype="<i2").tobytes()
         return b""
 
@@ -866,8 +918,10 @@ class CddaWaveOutPlayer:
                 wf_reader = _LocalAudioReader(local_fp)
                 total_frames = wf_reader.getnframes()
                 if total_frames > 0:
-                    trk.end_lba = max(1, total_frames // 588)
-                    trk.duration_sec = total_frames / 44100.0
+                    sr = float(wf_reader.samplerate or 44100)
+                    dur = total_frames / sr
+                    trk.duration_sec = dur
+                    trk.end_lba = max(1, int(round(dur * CD_FRAMES_PER_SECOND)))
             else:
                 if wf_reader is not None:
                     try:
@@ -1328,7 +1382,7 @@ class CddaWaveOutPlayer:
             )
             t_reader.start()
 
-            num_buffers = 6
+            num_buffers = 8
             headers = [WAVEHDR() for _ in range(num_buffers)]
             buffers = [None] * num_buffers
             buf_idx = 0
@@ -1426,12 +1480,42 @@ class CddaWaveOutPlayer:
 
                     hdr = headers[buf_idx]
                     if hdr.dwFlags & WHDR_PREPARED:
-                        if not (hdr.dwFlags & WHDR_DONE):
-                            # 等待前一个缓冲播放完毕
-                            spin_start = time.time()
-                            while not (hdr.dwFlags & WHDR_DONE) and time.time() - spin_start < 0.25:
-                                time.sleep(0.008)
-                        winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                        # 必须等待声卡真正播完该缓冲，绝不超时强行覆写正在 DMA 读取的内存；
+                        # 等待期间同步响应暂停/恢复/音量/Seek/切歌指令，避免阻塞控制流。
+                        aborted = False
+                        while not (hdr.dwFlags & WHDR_DONE):
+                            with self._lock:
+                                if (
+                                    self._session_id != my_session_id
+                                    or self._seek_generation != run_seek_gen
+                                    or self._seek_reset_pending
+                                ):
+                                    aborted = True
+                                    break
+                                inner_vol_dirty = self._volume_dirty
+                                inner_vol = self._volume
+                                self._volume_dirty = False
+                                inner_pause = self._pause_change_pending
+                                self._pause_change_pending = None
+                            if inner_vol_dirty:
+                                self._apply_hardware_volume(h_wave, inner_vol)
+                            if inner_pause is True:
+                                winmm.waveOutPause(h_wave)
+                            elif inner_pause is False:
+                                winmm.waveOutRestart(h_wave)
+                            time.sleep(0.006)
+                        if aborted:
+                            continue
+                        unprep_res = winmm.waveOutUnprepareHeader(
+                            h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR)
+                        )
+                        if unprep_res != 0:
+                            time.sleep(0.01)
+                            unprep_res = winmm.waveOutUnprepareHeader(
+                                h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR)
+                            )
+                            if unprep_res != 0:
+                                continue
 
                     pcm_bytes = chunk.data
                     c_buf = ctypes.create_string_buffer(pcm_bytes, len(pcm_bytes))
@@ -1442,8 +1526,14 @@ class CddaWaveOutPlayer:
                     hdr.dwFlags = 0
                     hdr.dwLoops = 0
 
-                    winmm.waveOutPrepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
-                    winmm.waveOutWrite(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                    prep_res = winmm.waveOutPrepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                    if prep_res != 0:
+                        continue
+                    write_res = winmm.waveOutWrite(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                    if write_res != 0:
+                        winmm.waveOutUnprepareHeader(h_wave, ctypes.byref(hdr), ctypes.sizeof(WAVEHDR))
+                        hdr.dwFlags = 0
+                        continue
                     submitted_bytes += len(pcm_bytes)
 
                     buf_idx = (buf_idx + 1) % num_buffers
