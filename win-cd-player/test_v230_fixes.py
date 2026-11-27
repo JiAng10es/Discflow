@@ -1835,12 +1835,14 @@ class TestDeepStabilityAuditFixes(unittest.TestCase):
             res = metadata_service.enrich_lyrics_with_word_timings("Alpha", "Artist", 120.0, orig_bilingual)
         self.assertEqual(res, orig_bilingual)
 
-        # 4. search_lyric_candidates(detail_top=0) 不崩溃
-        with patch.object(metadata_service, "_netease_search_songs", return_value=[{"id": "1", "title": "S", "artist": "A", "duration_sec": 100.0}]), \
+        # 4. search_lyric_candidates(detail_top=0) 不崩溃且返回轻量候选
+        with patch.object(metadata_service, "_netease_search_songs", return_value=[{"source": "netease", "song_id": "1", "title": "S", "artist": "A", "duration_sec": 100.0}]), \
              patch.object(metadata_service, "_qq_search_songs", return_value=[]), \
              patch.object(metadata_service, "_lrclib_search_songs", return_value=[]):
             cands = metadata_service.search_lyric_candidates("S", "A", 100.0, detail_top=0)
-            self.assertEqual(cands, [])
+            self.assertEqual(len(cands), 1)
+            self.assertEqual(cands[0]["song_id"], "1")
+            self.assertEqual(cands[0]["line_count"], 0)
 
     def test_updater_service_semver_bat_escape_and_pe_validation(self):
         import updater_service
@@ -1988,6 +1990,118 @@ class TestDeepStabilityAuditFixes(unittest.TestCase):
             ["node", "-"], input=probe_js, capture_output=True, text=True, encoding="utf-8", timeout=15
         )
         self.assertEqual(proc.returncode, 0, f"Node 回归校验失败:\nSTDOUT:{proc.stdout}\nSTDERR:{proc.stderr}")
+
+    def test_cross_album_batch_abort_does_not_lock_next_album_and_amp_updater_executes(self):
+        import threading
+        import updater_service
+
+        # 1. 验证专辑切换中止上一批 _run_album_lyrics_batch 后，_lyrics_batch.running 不会永久卡死
+        ctrl = _make_controller()
+        try:
+            toc_a = cd_engine.CdDiscToc(
+                drive_letter="D:",
+                first_track=1,
+                last_track=1,
+                leadout_frame=10000,
+                tracks=[cd_engine.CdTrackInfo(track_number=1, start_lba=0, end_lba=9000, start_frame=150, duration_sec=120.0, title="A1", artist="ArtA")],
+                disc_id="disc_a",
+            )
+            toc_b = cd_engine.CdDiscToc(
+                drive_letter="E:",
+                first_track=1,
+                last_track=1,
+                leadout_frame=10000,
+                tracks=[cd_engine.CdTrackInfo(track_number=1, start_lba=0, end_lba=9000, start_frame=150, duration_sec=120.0, title="B1", artist="ArtB")],
+                disc_id="disc_b",
+            )
+            ctrl.current_toc = toc_a
+            ctrl._load_token = 1
+            ctrl._lyrics_batch_id = 10
+            ctrl._lyrics_batch = {"running": True, "done": 0, "total": 1, "matched": 0, "missed": []}
+
+            entered = threading.Event()
+            release = threading.Event()
+
+            def slow_lookup(*args, **kwargs):
+                entered.set()
+                release.wait(timeout=2.0)
+                return [{"time": 1.0, "text": "OldAlbumLyric", "translation": ""}]
+
+            t = threading.Thread(
+                target=ctrl._run_album_lyrics_batch,
+                args=(toc_a, toc_a.tracks, True, 1, 10),
+                daemon=True,
+            )
+            with patch("main.lookup_track_lyrics", side_effect=slow_lookup):
+                t.start()
+                self.assertTrue(entered.wait(timeout=2.0))
+                with ctrl._lock:
+                    ctrl._load_token = 2
+                    ctrl.current_toc = toc_b
+                release.set()
+                t.join(timeout=2.0)
+
+            self.assertFalse(ctrl._lyrics_batch.get("running"), "上一专辑批次中止后不得遗留 running=True 锁死下一专辑")
+            res_b = ctrl.start_album_lyrics_batch()
+            self.assertTrue(res_b.get("ok"), f"切换到新专辑后应可正常启动批量取词，实际：{res_b}")
+        finally:
+            ctrl.shutdown()
+
+        # 2. 验证含 & 的 bat_path 在 frozen 更新重启时能生成可被 Windows cmd.exe 执行的命令行
+        with tempfile.TemporaryDirectory(prefix="upd&amp_") as td:
+            staged = os.path.join(td, "Discflow.exe.update.exe")
+            target = os.path.join(td, "Discflow.exe")
+            with open(staged, "wb") as f:
+                f.write(b"MZTEST")
+            captured_cmds = []
+            old_frozen = getattr(sys, "frozen", False)
+            sys.frozen = True
+            try:
+                with patch("updater_service.tempfile.gettempdir", return_value=td), \
+                     patch("main.subprocess.Popen", side_effect=lambda cmd, **kw: captured_cmds.append(cmd)), \
+                     patch("main.time.sleep"):
+                    updater_service.apply_staged_update_and_restart(
+                        staged, target, on_state=lambda **kw: None, on_exit_app=lambda: None
+                    )
+            finally:
+                if old_frozen:
+                    sys.frozen = old_frozen
+                else:
+                    delattr(sys, "frozen")
+            self.assertEqual(len(captured_cmds), 1)
+            self.assertIsInstance(captured_cmds[0], str)
+            self.assertIn('""', captured_cmds[0])
+
+    def test_open_wasapi_stream_closes_leaked_exclusive_stream_on_start_failure(self):
+        player = cd_engine.CddaWaveOutPlayer()
+        created = []
+
+        class FakeStream:
+            def __init__(self, fail_start=False):
+                self.fail_start = fail_start
+                self.closed = False
+                self.started = False
+            def start(self):
+                if self.fail_start:
+                    raise RuntimeError("exclusive start fail")
+                self.started = True
+            def close(self):
+                self.closed = True
+
+        def fake_raw_stream(**kwargs):
+            s = FakeStream(fail_start=len(created) == 0)
+            created.append(s)
+            return s
+
+        fake_sd = MagicMock()
+        fake_sd.query_hostapis.return_value = [{"name": "Windows WASAPI", "default_output_device": 0}]
+        fake_sd.RawOutputStream.side_effect = fake_raw_stream
+        fake_sd.WasapiSettings.side_effect = lambda **kw: kw
+        with patch.dict(sys.modules, {"sounddevice": fake_sd}):
+            stream, is_excl = player._open_wasapi_stream(exclusive=True, fallback_sink=[])
+        self.assertFalse(is_excl)
+        self.assertTrue(created[0].closed, "独占流 start() 失败后必须立即 close() 释放声卡")
+        self.assertTrue(created[1].started)
 
 
 if __name__ == "__main__":

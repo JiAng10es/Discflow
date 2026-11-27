@@ -527,6 +527,7 @@ class DiscflowLibraryManager:
             and "\\" not in raw_id
             and ".." not in raw_id
             and raw_id.strip(".").upper() not in _WIN_RESERVED_NAMES
+            and raw_id.split(".", 1)[0].strip().upper() not in _WIN_RESERVED_NAMES
         ):
             candidates.append(os.path.join(self.base_dir, raw_id))
 
@@ -926,7 +927,7 @@ class DiscflowLibraryManager:
                     for root, _, files in os.walk(self.base_dir):
                         for file in files:
                             full_path = os.path.join(root, file)
-                            if os.path.abspath(full_path) == abs_target:
+                            if os.path.normcase(os.path.abspath(full_path)) == os.path.normcase(abs_target):
                                 continue
                             rel_path = os.path.relpath(full_path, self.base_dir)
                             zf.write(full_path, rel_path)

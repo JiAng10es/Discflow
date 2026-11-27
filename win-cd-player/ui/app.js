@@ -2028,6 +2028,11 @@ function toggleDiscflowMenu(event) {
     if (window.pywebview && window.pywebview.api && window.pywebview.api.list_local_albums) {
       window.pywebview.api.list_local_albums().then(albs => {
         cachedLocalAlbums = albs || [];
+        const modalEl = document.getElementById("searchModal");
+        const curInp = document.getElementById("modalSearchInput");
+        if (modalEl && modalEl.classList.contains("open") && curInp && curInp.value.trim()) {
+          executeModalSearch();
+        }
       }).catch(() => {});
     }
   }
@@ -2684,6 +2689,7 @@ function toggleDiscflowMenu(event) {
   var _arrowSeekTargetSec = null;
   var _arrowSeekActiveUntil = 0;
   var _arrowSeekCommitTimer = null;
+  var _arrowSeekTrackKey = "";
 
   function _closeTopOpenModal(topModal) {
     if (!topModal) return;
@@ -2702,10 +2708,12 @@ function toggleDiscflowMenu(event) {
     const dur = Math.max(0, Number(appState.durationSec) || 0);
     if (dur <= 0 || !appState.tracks || !appState.tracks.length) return;
     const now = Date.now();
-    const baseSec = (now < _arrowSeekActiveUntil && typeof _arrowSeekTargetSec === "number")
+    const curTrackKey = _getLyricOffsetTrackKey();
+    const baseSec = (now < _arrowSeekActiveUntil && _arrowSeekTrackKey === curTrackKey && typeof _arrowSeekTargetSec === "number")
       ? _arrowSeekTargetSec
       : (appState.isPlaying ? karaokeClock : (Number(appState.elapsedSec) || 0));
     const nextSec = Math.min(dur, Math.max(0, baseSec + deltaSec));
+    _arrowSeekTrackKey = curTrackKey;
     _arrowSeekTargetSec = nextSec;
     _arrowSeekActiveUntil = now + 1500;
     appState.elapsedSec = nextSec;
@@ -3269,6 +3277,8 @@ function toggleDiscflowMenu(event) {
   }
 
   function _optimisticSeekUi(targetSec) {
+    _arrowSeekTargetSec = null;
+    _arrowSeekActiveUntil = 0;
     appState.elapsedSec = targetSec;
     karaokeClock = targetSec;
     karaokeLastTs = performance.now();

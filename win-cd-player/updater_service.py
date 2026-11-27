@@ -370,7 +370,9 @@ def apply_staged_update_and_restart(
     with open(bat_path, "w", encoding="utf-8") as f_bat:
         f_bat.write(script_content)
     creation_flags = getattr(sp, "CREATE_NO_WINDOW", 0x08000000)
-    bat_arg = f'"{bat_path}"' if ("&" in bat_path or "^" in bat_path) else bat_path
-    sp.Popen(["cmd.exe", "/c", bat_arg], creationflags=creation_flags, close_fds=True)
+    if "&" in bat_path or "^" in bat_path:
+        sp.Popen(f'cmd.exe /c ""{bat_path}""', creationflags=creation_flags, close_fds=True)
+    else:
+        sp.Popen(["cmd.exe", "/c", bat_path], creationflags=creation_flags, close_fds=True)
     tm.sleep(0.35)
     on_exit_app()

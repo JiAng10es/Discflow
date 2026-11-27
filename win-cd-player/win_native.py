@@ -42,6 +42,14 @@ if hasattr(_user32, "GetDpiForSystem"):
     _user32.GetDpiForSystem.restype = wintypes.UINT
 _user32.IsZoomed.argtypes = [wintypes.HWND]
 _user32.IsZoomed.restype = wintypes.BOOL
+_user32.IsWindow.argtypes = [wintypes.HWND]
+_user32.IsWindow.restype = wintypes.BOOL
+_user32.IsIconic.argtypes = [wintypes.HWND]
+_user32.IsIconic.restype = wintypes.BOOL
+_user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+_user32.GetWindowRect.restype = wintypes.BOOL
+_user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+_user32.GetSystemMetrics.restype = ctypes.c_int
 _user32.ReleaseCapture.argtypes = []
 _user32.ReleaseCapture.restype = wintypes.BOOL
 _user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
@@ -131,6 +139,36 @@ def get_dpi_scale(hwnd: int = 0) -> float:
     except Exception:
         pass
     return 1.0
+
+
+def get_virtual_screen_metrics() -> tuple[float, float, float, float]:
+    """返回虚拟桌面物理坐标 (vx, vy, vw, vh)。"""
+    vx = float(_user32.GetSystemMetrics(76))
+    vy = float(_user32.GetSystemMetrics(77))
+    vw = float(_user32.GetSystemMetrics(78) or 1920)
+    vh = float(_user32.GetSystemMetrics(79) or 1080)
+    return vx, vy, vw, vh
+
+
+def is_window_valid(hwnd: int) -> bool:
+    return bool(hwnd and _user32.IsWindow(wintypes.HWND(hwnd)))
+
+
+def is_window_zoomed(hwnd: int) -> bool:
+    return bool(hwnd and _user32.IsZoomed(wintypes.HWND(hwnd)))
+
+
+def is_window_iconic(hwnd: int) -> bool:
+    return bool(hwnd and _user32.IsIconic(wintypes.HWND(hwnd)))
+
+
+def get_window_rect(hwnd: int) -> Optional[tuple[int, int, int, int]]:
+    if not hwnd:
+        return None
+    rect = wintypes.RECT()
+    if _user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
+        return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
+    return None
 
 
 def apply_dwm_rounded_dark_window(
